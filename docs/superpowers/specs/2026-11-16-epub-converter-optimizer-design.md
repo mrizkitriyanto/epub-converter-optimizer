@@ -34,6 +34,7 @@ Ini tool pribadi pemilik yang akan dirawat bersama orang lain dan agen AI.
 - **G7.** Lokal dan privat. Konversi berjalan tanpa koneksi jaringan. Internet hanya dipakai saat mengunduh model AI, dan itu pun setelah pengguna menyetujui ukurannya.
 - **G8.** Transparan. Setiap konversi menghasilkan daftar temuan (apa yang di-OCR, diperbaiki, atau dijadikan gambar, serta peringatan), dan setiap temuan bisa dibuka langsung di preview.
 - **G9.** Siap kolaborasi. Repo memuat aturan kerja untuk manusia dan agen AI (Claude Code, Codex, Cursor) beserta plugin **ponytail** dan **antislop**.
+- **G10.** Gaya halaman XTC bisa diatur setara xtctool.com, dengan live preview (§8.18).
 
 ## 4. Non-goals (versi pertama)
 
@@ -96,7 +97,7 @@ Hanya lisensi permisif yang dipakai: Docling (MIT), pypdfium2 (Apache-2.0/BSD-3)
 
 - Hindari AGPL (PyMuPDF, ebooklib) dan GPL (Calibre, pandoc, CREngine).
 - Model diunduh saat runtime dan tidak disimpan di repo.
-- Font yang dibundel berlisensi OFL, dan file lisensinya ikut disertakan.
+- Font yang dibundel berlisensi OFL (Literata, Bitter, Lexend Deca, dalam instance statis), dan file lisensinya ikut disertakan. Font unggahan pengguna hanya disimpan di folder job.
 
 ### 6.4 Jaringan (temuan spike)
 
@@ -161,8 +162,8 @@ Setiap milestone menghasilkan sesuatu yang bisa langsung dipakai. Setiap milesto
    - Termasuk folder buku yang bisa diedit, setup model, dan laporan temuan.
    - Termasuk setup kolaborasi repo (§8.16) dan CI.
    - **Hasil pertama yang bisa dipakai:** pemilik mengonversi PDF lalu membacanya di device.
-2. **M2: GUI web + preview.** Termasuk renderer halaman Typst (gambar PNG seukuran layar) untuk preview EPUB perkiraan dengan pemilih "View as" (Stock / CrossPoint / CrossInk).
-3. **M3: Output XTC/XTCH.** Kuantisasi 1-bit/2-bit, encoder + decoder XTC/XTCH, dan preview XTC yang identik di GUI.
+2. **M2: GUI web + preview.** Termasuk renderer halaman Typst (gambar PNG seukuran layar) untuk preview EPUB perkiraan dengan pemilih "View as" (Stock / CrossPoint / CrossInk), serta mekanisme live preview (§8.18).
+3. **M3: Output XTC/XTCH.** Kuantisasi 1-bit/2-bit, encoder + decoder XTC/XTCH, preview XTC yang identik di GUI, dan panel gaya halaman XTC lengkap dengan live preview (§8.18).
 4. **M4: Docker + rilis** (image GHCR, catatan rilis).
 
 Pemilik memutuskan GUI dikerjakan sebelum XTC, karena GUI dan preview yang paling diutamakan.
@@ -538,6 +539,43 @@ pyproject.toml  uv.lock  .python-version  Dockerfile  .gitignore
   - job OSV/pip-audit;
   - job build Docker.
 
+### 8.18 Gaya halaman XTC dan live preview (ditambahkan 2026-11-17)
+
+Disetujui pemilik. Fitur ini setara dengan pengaturan di [xtctool.com](https://xtctool.com/epub-to-xtc).
+
+**Pengaturan gaya halaman (`PageStyle`)** berlaku penuh untuk XTC/XTCH. Untuk EPUB, pengaturan ini hanya dipakai sebagai simulasi di preview.
+
+| Kelompok | Pengaturan | Default |
+|---|---|---|
+| Teks | font: Literata, Bitter, Lexend Deca (dibundel, OFL), Libertinus Serif (bawaan Typst), atau font unggahan (.ttf/.otf) | Literata |
+| | ukuran (px) | 32 |
+| | ketebalan, sesuai instance statis yang tersedia (400/500/600/700) | 400 |
+| | jarak baris (%) | 135 |
+| | margin (px) | 16 |
+| | perataan: rata kiri-kanan atau rata kiri | rata kiri-kanan |
+| | pemenggalan kata | aktif |
+| | bahasa teks: otomatis dari buku atau pilih sendiri | otomatis |
+| Gambar dan warna | mode: XTH (4 abu-abu) atau XTG (hitam-putih) | XTH |
+| | dithering + kekuatan (0–100%), hanya di area gambar; teks dikuantisasi tanpa dithering supaya tetap tajam | aktif, 80% |
+| | mode gelap (negatif) | mati |
+| Progress bar | posisi atas/bawah, garis progres, halaman x/y, persen buku, halaman dan persen bab, penanda bab, lebar penuh, ukuran huruf, margin tepi dan samping | bawah; judul bab + halaman x/y |
+| Device | model (X4, X4 Pro, X4 v2 Classic, X3) dan orientasi 0/90/180/270 | X4, 0 |
+
+**Halaman per bab:** setiap bab dimulai di halaman baru. Karena itu render satu bab menghasilkan halaman yang sama persis dengan render seluruh buku.
+
+**Live preview:**
+- Ada di tahap "Cek & unduh". Tombol "Ubah pengaturan" membuka panel pengaturan di samping preview.
+- Setiap kali pengaturan diubah, GUI meminta render ulang bab yang sedang dilihat, dengan jeda tunggu ±300 ms. Target: ≤ 1 dtk untuk bab ≤ 30 halaman di Mac M3.
+- "Terapkan" membangun ulang file tanpa OCR ulang.
+- Untuk XTC, preview melewati kuantisasi yang sama dengan file, jadi hasilnya identik. Nomor halaman di bilah status bisa berbeda sampai render penuh selesai.
+- Untuk EPUB, live preview mencakup simulasi ukuran huruf device dan efek preset ukuran file pada gambar, dan diberi label "perkiraan".
+
+**CLI:** `--style FILE.json` untuk semua pengaturan, serta flag `--font` dan `--font-size`. GUI menampilkan gaya yang sedang aktif sebagai JSON yang bisa disalin untuk dipakai di CLI.
+
+**Font:**
+- Hanya font berlisensi OFL dengan instance statis. File font dan `OFL.txt` disimpan di `src/eco/fonts/`, dengan total ≤ 6 MB.
+- Font unggahan disimpan di folder job saja dan ikut terhapus bersama job.
+
 ## 9. Kriteria penerimaan
 
 1. *Threat Hunting* (seluruh buku) → EPUB: presisi dan recall teks ≥ 99% dibanding EPUB penerbit.
@@ -568,6 +606,8 @@ pyproject.toml  uv.lock  .python-version  Dockerfile  .gitignore
     - "Ubah pengaturan" tidak mengulang OCR;
     - mode jaringan menolak permintaan tanpa token.
 13. Membuka repo di Claude Code memunculkan permintaan pasang ponytail dan antislop. `AGENTS.md` cukup bagi agen baru untuk menjalankan tes tanpa bertanya.
+14. Live preview XTC memperbarui halaman dalam ≤ 1 dtk untuk bab ≤ 30 halaman (Mac M3). Halaman preview identik piksel demi piksel dengan halaman hasil decode file XTC/XTCH.
+15. Setiap pengaturan di tabel §8.18 mengubah output XTC sesuai harapan, dan masing-masing punya tesnya sendiri.
 
 ## 10. Risiko dan hal yang belum diketahui
 
@@ -610,6 +650,7 @@ pyproject.toml  uv.lock  .python-version  Dockerfile  .gitignore
 - Repo publik, lisensi MIT, identitas git noreply khusus repo ini.
 - README dua bahasa. Kode, komentar, `AGENTS.md`, dan commit berbahasa Inggris.
 - Uji di device dilakukan nanti.
+- (2026-11-17) Pengaturan gaya halaman XTC setara xtctool.com + live preview (§8.18).
 
 **Usulan saya (bisa dibatalkan pemilik):**
 - Arsitektur Python lokal (§7.1).
