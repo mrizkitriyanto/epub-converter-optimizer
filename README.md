@@ -13,7 +13,7 @@ Today it is a command-line tool. A web GUI and XTC output are planned.
 | System | 14+, Apple Silicon (Intel Macs are not supported) | 10/11, x64 | x64, glibc 2.28+ (Ubuntu 20.04+, Debian 10+, RHEL 8+) |
 | RAM | 8 GB | 8 GB | 8 GB |
 | Disk | about 3 GB | about 3 GB | about 3 GB (with the CPU build of PyTorch) |
-| First download | about 0.9 GB (packages 0.35 GB, models 0.57 GB) | about 1 GB | about 1.1 GB (CPU build of PyTorch required) |
+| First download | about 0.8 GB (packages 0.35 GB, models 0.42 GB) | about 0.9 GB | about 1 GB (CPU build of PyTorch required) |
 | GPU | optional (Apple GPU is used automatically) | optional | optional |
 
 You need [uv](https://docs.astral.sh/uv/). It installs Python 3.12 for you.
