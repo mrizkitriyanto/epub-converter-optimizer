@@ -135,6 +135,30 @@ def test_footnotes_go_before_next_heading_of_same_or_higher_level(tmp_path):
     assert positions == sorted(positions)
 
 
+def test_preamble_footnote_goes_before_first_heading(tmp_path):
+    blocks = [
+        Block("paragraph", "preface", page=1),
+        Block("footnote", "fn preface", page=1),
+        Block("heading", "Ch 1", level=1, page=2),
+        Block("heading", "Ch 2", level=1, page=3),
+    ]
+    md = write_book(Book(title="T", blocks=blocks), tmp_path, []).read_text()
+    assert md.index("fn preface") < md.index("# Ch 1") < md.index("# Ch 2")
+
+
+def test_blocks_with_an_image_are_written_as_images(tmp_path):
+    blocks = [
+        Block("formula", "E = mc^2", image="images/p0001-formula-1.png", page=1),
+        Block("formula", image="images/p0001-formula-2.png", page=1),
+        Block("code", "x = 1", image="images/p0001-code-1.png", caption="Listing 1", page=1),
+    ]
+    md = write_book(Book(title="T", blocks=blocks), tmp_path, []).read_text()
+    assert "![E = mc^2](images/p0001-formula-1.png)" in md
+    assert "![formula](images/p0001-formula-2.png)" in md
+    assert 'src="images/p0001-code-1.png" alt="x = 1"/><figcaption>Listing 1' in md
+    assert "```" not in md
+
+
 def test_read_report_without_report_json_is_empty(tmp_path):
     assert read_report(tmp_path) == []
 

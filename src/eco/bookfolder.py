@@ -29,7 +29,7 @@ def write_book(book: Book, folder: Path, findings: list[Finding]) -> Path:
     ]
     chunks = [("front", "\n".join(["---", *front, "---"]))]
     footnotes: list[tuple[int, str]] = []  # (level of the section they belong to, text)
-    section_level = 0
+    section_level = 7  # before the first heading: flushed by any heading
     page = 0
     for block in book.blocks:
         if block.kind == "footnote":
@@ -99,23 +99,23 @@ def _parse_front_matter(raw: str) -> dict[str, str]:
 
 
 def _render(block: Block) -> str:
-    if block.kind == "heading":
-        return "#" * min(max(block.level, 1), 6) + " " + _md(" ".join(block.text.split()))
-    if block.kind == "list_item":
-        return "- " + _md(block.text).replace("\n", "\n  ")
-    if block.kind == "code":
-        return _fenced(block.text)
     if block.kind == "table":
         body = "\n".join(line for line in block.html.splitlines() if line.strip())
         return f"<!-- table-image: {block.image} -->\n{body}" if block.image else body
-    if block.kind in ("image", "picture") and block.image:
-        alt = " ".join(block.text.split())
+    if block.image:  # picture, formula or code cropped to an image
+        alt = " ".join(block.text.split()) or block.kind
         if block.caption:
             return (
                 f'<figure><img src="{html.escape(block.image)}" alt="{html.escape(alt)}"/>'
                 f"<figcaption>{html.escape(' '.join(block.caption.split()))}</figcaption></figure>"
             )
         return f"![{_md(alt)}]({block.image})"
+    if block.kind == "heading":
+        return "#" * min(max(block.level, 1), 6) + " " + _md(" ".join(block.text.split()))
+    if block.kind == "list_item":
+        return "- " + _md(block.text).replace("\n", "\n  ")
+    if block.kind == "code":
+        return _fenced(block.text)
     return _md(block.text)  # paragraph, plus kinds the format does not list
 
 
