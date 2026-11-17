@@ -106,3 +106,15 @@ error for either.
   blocks, clipped to the page, cover more than 80% of the page area and the page has fewer than
   200 chars. The area comes from Docling's picture blocks, not `PageInfo.image_ratio`, so vector
   diagrams count and OCR'd text scans do not.
+
+## 2026-11-17: Text clean-up rules: vocabulary dehyphenation, protected short words
+
+- `dehyphenate` joins `a- b` only when the joined word occurs in the book's vocabulary (every word
+  of every paragraph, fragments included); otherwise it writes `a-b`. The plan's extra clause "or
+  neither part is" cannot fire under that vocabulary, so it is not implemented.
+- `clean_heading_artifacts(text, lang=None)` never drops a real short word of `lang` (Indonesian
+  `di`, `ke`; English `a`, `an`, `in`, `of`, ...). Without it, "Pergi ke Kelas" lost "ke" and
+  "History in India" lost "in", which spec section 5 forbids (content lost without a warning).
+  The pipeline passes the detected language; `lang=None` protects nothing.
+- The glued-first-letter rule stays as planned. It turns "Pakai iPhone" into "Pakai Phone" in an
+  OCR heading; that is a known limit.
