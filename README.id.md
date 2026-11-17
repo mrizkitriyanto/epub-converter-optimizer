@@ -24,7 +24,7 @@ Anda memerlukan [uv](https://docs.astral.sh/uv/). uv memasang Python 3.12 untuk 
 uv tool install git+https://github.com/mrizkitriyanto/epub-converter-optimizer
 ```
 
-Lalu unduh model AI satu kali. Perintah ini menampilkan ukurannya (sekitar 568 MB) dan meminta persetujuan dulu:
+Lalu unduh model AI satu kali. Perintah ini menampilkan ukurannya (sekitar 417 MB) dan meminta persetujuan dulu:
 
 ```bash
 eco setup

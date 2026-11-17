@@ -41,3 +41,26 @@ All three are pending device verification by the owner.
 encrypted PDF and a PDF with bookmarks and metadata at test time. The encrypted fixture uses RC4-128
 because pypdf's AES needs `cryptography`, which is not in the lock; PDFium reports the same password
 error for either.
+
+## 2026-11-17: Model setup downloads only what conversion uses
+
+- `eco setup` fetches three models, about 417 MB in all, into `<data>/models`, in the folders that
+  Docling's `artifacts_path` reads:
+  - layout: `docling-project/docling-layout-heron` at commit `8f39ad3c`, only `*.json` and
+    `*.safetensors`;
+  - tables: `docling-project/docling-models` at commit `fc0f2d45` (tag v2.3.0), only
+    `model_artifacts/tableformer/accurate/*`;
+  - OCR: RapidOCR for `onnxruntime` in Docling's default language. The rapidocr version in
+    `uv.lock` pins its download URLs.
+- It does not call Docling's `download_models`. That one also fetches RapidOCR's torch weights
+  (`.pth` pickles), an unpinned ONNX copy of the layout model and the fast TableFormer.
+- Model files must end in `.safetensors`, `.onnx`, `.npz`, `.json`, `.txt`, `.yaml`, `.yml` or
+  `.md`. Everything else is refused, except huggingface_hub's bookkeeping in
+  `<repo folder>/.cache/huggingface/` and eco's `.complete` marker.
+- Only network errors are retried (up to 8 attempts, waits of 2 to 60 s): connection and timeout
+  errors from httpx, requests and the standard library, and HTTP 429 or 5xx from the Hub. Other
+  errors stop at once. Finished files are kept between attempts. huggingface_hub 1.33 resumes a
+  partial file only within one attempt, so a file cut off by a connection reset starts again.
+- eco imports `huggingface_hub` (Apache-2.0), `httpx` (BSD-3-Clause) and `requests` (Apache-2.0)
+  directly, so they are listed in `pyproject.toml`. All three were already in the lock through
+  Docling.

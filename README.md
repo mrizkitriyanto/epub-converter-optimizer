@@ -24,7 +24,7 @@ You need [uv](https://docs.astral.sh/uv/). It installs Python 3.12 for you.
 uv tool install git+https://github.com/mrizkitriyanto/epub-converter-optimizer
 ```
 
-Then download the AI models once. The command shows the size (about 568 MB) and asks first:
+Then download the AI models once. The command shows the size (about 417 MB) and asks first:
 
 ```bash
 eco setup

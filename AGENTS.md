@@ -29,7 +29,7 @@ A web GUI, XTC output and a Docker image follow in later milestones.
 
 ```bash
 uv sync
-uv run eco setup      # downloads the AI models (about 568 MB); asks first
+uv run eco setup      # downloads the AI models (about 417 MB); asks first
 ```
 
 ## Commands
