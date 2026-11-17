@@ -16,10 +16,12 @@ class ImageResult:
     ext: str
 
 
-def _normalise(im: Image.Image, grayscale: bool) -> Image.Image:
+def _normalise(im: Image.Image, grayscale: bool, keep_alpha: bool) -> Image.Image:
     if im.mode in _WIDE_INT_MODES:
         im = im.point(lambda v: v * (1 / 256))  # assumes 16-bit range, plain convert clips to white
     if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+        if keep_alpha:
+            return im.convert("RGBA")
         rgba = im.convert("RGBA")
         im = Image.new("RGBA", rgba.size, "white")
         im.alpha_composite(rgba)
@@ -40,12 +42,11 @@ def transform_image(data: bytes, profile: ImageProfile) -> ImageResult | None:
         im = ImageOps.exif_transpose(src)  # first frame for animated sources
         if min(im.size) < profile.min_px:
             return None
-        im = _normalise(im, profile.grayscale)
+        png = not profile.png_line_art and source_format in ("PNG", "GIF")
+        im = _normalise(im, profile.grayscale, keep_alpha=png)
     im.thumbnail((profile.max_w, profile.max_h))
     if profile.png_line_art:
         png = _is_line_art(im)
-    else:
-        png = source_format in ("PNG", "GIF")
     out = BytesIO()
     if png:
         im.save(out, "PNG", optimize=True)

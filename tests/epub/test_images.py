@@ -94,6 +94,21 @@ def test_rgba_is_flattened_to_white():
     assert _open(out).convert("L").getpixel((25, 25)) == 255
 
 
+def test_general_png_keeps_transparency():
+    im = Image.new("RGBA", (50, 50), (10, 20, 30, 255))
+    im.putpixel((5, 5), (0, 0, 0, 0))
+    out = transform_image(_encode(im, "PNG"), GENERAL)
+    result = _open(out)
+    assert (out.ext, result.mode) == ("png", "RGBA")
+    assert result.getpixel((5, 5))[3] == 0 and result.getpixel((25, 25)) == (10, 20, 30, 255)
+
+
+def test_general_webp_alpha_becomes_jpeg_on_white():
+    webp = _encode(Image.new("RGBA", (50, 50), (0, 0, 0, 0)), "WEBP", lossless=True)
+    out = transform_image(webp, GENERAL)
+    assert out.ext == "jpg" and _open(out).getpixel((25, 25)) == (255, 255, 255)
+
+
 def test_palette_transparency_is_flattened_to_white():
     im = Image.new("P", (50, 50), 0)
     im.putpalette([0, 0, 0] * 256)
