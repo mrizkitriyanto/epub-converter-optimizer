@@ -26,6 +26,13 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
     POST /api/jobs/{id}/rebuild                   JSON options; 201, a new job from the same files
     GET  /api/jobs/{id}/files/{n}/download/{fmt}  an output, as an attachment
 
+The model setup (`eco.web.models_setup` does the work; its page is the first one when the models
+are missing). `ipv4` in the body of the POST is optional:
+
+    GET  /api/setup                               ready, the models with their sizes, total_mb
+    POST /api/setup/download                      202, or 409 while a download runs; `{"ipv4": true}`
+    GET  /api/setup/events                        server-sent events of the last run; 404 before one
+
 The previews of the review stage (`eco.web.preview` does the work, the routes only check what they
 are given, and its errors are answered like all the others). `format` is `epub` and `view` is
 `crosspoint`, `crossink` or `stock` (both have defaults); pages count from 1, chapters from 0:
@@ -93,6 +100,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from eco.options import Options
 from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, input_path, safe_name, server_lock
+from eco.web.models_setup import ModelSetup
 from eco.web.preview import PreviewError, Previews
 from eco.web.strings import STRINGS
 
@@ -489,17 +497,21 @@ def _public_event(event: dict, scrub: Callable[[str], str]) -> dict:
 
 
 async def _events(
-    runner: Runner, job_id: str, scrub: Callable[[str], str], stopping: threading.Event
+    subscribe: Callable[[], queue.Queue[dict]],
+    unsubscribe: Callable[[queue.Queue[dict]], None],
+    show: Callable[[dict], dict],
+    stopping: threading.Event,
 ) -> AsyncIterator[str]:
-    """The messages of an event stream: the events of the job so far, then each new one, up to
-    `end`. The stream also ends, with no `end` (the job has not ended), as soon as `stopping` is
+    """The messages of an event stream: the events of a job (or of the model download) so far,
+    then each new one, up to `end`, each as `show` makes it. `subscribe` gives the queue of
+    those events and `unsubscribe` takes it back. The stream also ends, with no `end` (the job has not ended), as soon as `stopping` is
     set: the server is stopping, and it waits for its streams. After KEEPALIVE seconds with no
     event it sends a comment, `: keepalive`, which a browser ignores and a proxy takes for traffic.
 
     The subscription starts here, in the generator, and ends in its `finally`: when the stream
     ends, when the client goes (the response is cancelled), and when the server cancels the
     response. A stream that is never opened subscribes to nothing."""
-    q = runner.subscribe(job_id)
+    q = subscribe()
     silent_since = time.monotonic()
     try:
         while not stopping.is_set():
@@ -512,11 +524,42 @@ async def _events(
                 await anyio.sleep(_POLL)  # the queue is the runner thread's: it cannot be awaited
                 continue
             silent_since = time.monotonic()
-            yield f"data: {json.dumps(_public_event(event, scrub), ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(show(event), ensure_ascii=False)}\n\n"
             if event["type"] == "end":
                 return
     finally:
-        runner.unsubscribe(job_id, q)
+        unsubscribe(q)
+
+
+async def _small_body(request: Request) -> bytes:
+    """The body of a request that only holds a few options: HTTP 422 for more than _MAX_OPTIONS.
+    ClientDisconnect, if the client goes, is the caller's."""
+    raw = bytearray()
+    async with aclosing(request.stream()) as body:
+        async for chunk in body:
+            raw.extend(chunk)
+            if len(raw) > _MAX_OPTIONS:
+                raise HTTPException(422, STRINGS["error_options_long"])
+    return bytes(raw)
+
+
+def _setup_start(raw: bytes) -> bool:
+    """The `ipv4` flag of the body of `POST /api/setup/download`: nothing, or a JSON object whose
+    only key may be `ipv4`, a boolean. HTTP 422 for anything else."""
+    if not raw.strip():
+        return False
+    try:
+        given = json.loads(raw)
+    except (ValueError, RecursionError):  # not JSON, not UTF-8, or too deep for the reader
+        raise HTTPException(422, STRINGS["error_setup_body"]) from None
+    if not isinstance(given, dict):
+        raise HTTPException(422, STRINGS["error_setup_body"])
+    for name in given:
+        if name != "ipv4":
+            raise HTTPException(422, STRINGS["error_setup_key"].format(name=name))
+    if not isinstance(given.get("ipv4", False), bool):
+        raise HTTPException(422, STRINGS["error_setup_ipv4"])
+    return given.get("ipv4", False)
 
 
 def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -> FastAPI:
@@ -594,6 +637,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         return JSONResponse({"error": STRINGS["error_server"]}, status_code=500)
 
     scrub = _scrubber(Path(data_dir))
+    setup = app.state.setup = ModelSetup(Path(data_dir), scrub)
 
     def job_of(job_id: str) -> JobInfo:
         try:
@@ -652,7 +696,12 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     async def job_events(job_id: str):
         await run_in_threadpool(job_of, job_id)  # 404 now, not in the middle of a stream
         return StreamingResponse(
-            _events(runner, job_id, scrub, app.state.stopping),
+            _events(
+                lambda: runner.subscribe(job_id),
+                lambda q: runner.unsubscribe(job_id, q),
+                lambda event: _public_event(event, scrub),
+                app.state.stopping,
+            ),
             headers={
                 "Content-Type": "text/event-stream",
                 "Cache-Control": "no-cache",
@@ -670,16 +719,11 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     @app.post("/api/jobs/{job_id}/rebuild", status_code=201)
     async def rebuild_job(job_id: str, request: Request):
         await run_in_threadpool(job_of, job_id)
-        raw = bytearray()
         try:
-            async with aclosing(request.stream()) as body:
-                async for chunk in body:
-                    raw.extend(chunk)
-                    if len(raw) > _MAX_OPTIONS:
-                        raise HTTPException(422, STRINGS["error_options_long"])
+            raw = await _small_body(request)
         except ClientDisconnect:
             return Response(status_code=400)
-        options = _options(bytes(raw))
+        options = _options(raw)
         info = await run_in_threadpool(queue_job, lambda: store.rebuild(job_id, options))
         return _public(info, scrub)
 
@@ -695,6 +739,37 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
             path,
             media_type=_MEDIA.get(fmt, "application/octet-stream"),
             headers={"Content-Disposition": _disposition(path.name)},
+        )
+
+    @app.get("/api/setup")
+    def setup_state():
+        return {
+            "ready": setup.ready(),
+            "models": setup.models(),
+            "total_mb": setup.total_mb(),
+        }
+
+    @app.post("/api/setup/download", status_code=202)
+    async def setup_download(request: Request):
+        try:
+            ipv4 = _setup_start(await _small_body(request))
+        except ClientDisconnect:
+            return Response(status_code=400)
+        if not setup.start(ipv4=ipv4):
+            raise HTTPException(409, STRINGS["error_setup_running"])
+        return {"status": "started"}
+
+    @app.get("/api/setup/events")
+    def setup_events():
+        if not setup.started:
+            raise HTTPException(404, STRINGS["error_setup_none"])
+        return StreamingResponse(
+            _events(setup.subscribe, setup.unsubscribe, lambda event: event, app.state.stopping),
+            headers={
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     # These do file work and long renders, so they are plain `def`: they run on the thread pool.

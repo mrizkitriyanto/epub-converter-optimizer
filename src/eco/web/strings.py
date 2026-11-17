@@ -37,4 +37,16 @@ STRINGS = {
     "error_no_preview": "No preview is available for this file",
     "error_no_text": "This file has no text to show",
     "error_pdf": "This PDF could not be read",
+    # The model setup API (eco.web.models_setup).
+    "error_setup_running": "The AI models are already downloading",
+    "error_setup_none": "No download has started",
+    "error_setup_body": 'Send nothing, or a JSON object such as {"ipv4": true}',
+    "error_setup_key": "Unknown setting: {name}",
+    "error_setup_ipv4": "ipv4 must be true or false",
+    "setup_start": "Downloading the AI models ({mb} MB). Finished files are kept if it stops.",
+    "setup_start_ipv4": (
+        "Downloading the AI models ({mb} MB) over IPv4. Finished files are kept if it stops."
+    ),
+    "setup_done": "The AI models are ready.",
+    "setup_failed": "The download failed.",
 }

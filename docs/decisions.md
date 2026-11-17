@@ -575,3 +575,20 @@ from 0) and the state (409 before the conversion). These are the choices they le
 - `safe_name`'s rule for a Windows device name (`nul.pdf` gets a `_`) is now the only guard of the
   stored name: the `<n>-` that came first used to be one as well. If it turns out wrong: a name that
   the rule does not know (`COM¹`, `CONIN$`) is stored as it is.
+
+## 2026-11-18: Model setup API (M2-R28 to M2-R31)
+
+- `POST /api/setup/download` takes an optional `{"ipv4": true}` (the page's retry, as `eco setup
+  --ipv4`); any other key or a non-boolean is 422. The download runs on one daemon thread, so Ctrl+C
+  does not wait for it and finished files resume on the next run. The start and the "already
+  running" check are one step under a lock, so two POSTs at once start one run (the other is 409).
+- The event stream replays the whole last run to a reader that joins late, then goes live, and ends
+  after `end`; the log of a run stays until the next POST. With no run since the server started it is
+  404. Progress lines are the `eco.models` logger's (one per retry) plus one start line: there is no
+  percentage, because `download_models` reports none. The `end` message of a failure is the error's
+  text with the data folder cut out; M1's text ends with "run eco setup again", which is the CLI's
+  advice and still true.
+- A POST is accepted when the models are already ready (it runs the downloader again, which checks the
+  files and repairs a damaged one); the page offers the button only when they are missing.
+- The code is in `eco.web.models_setup`, not `setup.py` (tools treat that name as a packaging script).
+
