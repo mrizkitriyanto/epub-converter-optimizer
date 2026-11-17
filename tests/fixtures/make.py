@@ -37,19 +37,28 @@ def _write(directory: Path, name: str, data: bytes) -> Path:
 
 
 def two_column_pdf(directory: Path) -> tuple[Path, list[str]]:
-    left = "Left column intro paragraph about fixtures and reading order."
-    right = ["Right column first paragraph after the figure.", "Right column second paragraph."]
+    # Spike layout: the left column holds Abstract, the abstract and a long introduction; the
+    # right column starts with a 120 pt picture placeholder, so its text begins beside the left
+    # intro and a plain top-to-bottom sort mixes the columns.
+    abstract = "This abstract paragraph summarises the fixture in a few short sentences. " * 3
+    intro = " ".join(
+        f"Introduction sentence number {n} fills the left column." for n in range(1, 31)
+    )
+    right = [
+        "Right column first paragraph after the figure. " * 6,
+        "Right column second paragraph with more text. " * 6,
+    ]
+    abstract, intro = abstract.strip(), intro.strip()
+    right = [r.strip() for r in right]
     source = (
         PAGE
         + SERIF
         + "#pad(54pt)[\n"
         + '#align(center)[#text(size: 20pt, weight: "bold")[Deep Fixture Paper]]\n\n'
         + "#align(center)[Ada Lovelace and Alan Turing]\n\n"
-        + '#align(center)[#text(weight: "bold")[Abstract]]\n\n'
-        + "This abstract paragraph summarises the fixture in one sentence.\n\n"
-        + '#text(weight: "bold")[1. Introduction]\n\n'
         + "#grid(columns: (1fr, 1fr), column-gutter: 18pt,\n"
-        + f"  [{left}],\n"
+        + '  [#text(weight: "bold")[Abstract]\n\n'
+        + f'  {abstract}\n\n  #text(weight: "bold")[1\\. Introduction]\n\n  {intro}],\n'
         + "  [#rect(width: 100%, height: 120pt)\n\n"
         + f"  {right[0]}\n\n  {right[1]}],\n)\n]\n"
     )
@@ -57,9 +66,9 @@ def two_column_pdf(directory: Path) -> tuple[Path, list[str]]:
         "Deep Fixture Paper",
         "Ada Lovelace and Alan Turing",
         "Abstract",
-        "This abstract paragraph summarises the fixture in one sentence.",
+        abstract,
         "1. Introduction",
-        left,
+        intro,
         *right,
     ]
     return _write(directory, "two_column.pdf", _compile(source)), texts
