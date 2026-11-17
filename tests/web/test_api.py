@@ -9,8 +9,10 @@ import asyncio
 import errno
 import io
 import json
+import logging
 import re
 import shutil
+import signal
 import threading
 import zipfile
 from contextlib import contextmanager
@@ -24,9 +26,10 @@ from fakes import endless_work, failing_work, fake_work, wait_for
 from fastapi.testclient import TestClient
 
 from eco.options import Options
+from eco.web import app as web_app
 from eco.web import jobs
 from eco.web.app import _Upload, create_app
-from eco.web.jobs import JobStore
+from eco.web.jobs import JobStore, Runner
 
 LOCAL = "http://127.0.0.1:8000"  # a browser on this computer, server on the default port
 MB = 1024 * 1024
@@ -128,6 +131,15 @@ def done_job(store: JobStore, name="a.md", output=b"an EPUB"):
     return info
 
 
+async def subscribed(runner, job_id):
+    """Wait, on the loop, until a stream of the job has made its queue."""
+    for _ in range(500):
+        if runner._subs.get(job_id):
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("no stream subscribed within 5 s")
+
+
 def backdate(store: JobStore, job_id: str, seconds: float):
     """Make a job older, so that "newest first" does not hang on the step of the clock."""
     info = store.get(job_id)
@@ -199,18 +211,39 @@ async def wire(
     return wired
 
 
+@dataclass
+class Live:
+    url: str
+    server: uvicorn.Server
+    thread: threading.Thread
+
+
 @contextmanager
-def serving(app):
-    """The app on a real uvicorn, in a thread, at a free port of this computer."""
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning"))
+def serving(app, server=None):
+    """The app on a real uvicorn (or the `server` given), in a thread, at a free port of this
+    computer."""
+    if server is None:  # (a Config sets up logging again: the caller of a Server made it first)
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     try:
         wait_for(lambda: server.started, 20)
-        yield f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
+        port = server.servers[0].sockets[0].getsockname()[1]
+        yield Live(f"http://127.0.0.1:{port}", server, thread)
     finally:
         server.should_exit = True
         thread.join(30)
+
+
+class Records(logging.Handler):
+    """Every log record it is given."""
+
+    def __init__(self):
+        super().__init__()
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(record)
 
 
 @dataclass
@@ -482,6 +515,53 @@ def test_the_framework_never_buffers_an_upload(tmp_path, monkeypatch):
     monkeypatch.setattr("starlette.requests.Request.form", refuse)
     monkeypatch.setattr("starlette.formparsers.MultiPartParser.parse", refuse)
     assert post(client(tmp_path), ("a.md", b"# A")).status_code == 201
+
+
+# Uploads: the number of files
+
+
+def tiny(count):
+    """`count` Markdown files of one byte each."""
+    return [(f"{n}.md", b"#") for n in range(count)]
+
+
+def test_200_files_in_a_request_are_the_most(tmp_path):
+    r = post(client(tmp_path), *tiny(200))
+    assert r.status_code == 201
+    assert [f["name"] for f in r.json()["files"]] == [f"{n}.md" for n in range(200)]
+
+
+def test_201_files_in_a_request_are_too_many(tmp_path):
+    r = post(client(tmp_path), *tiny(201))
+    assert (r.status_code, r.json()) == (400, {"error": "Too many files (limit 200)"})
+    assert on_disk(tmp_path) == ["jobs"]
+
+
+def test_the_201st_file_is_refused_when_its_headers_end_and_not_a_byte_of_it_is_written(
+    tmp_path, monkeypatch
+):
+    app = create_app(tmp_path, token=None)
+    held = []
+    rmtree = shutil.rmtree
+
+    def spy(path, *args, **kwargs):  # the files the job folder held when it was thrown away
+        held.append(sum(1 for p in Path(path).rglob("*") if p.is_file()))
+        rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", spy)
+    piece = 64 * 1024
+    parts = [("files[]", name, data) for name, data in tiny(200)]
+    parts.append(("files[]", "last.md", b"x" * (100 * piece)))  # 6.4 MB
+    body, content_type = multipart(*parts)
+    chunks = [body[i : i + piece] for i in range(0, len(body), piece)]
+    headers = [("content-type", content_type)]
+    wired = asyncio.run(wire(app, "POST", "/api/jobs", headers=headers, chunks=chunks))
+    assert (wired.status, wired.json()) == (400, {"error": "Too many files (limit 200)"})
+    assert (
+        wired.pulled == 1
+    )  # the headers of the 201st were in the first piece: its data, never read
+    assert held == [200]  # the 201st was never opened
+    assert on_disk(tmp_path) == ["jobs"]
 
 
 # Uploads: options
@@ -764,10 +844,7 @@ def test_the_stream_stops_listening_when_the_client_disconnects(tmp_path, monkey
     async def main():
         gone = asyncio.Event()
         call = asyncio.create_task(wire(app, "GET", f"/api/jobs/{job.id}/events", gone=gone))
-        for _ in range(500):
-            if runner._subs.get(job.id):
-                break
-            await asyncio.sleep(0.01)
+        await subscribed(runner, job.id)
         assert len(runner._subs[job.id]) == 1  # the stream is open, on a queue of its own
         assert not call.done()
         gone.set()  # the browser closes the tab
@@ -788,10 +865,7 @@ def test_the_stream_stops_listening_when_the_server_cancels_it(tmp_path):
         call = asyncio.create_task(
             wire(app, "GET", f"/api/jobs/{job.id}/events", gone=asyncio.Event())
         )
-        for _ in range(500):
-            if runner._subs.get(job.id):
-                break
-            await asyncio.sleep(0.01)
+        await subscribed(runner, job.id)
         call.cancel()  # as uvicorn does to a task that outlives its graceful shutdown
         with pytest.raises(asyncio.CancelledError):
             await call
@@ -818,10 +892,7 @@ def test_the_stream_gives_the_events_of_a_job_as_they_come(tmp_path):
         call = asyncio.create_task(
             wire(app, "GET", f"/api/jobs/{job.id}/events", gone=asyncio.Event())
         )
-        for _ in range(500):
-            if runner._subs.get(job.id):
-                break
-            await asyncio.sleep(0.01)
+        await subscribed(runner, job.id)
         with runner._lock:  # what the runner does for an event
             runner._publish(job, {"type": "page", "done": 1, "total": 2}, save=False)
             runner._publish(job, {"type": "end", "status": "done"}, save=False)
@@ -834,6 +905,134 @@ def test_the_stream_gives_the_events_of_a_job_as_they_come(tmp_path):
         {"type": "end", "status": "done"},
     ]
     assert runner._subs == {}
+
+
+def test_a_quiet_stream_sends_a_keepalive_comment(tmp_path, monkeypatch):
+    monkeypatch.setattr(web_app, "KEEPALIVE", 0.1)
+    app = create_app(tmp_path, token=None)
+    job = app.state.store.create([("a.md", io.BytesIO(b"# A"))], Options())  # never ends
+
+    async def main():
+        gone = asyncio.Event()
+        call = asyncio.create_task(wire(app, "GET", f"/api/jobs/{job.id}/events", gone=gone))
+        await asyncio.sleep(0.6)
+        gone.set()
+        return await asyncio.wait_for(call, 5)
+
+    wired = asyncio.run(main())
+    sent = [m["body"] for m in wired.messages[1:] if m.get("body")]
+    assert 2 <= len(sent) <= 12 and set(sent) == {b": keepalive\n\n"}
+
+
+def test_events_hold_the_keepalive_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(web_app, "KEEPALIVE", 0.3)
+    app = create_app(tmp_path, token=None)
+    runner, store = app.state.runner, app.state.store
+    job = store.create([("a.md", io.BytesIO(b"# A"))], Options())
+
+    async def main():
+        call = asyncio.create_task(
+            wire(app, "GET", f"/api/jobs/{job.id}/events", gone=asyncio.Event())
+        )
+        await subscribed(runner, job.id)
+        for done in range(1, 7):  # an event every 0.1 s, for twice the keepalive time
+            with runner._lock:
+                runner._publish(job, {"type": "page", "done": done, "total": 6}, save=False)
+            await asyncio.sleep(0.1)
+        with runner._lock:
+            runner._publish(job, {"type": "end", "status": "done"}, save=False)
+        return await asyncio.wait_for(call, 5)
+
+    wired = asyncio.run(main())
+    events = sse(wired.body.decode())  # one comment would break this: it takes only `data:` lines
+    assert [e["type"] for e in events] == ["page"] * 6 + ["end"]
+
+
+def test_the_stop_flag_is_the_apps_own_and_starts_clear(tmp_path):
+    one, two = create_app(tmp_path / "one", token=None), create_app(tmp_path / "two", token=None)
+    assert isinstance(one.state.stopping, threading.Event) and not one.state.stopping.is_set()
+    one.state.stopping.set()
+    assert not two.state.stopping.is_set()
+
+
+def test_a_stream_ends_with_no_end_event_when_the_server_is_stopping(tmp_path):
+    app = create_app(tmp_path, token=None)
+    runner = app.state.runner
+    job = app.state.store.create([("a.md", io.BytesIO(b"# A"))], Options())  # never ends
+
+    async def main():
+        call = asyncio.create_task(
+            wire(app, "GET", f"/api/jobs/{job.id}/events", gone=asyncio.Event())
+        )
+        await subscribed(runner, job.id)
+        app.state.stopping.set()
+        return await asyncio.wait_for(call, 2)
+
+    wired = asyncio.run(main())
+    assert (wired.status, wired.body) == (
+        200,
+        b"",
+    )  # nothing, and not the `end` of a job that has not ended
+    assert runner._subs == {}
+
+
+def test_a_server_that_is_told_to_stop_sets_the_flag_before_uvicorn_acts(tmp_path, monkeypatch):
+    app = create_app(tmp_path, token=None)
+    seen = []
+    handle_exit = uvicorn.Server.handle_exit
+
+    def spy(self, sig, frame):
+        seen.append(app.state.stopping.is_set())  # as uvicorn begins
+        handle_exit(self, sig, frame)
+
+    monkeypatch.setattr(uvicorn.Server, "handle_exit", spy)
+    server = web_app.Server(uvicorn.Config(app, host="127.0.0.1", port=0))
+    server.handle_exit(signal.SIGTERM, None)
+    assert seen == [True] and server.should_exit and app.state.stopping.is_set()
+
+
+def test_one_ctrl_c_stops_the_server_even_with_a_stream_open(tmp_path, monkeypatch):
+    app = create_app(tmp_path, token=None)
+    stops = []
+    stop = Runner.stop
+    monkeypatch.setattr(Runner, "stop", lambda self: (stops.append(self), stop(self))[1])
+    config = uvicorn.Config(
+        app, host="127.0.0.1", port=0, log_level="warning", timeout_graceful_shutdown=5
+    )
+    server = web_app.Server(config)
+    logged = Records()  # added after the Config, which sets the logging up
+    loggers = [logging.getLogger(), logging.getLogger("uvicorn")]  # this one passes nothing up
+    for logger in loggers:
+        logger.addHandler(logged)
+    try:
+        with serving(app, server) as live:
+            # made after the start, so the runner never queues it: its stream has no end
+            job = app.state.store.create([("a.md", io.BytesIO(b"# A"))], Options())
+            read, failed = [], []
+
+            def open_stream():
+                try:
+                    with httpx.stream(
+                        "GET", f"{live.url}/api/jobs/{job.id}/events", timeout=30
+                    ) as r:
+                        read.extend(r.iter_lines())
+                except Exception as e:  # noqa: BLE001  the test reports it
+                    failed.append(e)
+
+            reader = threading.Thread(target=open_stream, daemon=True)
+            reader.start()
+            wait_for(lambda: app.state.runner._subs.get(job.id), 10)  # the stream is open
+            server.handle_exit(signal.SIGINT, None)  # Ctrl+C
+            live.thread.join(2)
+            assert not live.thread.is_alive(), "the server still runs 2 s after Ctrl+C"
+            reader.join(5)
+        assert (read, failed) == ([], [])  # the stream ended, by the server, with nothing
+        assert app.state.runner._subs == {}
+        assert len(stops) == 1  # runner.stop() ran: the lifespan ended
+        assert [r.getMessage() for r in logged.records if r.levelno >= logging.ERROR] == []
+    finally:
+        for logger in loggers:
+            logger.removeHandler(logged)
 
 
 # Cancel
@@ -951,7 +1150,9 @@ def test_a_file_with_a_non_ascii_name_downloads(finished):
     r = finished.client.get(f"/api/jobs/{finished.id}/files/0/download/epub")
     assert r.status_code == 200
     assert r.content == b"not a real EPUB"
-    assert r.headers["content-disposition"] == "attachment; filename*=UTF-8''Bab%20%C3%9C.x4.epub"
+    assert r.headers["content-disposition"] == (
+        "attachment; filename=\"Bab _.x4.epub\"; filename*=UTF-8''Bab%20%C3%9C.x4.epub"
+    )
     assert r.headers["content-type"] == "application/epub+zip"
     assert r.headers["content-length"] == str(len(r.content))
 
@@ -959,7 +1160,24 @@ def test_a_file_with_a_non_ascii_name_downloads(finished):
 def test_every_file_of_a_job_downloads(finished):
     r = finished.client.get(f"/api/jobs/{finished.id}/files/1/download/epub")
     assert r.status_code == 200
-    assert r.headers["content-disposition"] == "attachment; filename*=UTF-8''notes.x4.epub"
+    assert r.headers["content-disposition"] == (
+        "attachment; filename=\"notes.x4.epub\"; filename*=UTF-8''notes.x4.epub"
+    )
+
+
+def test_the_ascii_name_of_a_download_has_no_quote_backslash_control_or_non_ascii_character():
+    # `safe_name` lets none of the first three through, so an upload cannot show this by itself
+    name = 'a"b\\c\x01d\x7fé€ f.epub'
+    assert web_app._disposition(name) == (
+        'attachment; filename="a_b_c_d___ f.epub"; '
+        "filename*=UTF-8''a%22b%5Cc%01d%7F%C3%A9%E2%82%AC%20f.epub"
+    )
+
+
+def test_an_ascii_name_is_the_same_in_both_forms():
+    assert web_app._disposition("book.x4.epub") == (
+        "attachment; filename=\"book.x4.epub\"; filename*=UTF-8''book.x4.epub"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1168,7 +1386,9 @@ def test_a_markdown_book_converts_through_the_real_worker_and_downloads(tmp_path
         assert shown["files"][0]["sizes"] == done["sizes"]
         assert_no_path([shown, events], tmp_path)
         got = c.get(f"/api/jobs/{job['id']}/files/0/download/epub")
-        assert got.headers["content-disposition"].startswith("attachment; filename*=UTF-8''Bab%20")
+        assert got.headers["content-disposition"] == (
+            "attachment; filename=\"Bab _.x4.epub\"; filename*=UTF-8''Bab%20%C3%9C.x4.epub"
+        )
         assert len(got.content) == done["sizes"]["epub"]
         with zipfile.ZipFile(io.BytesIO(got.content)) as z:
             assert z.namelist()[0] == "mimetype"
@@ -1179,7 +1399,7 @@ def test_a_real_server_streams_events_as_they_happen_and_drops_a_closed_stream(
     tmp_path, fake_worker
 ):
     app = create_app(tmp_path, token=None)
-    with serving(app) as url, httpx.Client(base_url=url, timeout=60) as c:
+    with serving(app) as live, httpx.Client(base_url=live.url, timeout=60) as c:
         job = c.post("/api/jobs", files=[("files[]", ("a.md", b"# A"))]).json()
         with c.stream("GET", f"/api/jobs/{job['id']}/events") as r:
             assert r.headers["content-type"] == "text/event-stream"
@@ -1200,7 +1420,7 @@ def test_a_real_server_streams_events_as_they_happen_and_drops_a_closed_stream(
 
 def test_a_real_server_refuses_a_large_upload_and_goes_on(tmp_path):
     app = create_app(tmp_path, token=None, max_upload_mb=1)
-    with serving(app) as url, httpx.Client(base_url=url, timeout=60) as c:
+    with serving(app) as live, httpx.Client(base_url=live.url, timeout=60) as c:
         r = c.post("/api/jobs", files=[("files[]", ("big.md", b"x" * (8 * MB)))])
         assert (r.status_code, r.json()) == (413, TOO_LARGE)
         assert c.get("/api/jobs").json() == []  # the same connection still works

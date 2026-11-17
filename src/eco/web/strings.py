@@ -10,6 +10,7 @@ STRINGS = {
     # The jobs API answers every error as {"error": <one of these>}.
     "error_unsupported": "Unsupported file type: {name}",
     "error_too_large": "File too large (limit {mb} MB)",
+    "error_too_many": "Too many files (limit {limit})",
     "error_not_form": "Send the files as multipart/form-data",
     "error_unreadable": "The upload could not be read",
     "error_no_files": "No files were uploaded",

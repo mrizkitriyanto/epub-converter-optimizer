@@ -28,7 +28,10 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
 
 The upload limit (`--max-upload-mb`, in MiB) is for all the files of a request together. It is
 kept while the body arrives, see `_Upload`: a body that goes over it is refused at once, and
-nothing of it stays on the disk.
+nothing of it stays on the disk. A request may hold `MAX_FILES` files.
+
+While the server runs, the lifespan purges the jobs older than RETENTION_DAYS once in `PURGE_EVERY`
+(not the queued and the running ones), and `Server` ends the event streams when it is asked to stop.
 """
 
 from __future__ import annotations
@@ -36,18 +39,24 @@ from __future__ import annotations
 import hmac
 import http
 import json
+import logging
 import os
 import queue
 import re
 import shutil
+import threading
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing, asynccontextmanager, suppress
 from dataclasses import fields
+from functools import partial
 from pathlib import Path
+from types import FrameType
 from typing import BinaryIO
 from urllib.parse import quote
 
 import anyio
+import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
@@ -88,6 +97,7 @@ _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 MB = 1024 * 1024
 # What a request body may hold besides its files: multipart framing and the options.
 _OVERHEAD = MB
+MAX_FILES = 200  # in one request
 _MAX_OPTIONS = 1 << 16
 _FILE_FIELDS = ("files[]", "files")
 # `font_size` goes into Typst source (the previews), so only a plain number may reach it.
@@ -96,6 +106,10 @@ _OPTION_NAMES = {f.name for f in fields(Options)}
 _INDEX = re.compile(r"0|[1-9][0-9]{0,5}")  # a file's number in a URL: no sign, no leading zero
 _MEDIA = {"epub": "application/epub+zip"}
 _POLL = 0.05  # seconds between two looks of an event stream at its queue
+KEEPALIVE = 15.0  # seconds of silence after which an event stream sends a comment
+PURGE_EVERY = 3600.0  # seconds between two purges of the old jobs while the server runs
+
+log = logging.getLogger(__name__)
 
 _templates = Jinja2Templates(directory=HERE / "templates")
 
@@ -187,6 +201,20 @@ class _App(FastAPI):
         return _Guard(super().build_middleware_stack(), self.token)
 
 
+class Server(uvicorn.Server):
+    """uvicorn's server, which tells the app when it is asked to stop (Ctrl+C, SIGTERM).
+
+    uvicorn waits for the responses in flight before it stops, and an event stream is one that does
+    not end by itself. So `handle_exit` first sets `app.state.stopping`, which ends every event
+    stream at its next look, and then does what uvicorn does. Its `config.app` is the app that
+    `create_app` made.
+    """
+
+    def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        self.config.app.state.stopping.set()
+        super().handle_exit(sig, frame)
+
+
 def _text(raw: bytes) -> str:
     """A header value as text: UTF-8, as browsers send it, else Latin-1."""
     try:
@@ -197,6 +225,15 @@ def _text(raw: bytes) -> str:
 
 def _too_large(mb: int) -> str:
     return STRINGS["error_too_large"].format(mb=mb)
+
+
+def _disposition(name: str) -> str:
+    """The `Content-Disposition` of a download. The name comes twice: in ASCII for a client that
+    reads only `filename` (a non-ASCII character, a quote, a backslash or a control character
+    becomes `_`), and as UTF-8 for one that reads `filename*`, which takes the place of the other
+    (RFC 6266, section 4.3)."""
+    ascii_name = re.sub(r'[^\x20-\x7e]|["\\]', "_", name)
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 def _valid(name: str, value) -> bool:
@@ -332,6 +369,8 @@ class _Upload:
         # any other part is read and dropped
 
     def _open(self, uploaded: str) -> None:
+        if len(self.names) >= MAX_FILES:  # now, as the headers end: no byte of this one is read
+            raise HTTPException(400, STRINGS["error_too_many"].format(limit=MAX_FILES))
         name = safe_name(uploaded)
         if Path(name).suffix.lower() not in KINDS:
             raise HTTPException(400, STRINGS["error_unsupported"].format(name=uploaded))
@@ -422,19 +461,30 @@ def _public_event(event: dict, scrub: Callable[[str], str]) -> dict:
     return shown
 
 
-async def _events(runner: Runner, job_id: str, scrub: Callable[[str], str]) -> AsyncIterator[str]:
+async def _events(
+    runner: Runner, job_id: str, scrub: Callable[[str], str], stopping: threading.Event
+) -> AsyncIterator[str]:
     """The messages of an event stream: the events of the job so far, then each new one, up to
-    `end`. The subscription starts here, in the generator, and ends in its `finally`: when the
-    stream ends, when the client goes (the response is cancelled), and when the server cancels
-    the response. A stream that is never opened subscribes to nothing."""
+    `end`. The stream also ends, with no `end` (the job has not ended), as soon as `stopping` is
+    set: the server is stopping, and it waits for its streams. After KEEPALIVE seconds with no
+    event it sends a comment, `: keepalive`, which a browser ignores and a proxy takes for traffic.
+
+    The subscription starts here, in the generator, and ends in its `finally`: when the stream
+    ends, when the client goes (the response is cancelled), and when the server cancels the
+    response. A stream that is never opened subscribes to nothing."""
     q = runner.subscribe(job_id)
+    silent_since = time.monotonic()
     try:
-        while True:
+        while not stopping.is_set():
             try:
                 event = q.get_nowait()
             except queue.Empty:
+                if time.monotonic() - silent_since >= KEEPALIVE:
+                    silent_since = time.monotonic()
+                    yield ": keepalive\n\n"
                 await anyio.sleep(_POLL)  # the queue is the runner thread's: it cannot be awaited
                 continue
+            silent_since = time.monotonic()
             yield f"data: {json.dumps(_public_event(event, scrub), ensure_ascii=False)}\n\n"
             if event["type"] == "end":
                 return
@@ -449,15 +499,32 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     store = JobStore(data_dir)
     runner = Runner(store, data_dir)
 
+    async def expire() -> None:
+        """While the server runs, purge the old jobs once in PURGE_EVERY. The queued ones are the
+        runner's and the running ones the worker's, so they are left; so is a folder that is
+        only minutes old, an upload that is coming in. The work is on a thread, off the event
+        loop. A purge that fails is logged, and the next one tries again."""
+        while True:
+            await anyio.sleep(PURGE_EVERY)
+            try:
+                await anyio.to_thread.run_sync(partial(store.purge, keep_queued=True))
+            except Exception:
+                log.exception("The hourly purge failed")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         with server_lock(data_dir):  # first: a second server on these jobs stops here
-            store.purge()  # before start(), which would queue again the expired jobs left queued
+            # Before start(), which would queue again the expired jobs left queued. No request is
+            # in flight yet, so a folder without a job.json is an upload that a hard kill cut.
+            store.purge(orphans=True)
             runner.start()
-            try:
-                yield
-            finally:
-                runner.stop()
+            async with anyio.create_task_group() as tasks:
+                tasks.start_soon(expire)
+                try:
+                    yield
+                finally:
+                    tasks.cancel_scope.cancel()
+                    runner.stop()
 
     # no /docs, /redoc or /openapi.json: their pages load scripts from a CDN
     app = _App(token or None, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -465,6 +532,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     app.state.runner = runner
     app.state.data_dir = Path(data_dir)
     app.state.max_upload_mb = max_upload_mb
+    app.state.stopping = threading.Event()  # set by `Server` when it is asked to stop
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
     @app.get("/", response_class=HTMLResponse)
@@ -545,7 +613,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     async def job_events(job_id: str):
         await run_in_threadpool(job_of, job_id)  # 404 now, not in the middle of a stream
         return StreamingResponse(
-            _events(runner, job_id, scrub),
+            _events(runner, job_id, scrub, app.state.stopping),
             headers={
                 "Content-Type": "text/event-stream",
                 "Cache-Control": "no-cache",
@@ -589,9 +657,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         return FileResponse(
             path,
             media_type=_MEDIA.get(fmt, "application/octet-stream"),
-            headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(path.name, safe='')}"
-            },
+            headers={"Content-Disposition": _disposition(path.name)},
         )
 
     return app

@@ -98,6 +98,40 @@ def test_a_reserved_folder_that_is_never_adopted_is_purged_by_its_age(tmp_path):
     assert not job.exists()
 
 
+def test_purge_with_orphans_removes_a_folder_without_a_readable_job_json_at_any_age(tmp_path):
+    store = JobStore(tmp_path)
+    cut = store.reserve()  # no job.json, made just now
+    broken = store.reserve()
+    (broken / "job.json").write_text("{not json", encoding="utf-8")
+    not_a_job = store.reserve()
+    (not_a_job / "job.json").write_text("[]", encoding="utf-8")
+    young = store.create([md()], Options())
+    assert store.purge() == 0  # by age alone, nothing is old
+    assert store.purge(orphans=True) == 3
+    assert not any(p.exists() for p in (cut, broken, not_a_job))
+    assert [info.id for info in store.list()] == [young.id]
+
+
+def expired(store, status):
+    """A job made 8 days ago, with `status`."""
+    info = store.create([md()], Options())
+    info.created -= 8 * 86400
+    info.status = status
+    store.save(info)
+    return info
+
+
+def test_purge_that_keeps_the_queued_jobs_takes_the_others_that_expired(tmp_path):
+    store = JobStore(tmp_path)
+    queued, running = expired(store, "queued"), expired(store, "running")
+    expired(store, "done")
+    young = store.create([md()], Options())
+    assert store.purge(keep_queued=True) == 1  # the done one
+    assert sorted(info.id for info in store.list()) == sorted([queued.id, running.id, young.id])
+    assert store.purge() == 1  # without the keyword the queued one goes too, as it did
+    assert sorted(info.id for info in store.list()) == sorted([running.id, young.id])
+
+
 def test_adopt_that_fails_removes_the_folder(tmp_path, monkeypatch):
     store = JobStore(tmp_path)
     job = store.reserve()

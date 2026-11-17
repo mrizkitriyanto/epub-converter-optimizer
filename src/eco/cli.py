@@ -201,7 +201,7 @@ def _web(args: argparse.Namespace) -> int:
 
     import uvicorn
 
-    from eco.web.app import create_app  # imported late: FastAPI is for this command only
+    from eco.web.app import Server, create_app  # imported late: FastAPI is for this command only
     from eco.web.jobs import server_lock
 
     token = args.token or os.environ.get("ECO_TOKEN") or None
@@ -225,8 +225,15 @@ def _web(args: argparse.Namespace) -> int:
     browser.daemon = True
     if not args.no_browser:
         browser.start()
+    # `Server` ends the event streams at Ctrl+C, which uvicorn would wait for; the timeout is for
+    # whatever else is in flight (an upload, a download): after 5 s uvicorn cancels it
+    config = uvicorn.Config(
+        app, host=args.host, port=args.port, log_level="warning", timeout_graceful_shutdown=5
+    )
     try:
-        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+        Server(config).run()
+    except KeyboardInterrupt:  # uvicorn raises the Ctrl+C that stopped it again, once it has
+        pass
     finally:
         browser.cancel()  # the server stopped first, for example because the port is taken
     return 0

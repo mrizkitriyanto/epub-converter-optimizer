@@ -2,10 +2,14 @@ import asyncio
 import hmac
 import io
 import json
+import logging
+import os
 import re
+import signal
 import subprocess
 import sys
 import threading
+import time
 from urllib.parse import quote
 
 import pytest
@@ -16,6 +20,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from eco import cli
 from eco.cli import main
 from eco.options import Options
+from eco.web import app as web_app
 from eco.web import jobs
 from eco.web.app import CSP, _Guard, create_app
 from eco.web.jobs import JobStore, Runner
@@ -66,7 +71,7 @@ def test_security_headers(tmp_path):
 
 
 def test_web_generates_token_for_lan(monkeypatch, capsys, tmp_path):
-    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+    monkeypatch.setattr("uvicorn.Server.run", lambda *a, **k: None)
     main(["web", "--host", "0.0.0.0", "--no-browser", "--data", str(tmp_path)])
     assert "?token=" in capsys.readouterr().out
 
@@ -447,26 +452,105 @@ def test_app_keeps_its_store_runner_and_upload_limit(tmp_path):
     assert create_app(tmp_path, token=None).state.max_upload_mb == 500
 
 
+# Expiry of the jobs
+
+
+def old_job(store, status):
+    """A job made 8 days ago, with `status`, and no worker for it."""
+    info = store.create([("a.md", io.BytesIO(b"# A"))], Options())
+    info.created -= 8 * 86400
+    info.status = status
+    store.save(info)
+    return info
+
+
+def test_start_removes_a_folder_without_a_job_json_whatever_its_age(tmp_path):
+    store = JobStore(tmp_path)
+    cut = store.reserve()  # an upload that a hard kill cut: no job.json, made minutes ago
+    (cut / "input" / "0-a.md").write_bytes(b"# A")
+    broken = store.reserve()
+    (broken / "job.json").write_text("{not json", encoding="utf-8")
+    young = store.create([("b.md", io.BytesIO(b"# B"))], Options())
+    young.status = "done"  # not queued again by the start
+    store.save(young)
+    with TestClient(create_app(tmp_path, token=None), base_url=LOCAL):
+        assert not cut.exists() and not broken.exists()
+        assert store.job_dir(young.id).exists()
+
+
+def test_the_purge_at_start_takes_the_orphans_and_the_hourly_one_does_not_wait_for_an_hour(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(web_app, "PURGE_EVERY", 0.05)
+    calls = []  # (the keywords of the call, the thread it ran in)
+    purge = JobStore.purge
+
+    def spy(self, *args, **kwargs):
+        calls.append((kwargs, threading.get_ident()))
+        return purge(self, *args, **kwargs)
+
+    monkeypatch.setattr(JobStore, "purge", spy)
+    app = create_app(tmp_path, token=None)
+    store = app.state.store
+    with TestClient(app, base_url=LOCAL):
+        writing = store.reserve()  # an upload that is coming in, made minutes ago
+        os.utime(writing, (time.time() - 300,) * 2)
+        expired, waiting, running = (old_job(store, s) for s in ("done", "queued", "running"))
+        wait_for(lambda: not store.root.joinpath(expired.id).exists(), 10)  # the hourly purge
+        wait_for(lambda: len(calls) >= 4, 10)  # which has been round more than once by now
+        assert [store.root.joinpath(j.id).exists() for j in (waiting, running)] == [True, True]
+        assert writing.exists()  # a folder without job.json goes by its age here, not at once
+    assert [kwargs for kwargs, _ in calls[:2]] == [{"orphans": True}, {"keep_queued": True}]
+    assert all(kwargs == {"keep_queued": True} for kwargs, _ in calls[1:])
+    assert all(thread != calls[0][1] for _, thread in calls[1:])  # not on the loop's thread
+    made = len(calls)
+    time.sleep(0.3)  # six times the interval
+    assert len(calls) == made  # the server has stopped, and so has the purge
+
+
+def test_a_purge_that_fails_does_not_end_the_hourly_purge(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(web_app, "PURGE_EVERY", 0.05)
+    calls = []
+    purge = JobStore.purge
+
+    def flaky(self, *args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 2:  # the first hourly one; the first of all is the start's
+            raise OSError("the disk is busy")
+        return purge(self, *args, **kwargs)
+
+    monkeypatch.setattr(JobStore, "purge", flaky)
+    with TestClient(create_app(tmp_path, token=None), base_url=LOCAL):
+        wait_for(lambda: len(calls) >= 4, 10)
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == [
+        "The hourly purge failed"
+    ]
+
+
 # eco web
 
 
 @pytest.fixture
 def served(monkeypatch):
-    """`eco web` without a server or a browser: what uvicorn.run and webbrowser.open got."""
-    seen = {"opened": [], "run": None}
+    """`eco web` without a server or a browser: the server that was to run (`seen["server"]`), its
+    app with the settings of its uvicorn config (`seen["run"]`), and what webbrowser.open got."""
+    seen = {"opened": [], "run": None, "server": None}
     opened = threading.Event()
     monkeypatch.delenv("ECO_TOKEN", raising=False)
     monkeypatch.setattr(cli, "_BROWSER_DELAY", 0.05)
 
-    def run(app, **kwargs):
-        seen["run"] = (app, kwargs)
+    def run(server, sockets=None):  # uvicorn.Server.run
+        config = server.config
+        settings = ("host", "port", "log_level", "timeout_graceful_shutdown")
+        seen["run"] = (config.app, {name: getattr(config, name) for name in settings})
+        seen["server"] = server
         opened.wait(seen.get("wait", 0))
 
     def open_(url):
         seen["opened"].append(url)
         opened.set()
 
-    monkeypatch.setattr("uvicorn.run", run)
+    monkeypatch.setattr("uvicorn.Server.run", run)
     monkeypatch.setattr("webbrowser.open", open_)
     return seen
 
@@ -479,8 +563,35 @@ def test_web_on_this_computer_needs_no_token(served, capsys, tmp_path):
     assert main(["web", "--no-browser", "--data", str(tmp_path)]) == 0
     assert open_line(capsys.readouterr().out) == ["Open: http://127.0.0.1:8000/"]
     app, kwargs = served["run"]
-    assert kwargs == {"host": "127.0.0.1", "port": 8000, "log_level": "warning"}
+    assert kwargs == {
+        "host": "127.0.0.1",
+        "port": 8000,
+        "log_level": "warning",
+        "timeout_graceful_shutdown": 5,  # for what the stop flag does not end: it takes 5 s at most
+    }
     assert TestClient(app, base_url=LOCAL).get("/").status_code == 200
+
+
+def test_web_runs_the_server_that_tells_the_app_to_stop(served, tmp_path):
+    main(["web", "--no-browser", "--data", str(tmp_path)])
+    server, (app, _) = served["server"], served["run"]
+    assert isinstance(server, web_app.Server)
+    server.handle_exit(signal.SIGINT, None)  # what Ctrl+C does: the app's streams are told to end
+    assert app.state.stopping.is_set()
+
+
+def test_web_ends_quietly_on_the_ctrl_c_that_uvicorn_passes_on(monkeypatch, capsys, tmp_path):
+    def stopped(server, sockets=None):  # uvicorn raises the Ctrl+C that stopped it once it has
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("uvicorn.Server.run", stopped)
+    try:
+        code = main(["web", "--no-browser", "--data", str(tmp_path)])
+    except KeyboardInterrupt:  # one that got out would end the whole test session
+        pytest.fail("eco web did not take the Ctrl+C that uvicorn passes on")
+    assert code == 0
+    out, err = capsys.readouterr()
+    assert err == "" and open_line(out) == ["Open: http://127.0.0.1:8000/"]
 
 
 def test_web_made_up_token_opens_the_app(served, capsys, tmp_path):
@@ -577,12 +688,12 @@ def test_web_ipv6_any_address_is_bracketed_and_needs_a_token(served, capsys, tmp
 def test_second_eco_web_on_the_same_data_stops_with_one_line(capsys, monkeypatch, tmp_path):
     ran = []
 
-    def run(app, **kwargs):  # as uvicorn: the app's lifespan runs
-        ran.append(app)
-        with TestClient(app):
+    def run(server, sockets=None):  # as uvicorn: the app's lifespan runs
+        ran.append(server.config.app)
+        with TestClient(server.config.app):
             pass
 
-    monkeypatch.setattr("uvicorn.run", run)
+    monkeypatch.setattr("uvicorn.Server.run", run)
     with TestClient(create_app(tmp_path, token=None), base_url=LOCAL):
         calls = record_calls(monkeypatch)
         code = main(["web", "--port", "8001", "--no-browser", "--data", str(tmp_path)])

@@ -458,9 +458,9 @@ error for either.
   byte over it. A `Content-Length` of more than the limit plus 1 MiB (what framing and the options
   may take) is refused with 413 before the body is read. A body that goes over the limit, or over
   that sum with other parts, while it arrives is refused at that moment, and the folder is
-  deleted. A folder without a job.json (the server died in the middle) is no job, and `purge`
-  deletes it by its age. If it turns out wrong: a client whose framing is over 1 MiB is refused;
-  raise `_OVERHEAD`.
+  deleted. A folder without a job.json (the server died in the middle) is no job, and the next
+  start removes it (M2-R18). If it turns out wrong: a client whose framing is over 1 MiB is
+  refused; raise `_OVERHEAD`.
 - The type check is by suffix and case does not matter. The 400 message names the file as it was
   uploaded. The `options` field is JSON, before or after the files. An unknown key, a value of the
   wrong kind, or a `font_size` that is not a whole number from 8 to 96 is 422 (`font_size` goes
@@ -474,12 +474,48 @@ error for either.
   is not cut out. If it turns out wrong: a path leaks that way, cut it in `_scrubber`.
 - Every error is `{"error": "<plain English>"}`: FastAPI's own 404, 405 and 422, and a 500 too.
   Cancel answers 202 with the job, or 409 when the job has finished. A rebuild takes the options as
-  JSON (none means the defaults) and answers 201 with the new job. A download has
-  `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded name>`, with no ASCII
-  `filename=` beside it; `{n}` is a plain decimal index, `{fmt}` is only looked up in the job's
-  outputs, and the file must lie in the job's `output/` folder.
+  JSON (none means the defaults) and answers 201 with the new job. A download has a
+  `Content-Disposition` with the name in ASCII and in UTF-8 (M2-R19); `{n}` is a plain decimal
+  index, `{fmt}` is only looked up in the job's outputs, and the file must lie in the job's
+  `output/` folder.
 - An event stream subscribes in its own generator and unsubscribes in `finally`, so a client that
   goes, a job that never ends and a response that the server cancels leave no queue behind. It
-  looks at its queue every 50 ms: the queue is the runner thread's. Known limit: uvicorn waits for
-  an open stream before it stops, so Ctrl+C during a conversion with the page open needs a second
-  Ctrl+C. `timeout_graceful_shutdown` in `uvicorn.run` would end the streams after a delay.
+  looks at its queue every 50 ms: the queue is the runner thread's. It also ends when the server
+  is asked to stop (M2-R16).
+
+## 2026-11-18: Prompt shutdown, file cap, hourly expiry, download name fallback (M2-R16 to M2-R19)
+
+- M2-R16: uvicorn waits for the responses in flight before it stops, and an event stream does not
+  end by itself, so Ctrl+C during a conversion with the page open needed a second Ctrl+C (measured:
+  a server with a stream open was still running 12 s after `should_exit`). `eco web` now runs
+  `eco.web.app.Server`, a `uvicorn.Server` whose `handle_exit` sets `app.state.stopping` (a
+  `threading.Event` that `create_app` makes) and then does what uvicorn does. Every event stream
+  looks at the flag at each of its looks and ends, with no `end` event because the job has not
+  ended; a browser that reconnects finds no server. `timeout_graceful_shutdown=5` is the backstop
+  for what the flag does not end, an upload or a download in flight: after 5 s uvicorn cancels it
+  (and logs it). One Ctrl+C measured: the real `eco web` with a stream open stopped in 0.2 s, exit
+  code 0, nothing on stderr. If it turns out wrong: a second Ctrl+C still forces the stop, as
+  before.
+- M2-R17 (a product decision: the spec sets only the size limit): at most `MAX_FILES = 200` files
+  in one upload request. The 201st file part is refused with 400 `Too many files (limit 200)` as
+  its headers end, before a byte of it is written, and nothing of the request stays. Without a
+  cap a request of 500 MB could make millions of empty files in one job folder. If it turns out
+  wrong: raise the constant.
+- M2-R18: the spec says a job older than 7 days is deleted by itself, and `purge` ran only at the
+  start, so a server that runs for weeks never expired a job. At start (the lock held, before
+  `runner.start()`) `purge(orphans=True)` also removes a folder without a readable job.json
+  whatever its age: no request is in flight yet, so it is an upload that a hard kill cut. Then,
+  once in `PURGE_EVERY` (an hour), `purge(keep_queued=True)` runs while the server does. It leaves
+  the queued jobs (the runner has them in its queue) and the running ones (their worker uses the
+  folder), and a folder without job.json goes by its age, so an upload that is coming in stays.
+  It is a task of the lifespan (`anyio`), on a thread, off the event loop. It stops with the
+  lifespan, and it does not change the runner. A timer in the runner's thread would not have run
+  while a conversion runs, and that can be hours. A purge that fails is logged and the next one
+  tries again. If it turns out wrong: a job that has run for more than 7 days is removed within
+  an hour after it ends, because it is older than that by then.
+- M2-R19: a download has `Content-Disposition: attachment; filename="<ascii>";
+  filename*=UTF-8''<percent-encoded>`. In the ASCII name each non-ASCII character, `"`, `\` and
+  control character is `_` (RFC 6266, section 4.3), for a client that does not read `filename*`
+  (curl's `-J` reads only `filename`). An event stream sends the comment `: keepalive` after 15 s
+  with no event, so a proxy does not close it for being idle and a server that follows ASGI spec
+  2.4 finds a client that has gone. A browser ignores a comment.

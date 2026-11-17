@@ -267,10 +267,15 @@ class JobStore:
         with self._lock, path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
-    def purge(self, now: float | None = None) -> int:
+    def purge(
+        self, now: float | None = None, *, orphans: bool = False, keep_queued: bool = False
+    ) -> int:
         """Delete the jobs made more than RETENTION_DAYS ago, except a running one (its worker
-        uses the folder). A folder without a readable job.json goes by its own age. Returns how
-        many went."""
+        uses the folder) and, with `keep_queued`, a queued one (the runner has it in its queue).
+        A folder without a readable job.json goes by its own age, so an upload that is coming in
+        stays; with `orphans` it goes whatever its age: for the start of a server, when no upload
+        can be in flight, so what is left is an upload that a hard kill cut. Returns how many
+        went."""
         cutoff = (time.time() if now is None else now) - RETENTION_DAYS * 86400
         deleted = 0
         for job in self.root.iterdir():
@@ -278,10 +283,16 @@ class JobStore:
                 continue
             try:
                 info = self.get(job.name)
-                created, running = info.created, info.status == "running"
             except (KeyError, OSError, ValueError, TypeError):
-                created, running = job.stat().st_mtime, False
-            if created < cutoff and not running:
+                try:
+                    expired = orphans or job.stat().st_mtime < cutoff
+                except FileNotFoundError:
+                    continue  # it went while we looked: an upload that failed
+                kept = False
+            else:
+                expired = info.created < cutoff
+                kept = info.status == "running" or (keep_queued and info.status == "queued")
+            if expired and not kept:
                 shutil.rmtree(job, ignore_errors=True)
                 deleted += not job.exists()
         return deleted
