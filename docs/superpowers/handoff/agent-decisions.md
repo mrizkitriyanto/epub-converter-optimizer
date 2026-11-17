@@ -108,6 +108,13 @@ Entry format:
 - Cost if wrong: none.
 - Recorded by: controller, owner's Mac.
 
+### Q-11: CI never runs on a milestone branch (it triggers on `main`, PRs and `workflow_dispatch`). Start it by hand?
+- Date, milestone, task: 2026-11-17, every milestone.
+- Answer: Yes. After each push of a milestone branch, and before its final review, run `gh workflow run CI --ref <branch>`. Watch it with `gh run watch` or `gh run list --branch <branch>`, and fix failures as in Q-10. Do not open a PR to trigger CI. Leave the workflow's triggers as they are.
+- Why: the spec requires CI green on three OSes (§9 criterion 11). The Linux, Windows and EPUBCheck jobs have never run, and a manual run needs no PR or merge.
+- Cost if wrong: some GitHub Actions minutes (free for public repos).
+- Recorded by: controller, owner's Mac.
+
 ## Answers recorded on the new machine
 
 (append below)
