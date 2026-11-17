@@ -1,11 +1,12 @@
 import io
 import multiprocessing
+import os
 import time
 import zipfile
 from pathlib import Path
 
 import pytest
-from fakes import crashing_work, hold_server_lock, stubborn_work, wait_for
+from fakes import crashing_work, epub_text, epub_title, hold_server_lock, stubborn_work, wait_for
 
 from eco.options import Options
 from eco.web.jobs import STOPPED, JobStore, Runner, safe_name, server_lock
@@ -74,20 +75,21 @@ def test_a_reserved_folder_is_no_job_until_it_is_adopted(tmp_path):
     job = store.reserve()
     assert job.parent == store.root
     assert sorted(p.name for p in job.iterdir()) == ["input", "output"]
-    (job / "input" / "0-a.md").write_bytes(b"# A")
-    (job / "input" / "1-b.PDF").write_bytes(b"%PDF")
+    for n, (name, data) in enumerate([("a.md", b"# A"), ("b.PDF", b"%PDF")]):
+        (job / "input" / str(n)).mkdir()
+        (job / "input" / str(n) / name).write_bytes(data)
     assert store.list() == []
     with pytest.raises(KeyError):
         store.get(job.name)
     info = store.adopt(job, ["a.md", "b.PDF"], Options(device="x3"))
     assert (info.id, info.status, info.position) == (job.name, "queued", 0)
     assert [(f.name, Path(f.path), f.kind) for f in info.files] == [
-        ("a.md", job / "input" / "0-a.md", "md"),
-        ("b.PDF", job / "input" / "1-b.PDF", "pdf"),
+        ("a.md", job / "input" / "0" / "a.md", "md"),
+        ("b.PDF", job / "input" / "1" / "b.PDF", "pdf"),
     ]
     assert store.get(info.id).options["device"] == "x3"
     assert [i.id for i in store.list()] == [info.id]
-    assert (job / "input" / "0-a.md").read_bytes() == b"# A"  # adopted as they are, not copied
+    assert (job / "input" / "0" / "a.md").read_bytes() == b"# A"  # adopted as they are, not copied
 
 
 def test_a_reserved_folder_that_is_never_adopted_is_purged_by_its_age(tmp_path):
@@ -135,7 +137,8 @@ def test_purge_that_keeps_the_queued_jobs_takes_the_others_that_expired(tmp_path
 def test_adopt_that_fails_removes_the_folder(tmp_path, monkeypatch):
     store = JobStore(tmp_path)
     job = store.reserve()
-    (job / "input" / "0-a.md").write_bytes(b"# A")
+    (job / "input" / "0").mkdir()
+    (job / "input" / "0" / "a.md").write_bytes(b"# A")
 
     def full(info):
         raise OSError("disk full")
@@ -181,21 +184,31 @@ def test_long_upload_name_is_cut_and_keeps_its_type():
     assert len(name) == 120 and name.endswith("a.pdf")
 
 
-def test_uploads_are_stored_by_number_with_a_safe_name(tmp_path):
+def stored(job_dir: Path) -> list[str]:
+    """The files of the job's input folder, as `<n>/<name>`."""
+    inputs = job_dir / "input"
+    return sorted(p.relative_to(inputs).as_posix() for p in inputs.rglob("*") if p.is_file())
+
+
+def test_uploads_are_stored_in_a_folder_of_their_own_with_a_safe_name(tmp_path):
     uploads = [("A.PDF", io.BytesIO(b"%PDF")), md("a:b.md"), ("c.epub", io.BytesIO(b"PK"))]
     info = JobStore(tmp_path).create(uploads, Options())
-    stored = [(f.name, Path(f.path).name, f.kind) for f in info.files]
-    assert stored == [
-        ("A.PDF", "0-A.PDF", "pdf"),
-        ("a_b.md", "1-a_b.md", "md"),
-        ("c.epub", "2-c.epub", "epub"),
+    inputs = tmp_path / "jobs" / info.id / "input"
+    assert [(f.name, Path(f.path), f.kind) for f in info.files] == [
+        ("A.PDF", inputs / "0" / "A.PDF", "pdf"),
+        ("a_b.md", inputs / "1" / "a_b.md", "md"),
+        ("c.epub", inputs / "2" / "c.epub", "epub"),
     ]
-    assert sorted(p.name for p in (tmp_path / "jobs" / info.id / "input").iterdir()) == [
-        "0-A.PDF",
-        "1-a_b.md",
-        "2-c.epub",
-    ]
+    assert sorted(p.name for p in inputs.iterdir()) == ["0", "1", "2"]
+    assert stored(tmp_path / "jobs" / info.id) == ["0/A.PDF", "1/a_b.md", "2/c.epub"]
     assert Path(info.files[1].path).read_bytes() == b"# A\n\nText.\n"
+
+
+def test_two_uploads_with_one_name_are_stored_apart(tmp_path):
+    info = JobStore(tmp_path).create([md("a.md", b"# One"), md("a.md", b"# Two")], Options())
+    assert stored(tmp_path / "jobs" / info.id) == ["0/a.md", "1/a.md"]
+    assert [Path(f.path).read_bytes() for f in info.files] == [b"# One", b"# Two"]
+    assert [f.name for f in info.files] == ["a.md", "a.md"]
 
 
 def test_create_refuses_other_file_types(tmp_path):
@@ -272,8 +285,22 @@ def test_rebuild_makes_a_new_job_from_the_same_inputs(tmp_path):
     path = Path(new.files[0].path)
     assert new.id != old.id and (new.status, new.options["device"]) == ("queued", "x3")
     assert (new.files[0].name, new.files[0].kind, new.files[0].outputs) == ("Bab Ü.md", "md", {})
-    assert path.parent == tmp_path / "jobs" / new.id / "input"
+    assert path == tmp_path / "jobs" / new.id / "input" / "0" / "Bab Ü.md"
     assert path.read_bytes() == Path(old.files[0].path).read_bytes()
+
+
+def test_rebuild_links_each_input_into_the_layout_of_the_new_job(tmp_path):
+    store = JobStore(tmp_path)
+    uploads = [md("a.md", b"# One"), md("a.md", b"# Two"), md("b.md", b"# Three")]
+    old = store.create(uploads, Options())
+    new = store.rebuild(old.id, Options(size="small"))
+    assert stored(tmp_path / "jobs" / new.id) == ["0/a.md", "1/a.md", "2/b.md"]
+    for before, after in zip(old.files, new.files, strict=True):
+        assert Path(after.path).parents[1] == tmp_path / "jobs" / new.id / "input"
+        assert Path(after.path).read_bytes() == Path(before.path).read_bytes()
+        assert (after.name, after.kind) == (before.name, before.kind)
+        assert os.path.samefile(before.path, after.path)  # a link: the file is not written again
+    assert stored(tmp_path / "jobs" / old.id) == ["0/a.md", "1/a.md", "2/b.md"]  # as it was
 
 
 def test_markdown_converts_in_a_worker_process(started):
@@ -282,7 +309,7 @@ def test_markdown_converts_in_a_worker_process(started):
     run.submit(info.id)
     wait_for(lambda: store.get(info.id).status in ("done", "failed"), 120)
     done = store.get(info.id)
-    job = Path(done.files[0].path).parents[1]
+    job = Path(done.files[0].path).parents[2]
     epub = Path(done.files[0].outputs["epub"])
     assert (done.status, done.files[0].error, done.files[0].book_dir) == ("done", None, None)
     assert epub == job / "output" / "Bab Ü.x4.epub" and zipfile.is_zipfile(epub)
@@ -307,10 +334,49 @@ def test_markdown_converts_in_a_worker_process(started):
 def test_stray_file_in_the_input_folder_is_not_an_input(started):
     store, run = started()  # the real _work
     info = store.create([md()], Options())
-    (Path(info.files[0].path).parent / "desktop.ini").write_text("[.ShellClassInfo]")
+    (Path(info.files[0].path).parents[1] / "desktop.ini").write_text("[.ShellClassInfo]")
+    (Path(info.files[0].path).parent / "Thumbs.db").write_text("x")  # and one by the upload
     run.submit(info.id)
     wait_for(lambda: store.get(info.id).status in ("done", "failed"), 120)
     assert store.get(info.id).status == "done"
+
+
+def finished_job(store, info):
+    wait_for(lambda: store.get(info.id).status in ("done", "failed"), 120)
+    return store.get(info.id)
+
+
+def test_a_book_is_titled_with_the_name_of_its_upload(started):
+    store, run = started()  # the real _work
+    info = store.create([md("book.md", b"# Chapter\n\nText.\n")], Options())
+    run.submit(info.id)
+    done = finished_job(store, info)
+    assert (done.status, done.files[0].error) == ("done", None)
+    assert epub_title(done.files[0].outputs["epub"]) == "book"  # not `0-book`
+
+
+def test_a_pages_mode_pdf_is_titled_with_the_name_of_its_upload(started, fixtures_dir):
+    store, run = started()  # the real _work; pages mode needs no models
+    three_pages = fixtures_dir["blank"].read_bytes()  # no title in its metadata
+    info = store.create([("report.pdf", io.BytesIO(three_pages))], Options(mode="pages"))
+    run.submit(info.id)
+    done = finished_job(store, info)
+    assert (done.status, done.files[0].error) == ("done", None)
+    assert epub_title(done.files[0].outputs["epub"]) == "report"
+
+
+def test_two_uploads_with_one_name_both_convert_and_keep_their_own_text(started):
+    store, run = started()  # the real _work
+    uploads = [md("a.md", b"# First\n\nOne.\n"), md("a.md", b"# Second\n\nTwo.\n")]
+    info = store.create(uploads, Options())
+    run.submit(info.id)
+    done = finished_job(store, info)
+    outputs = [Path(f.outputs["epub"]) for f in done.files]
+    assert done.status == "done" and [p.name for p in outputs] == ["a.x4.epub", "a.x4-1.epub"]
+    first, second = epub_text(outputs[0]), epub_text(outputs[1])
+    assert "First" in first and "Second" not in first
+    assert "Second" in second and "First" not in second
+    assert [epub_title(p) for p in outputs] == ["a", "a"]
 
 
 def test_bad_file_fails_alone_and_the_job_goes_on(started):

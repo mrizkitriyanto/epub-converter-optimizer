@@ -467,7 +467,8 @@ def old_job(store, status):
 def test_start_removes_a_folder_without_a_job_json_whatever_its_age(tmp_path):
     store = JobStore(tmp_path)
     cut = store.reserve()  # an upload that a hard kill cut: no job.json, made minutes ago
-    (cut / "input" / "0-a.md").write_bytes(b"# A")
+    (cut / "input" / "0").mkdir()
+    (cut / "input" / "0" / "a.md").write_bytes(b"# A")
     broken = store.reserve()
     (broken / "job.json").write_text("{not json", encoding="utf-8")
     young = store.create([("b.md", io.BytesIO(b"# B"))], Options())

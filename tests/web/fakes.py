@@ -1,4 +1,4 @@
-"""Stand-in workers for the job tests, and a wait helper.
+"""Stand-in workers for the job tests, a wait helper, and readers of an EPUB.
 
 A worker runs in a spawned process, which imports its target by module and name. So each fake is
 a module-level function of this importable module: a monkeypatch made in the test process alone
@@ -7,7 +7,9 @@ would never reach the child."""
 import os
 import signal
 import time
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 
 def wait_for(condition, timeout: float) -> None:
@@ -18,8 +20,24 @@ def wait_for(condition, timeout: float) -> None:
         time.sleep(0.05)
 
 
+def epub_title(source) -> str:
+    """The `dc:title` of an EPUB: a path, or a file object."""
+    with zipfile.ZipFile(source) as z:
+        container = ElementTree.fromstring(z.read("META-INF/container.xml"))
+        opf = ElementTree.fromstring(z.read(container.find(".//{*}rootfile").get("full-path")))
+    return opf.find(".//{http://purl.org/dc/elements/1.1/}title").text
+
+
+def epub_text(source) -> str:
+    """The XHTML of all the chapters of an EPUB, one after another."""
+    with zipfile.ZipFile(source) as z:
+        return "".join(z.read(n).decode() for n in z.namelist() if n.endswith(".xhtml"))
+
+
 def _inputs(job: Path) -> list[Path]:
-    return sorted((job / "input").iterdir(), key=lambda p: int(p.name.partition("-")[0]))
+    """The uploads of a job in order: the one file in each `input/<n>/` folder."""
+    folders = sorted((job / "input").iterdir(), key=lambda folder: int(folder.name))
+    return [next(folder.iterdir()) for folder in folders]
 
 
 def fake_work(job_dir, options, data_dir, q) -> None:
@@ -41,7 +59,7 @@ def fake_work(job_dir, options, data_dir, q) -> None:
             }
         )
         q.put({"type": "stage", "stage": "layout", "status": "finished"})
-        out = job / "output" / f"{Path(path.name.partition('-')[2]).stem}.x4.epub"
+        out = job / "output" / f"{path.stem}.x4.epub"
         out.write_bytes(b"not a real EPUB")
         q.put({"type": "file", "index": i, "status": "done", "outputs": {"epub": str(out)}})
     q.put({"type": "end", "status": "done"})

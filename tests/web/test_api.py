@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import httpx
 import pytest
 import uvicorn
-from fakes import endless_work, failing_work, fake_work, wait_for
+from fakes import endless_work, epub_title, failing_work, fake_work, wait_for
 from fastapi.testclient import TestClient
 
 from eco.options import Options
@@ -77,6 +77,12 @@ def multipart(*parts):
 def on_disk(tmp_path):
     """Everything under the data folder."""
     return sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*"))
+
+
+def stored(tmp_path, job_id) -> list[str]:
+    """The files of a job's input folder, as `<n>/<name>`."""
+    inputs = tmp_path / "jobs" / job_id / "input"
+    return sorted(p.relative_to(inputs).as_posix() for p in inputs.rglob("*") if p.is_file())
 
 
 def tree_size(path: Path) -> int:
@@ -311,13 +317,21 @@ def test_a_path_in_an_upload_name_stays_inside_the_job(tmp_path):
     assert r.status_code == 201
     assert [f["name"] for f in r.json()["files"]] == ["x.pdf", "y.md"]
     job = tmp_path / "jobs" / r.json()["id"]
-    assert sorted(p.name for p in (job / "input").iterdir()) == ["0-x.pdf", "1-y.md"]
+    assert stored(tmp_path, r.json()["id"]) == ["0/x.pdf", "1/y.md"]
     outside = [
         p
         for p in tmp_path.rglob("*")
         if p not in (tmp_path / "jobs", job) and not p.is_relative_to(job)
     ]
     assert outside == [] and not (tmp_path.parent / "x.pdf").exists()
+
+
+def test_two_uploads_with_one_name_are_stored_apart_each_under_its_own_name(tmp_path):
+    job = post(client(tmp_path), ("a.md", b"# One"), ("a.md", b"# Two")).json()
+    assert [(f["index"], f["name"]) for f in job["files"]] == [(0, "a.md"), (1, "a.md")]
+    assert stored(tmp_path, job["id"]) == ["0/a.md", "1/a.md"]
+    inputs = tmp_path / "jobs" / job["id"] / "input"
+    assert [(inputs / n / "a.md").read_bytes() for n in "01"] == [b"# One", b"# Two"]
 
 
 def test_a_name_that_is_not_utf8_is_read_as_latin1(tmp_path):
@@ -380,7 +394,7 @@ def test_a_body_that_arrives_in_small_pieces_is_stored_whole(tmp_path):
     wired = asyncio.run(wire(app, "POST", "/api/jobs", headers=headers, chunks=chunks))
     assert wired.status == 201
     job = wired.json()
-    assert (tmp_path / "jobs" / job["id"] / "input" / "0-Bäb.md").read_bytes() == content
+    assert (tmp_path / "jobs" / job["id"] / "input" / "0" / "Bäb.md").read_bytes() == content
     assert (job["files"][0]["name"], job["options"]["title"]) == ("Bäb.md", "T")
 
 
@@ -1105,6 +1119,16 @@ def test_rebuild_makes_a_new_job_from_the_same_files(tmp_path):
     assert [job["id"] for job in c.get("/api/jobs").json()] == [new["id"], old["id"]]
 
 
+def test_rebuild_of_two_uploads_with_one_name_keeps_both_in_the_new_layout(tmp_path):
+    c = client(tmp_path)
+    old = post(c, ("a.md", b"# One"), ("a.md", b"# Two")).json()
+    new = c.post(f"/api/jobs/{old['id']}/rebuild", json={"size": "small"}).json()
+    assert [(f["index"], f["name"]) for f in new["files"]] == [(0, "a.md"), (1, "a.md")]
+    assert stored(tmp_path, new["id"]) == ["0/a.md", "1/a.md"]
+    inputs = tmp_path / "jobs" / new["id"] / "input"
+    assert [(inputs / n / "a.md").read_bytes() for n in "01"] == [b"# One", b"# Two"]
+
+
 def test_rebuild_without_options_uses_the_defaults(tmp_path):
     c = client(tmp_path)
     old = post(c, ("a.md", b"# A"), options={"device": "x3"}).json()
@@ -1361,8 +1385,7 @@ def test_the_api_needs_the_token_and_works_with_it(tmp_path):
     assert c.get(f"{base}/files/0/download/epub", headers=auth).content == b"an EPUB"
     r = post(c, ("../../x.pdf", b"%PDF-1.4"), headers=auth)
     assert r.status_code == 201
-    stored = list((tmp_path / "jobs" / r.json()["id"] / "input").iterdir())
-    assert [p.name for p in stored] == ["0-x.pdf"]
+    assert stored(tmp_path, r.json()["id"]) == ["0/x.pdf"]
     assert not (tmp_path.parent / "x.pdf").exists() and not (tmp_path / "x.pdf").exists()
 
 
@@ -1393,6 +1416,7 @@ def test_a_markdown_book_converts_through_the_real_worker_and_downloads(tmp_path
         with zipfile.ZipFile(io.BytesIO(got.content)) as z:
             assert z.namelist()[0] == "mimetype"
             assert z.read("mimetype") == b"application/epub+zip"
+        assert epub_title(io.BytesIO(got.content)) == "Bab Ü"  # the upload's name, as it came
 
 
 def test_a_real_server_streams_events_as_they_happen_and_drops_a_closed_stream(

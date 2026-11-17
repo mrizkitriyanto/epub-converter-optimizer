@@ -4,7 +4,7 @@ A job is the folder `<data>/jobs/<id>/`:
 
     job.json      the JobInfo, written whole (a new file, then a rename)
     events.jsonl  every event of the run, one JSON object per line, for a browser that reloads
-    input/        the uploads, as `<n>-<name>`
+    input/        the uploads, each in a folder of its own: `<n>/<name>`, see `input_path`
     output/       the finished files, named by `output_path` after the upload's name
     tmp/          the worker's temporary files, deleted when the worker ends
 
@@ -58,7 +58,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class JobFile:
     name: str  # the upload's name, made safe
-    path: str  # the stored upload, input/<n>-<name>
+    path: str  # the stored upload, input/<n>/<name>
     kind: str  # pdf, md or epub
     outputs: dict[str, str]  # format -> file in output/
     book_dir: str | None  # a PDF's book folder in the extraction cache, for previews
@@ -92,6 +92,18 @@ def safe_name(name: str) -> str:
     if _DEVICE_NAME.match(name):
         name = f"_{name}"
     return name or "file"
+
+
+def input_path(inputs: Path, n: int, name: str) -> Path:
+    """Where upload `n` is stored: `<inputs>/<n>/<name>`, `name` being its `safe_name`.
+
+    The file keeps the name it was uploaded under, because M1 takes names from the path it reads:
+    the title of a PDF that has none and of a Markdown file that has none, and the source name that
+    `epub_to_book` writes. A prefix such as `<n>-` would become the title of the book. The folder
+    is the upload's own, so two uploads with one name do not meet. A Windows device name would open
+    the device even here (`nul.pdf` is NUL there): `safe_name` keeps it out of the name.
+    """
+    return inputs / str(n) / name
 
 
 def _file(name: str, path: Path) -> JobFile:
@@ -157,7 +169,8 @@ class JobStore:
         def fill(inputs: Path) -> list[JobFile]:
             files = []
             for n, (name, (_, data)) in enumerate(zip(names, uploads, strict=True)):
-                path = inputs / f"{n}-{name}"
+                path = input_path(inputs, n, name)
+                path.parent.mkdir()
                 with path.open("wb") as f:
                     shutil.copyfileobj(data, f)
                 files.append(_file(name, path))
@@ -175,12 +188,12 @@ class JobStore:
         return job
 
     def adopt(self, job: Path, names: list[str], options: Options) -> JobInfo:
-        """A queued job from the files already written to `job/input` as `<n>-<name>`, one for
-        each name in `names` (made by `safe_name`, with a type in KINDS). The files stay where
-        they are. If this fails the folder is deleted."""
+        """A queued job from the files already written to `input_path(job / "input", n, name)`,
+        one for each name in `names` (made by `safe_name`, with a type in KINDS). The files stay
+        where they are. If this fails the folder is deleted."""
 
         def fill(inputs: Path) -> list[JobFile]:
-            return [_file(name, inputs / f"{n}-{name}") for n, name in enumerate(names)]
+            return [_file(name, input_path(inputs, n, name)) for n, name in enumerate(names)]
 
         return self._new(options, fill, job)
 
@@ -191,13 +204,13 @@ class JobStore:
 
         def fill(inputs: Path) -> list[JobFile]:
             files = []
-            for f in old.files:
-                src = Path(f.path)
-                dst = inputs / src.name
+            for n, f in enumerate(old.files):  # by number: the old job's own layout is not read
+                dst = input_path(inputs, n, f.name)
+                dst.parent.mkdir()
                 try:
-                    os.link(src, dst)
+                    os.link(f.path, dst)
                 except OSError:
-                    shutil.copyfile(src, dst)
+                    shutil.copyfile(f.path, dst)
                 files.append(_file(f.name, dst))
             return files
 
@@ -348,8 +361,8 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
                 )
                 outputs = {}
                 for fmt, made in result.outputs.items():
-                    # named after the upload, not `<n>-<name>`, and never like an earlier output;
-                    # a rename on one disk, so output/ never holds half a file
+                    # named after the upload, and never like an earlier output (two uploads may
+                    # have one name); a rename on one disk, so output/ never holds half a file
                     out = output_path(
                         Path(file["name"]), job / "output", opts.device, made.suffix[1:], written
                     )

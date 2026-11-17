@@ -70,7 +70,7 @@ src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts
 src/eco/pdf/structure.py     assign_heading_levels()
 src/eco/render/md2typst.py   to_typst(), RenderSettings, VIEWS
 src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered, ChapterNotFound
-src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild), Runner, JobInfo, JobFile, safe_name(), server_lock(), RETENTION_DAYS, _work() (worker process)
+src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild), Runner, JobInfo, JobFile, safe_name(), input_path(), server_lock(), RETENTION_DAYS, _work() (worker process)
 src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs routes, _Upload (a streamed upload), Server (uvicorn that tells the app to stop)
 src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError
 src/eco/web/strings.py       STRINGS: every English text of the GUI

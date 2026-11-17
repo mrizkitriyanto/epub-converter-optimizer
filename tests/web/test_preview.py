@@ -662,6 +662,13 @@ def test_an_epub_job_gives_the_text_of_its_chapters(c, app, tmp_path):
     assert "# Alpha\n\nHello *there*." in text and "# Beta\n\nMore." in text
 
 
+def test_the_text_of_an_epub_names_the_upload_as_it_was_uploaded(c, app, tmp_path):
+    job = make_job(app, ("novel.epub", tiny_epub(tmp_path, "<h1>Alpha</h1><p>Text.</p>")))
+    text = c.get(url(job, "text")).text.replace("\r\n", "\n")
+    assert 'source: "novel.epub"\n' in text  # where epub_to_book writes the name of what it read
+    assert "0-novel" not in text
+
+
 def test_a_reflow_pdf_job_gives_the_text_of_its_book(c, app, small_book, three_pages):
     job = make_job(app, ("scan.pdf", three_pages), book_dir=small_book)
     r = c.get(url(job, "text"))

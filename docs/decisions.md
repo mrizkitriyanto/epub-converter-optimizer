@@ -556,3 +556,22 @@ from 0) and the state (409 before the conversion). These are the choices they le
   pixels takes 400 KB. The check is in `md2typst`, on the header, before any decoding.
 - The routes send no cache headers. The live preview keeps its last 32 answers on the server, and a
   page that the browser asks for again is a small file.
+
+## 2026-11-18: Uploads keep their own name on disk (M2-R36)
+
+- An upload is stored as `<job>/input/<n>/<name>`: a folder for each file number, and the file in
+  it under its own name (`safe_name`, M2-R10). It was `input/<n>-<name>`. M1 takes names from the
+  path it reads: a PDF that has no title of its own, and a Markdown file that has none in its front
+  matter, get `path.stem` as their title, and `epub_to_book` writes the file name as the `source`
+  of the book it makes. So `book.md` became an EPUB titled `0-book`, which the e-reader's library
+  shows, and the text of an EPUB in the preview said `0-name.epub`. The output names were right
+  already (`_work` names them after the upload, never like an earlier output).
+- A folder for each file also keeps two uploads with one name apart, as the prefix did. The layout
+  is one function, `input_path(inputs, n, name)`, used by `JobStore.create`, `adopt` (for the files
+  that `_Upload` wrote there) and `rebuild`. `rebuild` links by number and the name the job shows,
+  so it does not read the path of the old job: a job of the old layout can still be rebuilt, and
+  its rebuild has the new one. Nothing moves a job folder of the old layout, since M2 is not
+  released. `purge`, the orphan rule at start and the cap of 200 files are as they were.
+- `safe_name`'s rule for a Windows device name (`nul.pdf` gets a `_`) is now the only guard of the
+  stored name: the `<n>-` that came first used to be one as well. If it turns out wrong: a name that
+  the rule does not know (`COM¹`, `CONIN$`) is stored as it is.

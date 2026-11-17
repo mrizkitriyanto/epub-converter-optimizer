@@ -92,7 +92,7 @@ from starlette.requests import ClientDisconnect
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from eco.options import Options
-from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, safe_name, server_lock
+from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, input_path, safe_name, server_lock
 from eco.web.preview import PreviewError, Previews
 from eco.web.strings import STRINGS
 
@@ -322,7 +322,7 @@ class _Upload:
         self.store = store
         self.limit = limit_mb * MB
         self.job: Path | None = None  # the folder the files are written into, made at the first
-        self.names: list[str] = []  # the stored name of each file, without its `<n>-`
+        self.names: list[str] = []  # the stored name of each file; its place is its number
         self.options = Options()
         self.adopted = False
         self._too_large = _too_large(limit_mb)
@@ -400,7 +400,9 @@ class _Upload:
         if Path(name).suffix.lower() not in KINDS:
             raise HTTPException(400, STRINGS["error_unsupported"].format(name=uploaded))
         self.job = self.job or self.store.reserve()
-        self._file = (self.job / "input" / f"{len(self.names)}-{name}").open("wb")
+        path = input_path(self.job / "input", len(self.names), name)
+        path.parent.mkdir()
+        self._file = path.open("wb")
         self.names.append(name)
 
     def _part_data(self, data: bytes, start: int, end: int) -> None:
