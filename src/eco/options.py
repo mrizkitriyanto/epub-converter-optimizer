@@ -74,5 +74,6 @@ def image_profile(o: Options) -> ImageProfile:
 
 def resolve_data_dir(cli_value: str | None) -> Path:
     path = Path(cli_value or os.environ.get("ECO_DATA") or platformdirs.user_data_dir("eco"))
+    path = path.expanduser()
     path.mkdir(parents=True, exist_ok=True)
     return path

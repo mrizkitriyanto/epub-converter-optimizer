@@ -73,3 +73,9 @@ def test_model_defaults():
     assert (book.author, book.source, book.cover, book.blocks) == ("", "", "", [b])
     assert Book(title="T").blocks == []
     assert Finding(1, "k", "info", "m").level == "info"
+
+
+def test_data_dir_expands_the_home_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert resolve_data_dir("~/x") == tmp_path / "x"
+    assert (tmp_path / "x").is_dir()
