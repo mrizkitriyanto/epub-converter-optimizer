@@ -18,8 +18,8 @@ if _installed != DOCLING_VERSION:
         f"eco is built for Docling {DOCLING_VERSION}, but {_installed} is installed. Reinstall eco."
     )
 
-# Docling label -> block kind. Any other label with text (text, paragraph, reference, ...) is a
-# paragraph. Captions are not listed: _to_blocks attaches them to their table or picture.
+# Docling label -> block kind. Any other label with text (text, paragraph, reference, caption, ...)
+# is a paragraph. _to_blocks moves a caption into the table or picture that owns it.
 _KIND = {
     "title": "heading",
     "section_header": "heading",
@@ -57,11 +57,22 @@ def _picture_footnotes(doc, picture, scanned: frozenset[int]) -> list[Block]:
 
 def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
     """Map a docling_core DoclingDocument to blocks in reading order. Nothing in `doc` changes."""
-    # The HTML of a table already holds the footnotes it owns, so they are not blocks of their own.
-    table_footnotes = {ref.cref for table in doc.tables for ref in table.footnotes}
+    # The HTML of a table already holds the text of its cells, its footnotes and its captions, so
+    # nothing under a table is a block of its own. A picture in a cell is the exception: HTML has
+    # no image, so it keeps a block to be cropped. Form fields in a cell (the extract_form_fields
+    # option, which eco leaves off) are not in the HTML, so turning that on needs a new rule here.
+    in_table = {
+        item.self_ref
+        for table in doc.tables
+        for item, _ in doc.iterate_items(root=table)
+        if item is not table and _KIND.get(item.label) != "picture"
+    }
+    # The text of a caption that a table or picture owns goes into that block. Any other caption
+    # (one that belongs to a code block, or to nothing) is a paragraph.
+    owned_captions = {ref.cref for owner in (*doc.tables, *doc.pictures) for ref in owner.captions}
     blocks = []
     for item, _ in doc.iterate_items():  # body layer only, so page headers and footers are out
-        if item.label == "caption" or item.self_ref in table_footnotes:
+        if item.self_ref in in_table or item.self_ref in owned_captions:
             continue
         kind = _KIND.get(item.label, "paragraph")
         text = getattr(item, "text", "")  # pictures and tables have none

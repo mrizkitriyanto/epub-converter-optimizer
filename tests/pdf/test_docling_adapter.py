@@ -13,6 +13,7 @@ from docling_core.types.doc import (
     DoclingDocument,
     GroupLabel,
     ProvenanceItem,
+    RichTableCell,
     Size,
     TableCell,
     TableData,
@@ -57,7 +58,7 @@ def table_data():
 
 
 def add_caption(doc, owner, text):
-    """Docling's reading order adds a caption as a child of its table or picture."""
+    """Docling's reading order adds a caption as a child of its table, picture or code item."""
     caption = doc.add_text(DocItemLabel.CAPTION, text, parent=owner, prov=prov())
     owner.captions.append(caption.get_ref())
 
@@ -67,6 +68,25 @@ def add_footnote(doc, owner, text, **kwargs):
     kwargs.setdefault("prov", prov())
     footnote = doc.add_text(DocItemLabel.FOOTNOTE, text, parent=owner, **kwargs)
     owner.footnotes.append(footnote.get_ref())
+
+
+def add_table_with_rich_cell(doc, text):
+    """A table Docling found no grid in: its items go into a group under the table, and its one
+    cell points to that group (readingorder_model._create_rich_cell_group). Returns the group."""
+    table = doc.add_table(data=TableData(num_rows=1, num_cols=1, table_cells=[]), prov=prov())
+    name = f"rich_cell_group_{len(doc.tables)}_0_0"
+    group = doc.add_group(label=GroupLabel.UNSPECIFIED, name=name, parent=table)
+    doc.add_text(DocItemLabel.TEXT, text, parent=group, prov=prov())
+    cell = RichTableCell(
+        text="",
+        start_row_offset_idx=0,
+        end_row_offset_idx=1,
+        start_col_offset_idx=0,
+        end_col_offset_idx=1,
+        ref=group.get_ref(),
+    )
+    doc.add_table_cell(table_item=table, cell=cell)
+    return group
 
 
 def adds_text(label):
@@ -126,10 +146,29 @@ def test_document_index_is_a_table():
     assert [b.kind for b in _to_blocks(doc, frozenset())] == ["table"]
 
 
-def test_caption_without_an_owner_is_skipped():
+def test_caption_that_a_code_block_owns_is_a_paragraph_right_after_the_code():
+    # write_book renders a caption only for a block with an image, so a code block would lose it.
     doc = new_doc()
+    code = doc.add_code("print(1)", prov=prov())
+    add_caption(doc, code, "Listing 1: a call.")
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    assert _to_blocks(doc, frozenset()) == [
+        Block("code", "print(1)", page=1, bbox=BLOCK_BOX),
+        Block("paragraph", "Listing 1: a call.", page=1, bbox=BLOCK_BOX),
+        Block("paragraph", TEXT, page=1, bbox=BLOCK_BOX),
+    ]
+
+
+def test_caption_without_an_owner_is_a_paragraph_in_its_place():
+    doc = new_doc()
+    doc.add_text(DocItemLabel.TEXT, "Before.", prov=prov())
     doc.add_text(DocItemLabel.CAPTION, "Figure 9: nothing to attach to", prov=prov())
-    assert _to_blocks(doc, frozenset()) == []
+    doc.add_text(DocItemLabel.TEXT, "After.", prov=prov())
+    assert [(b.kind, b.text) for b in _to_blocks(doc, frozenset())] == [
+        ("paragraph", "Before."),
+        ("paragraph", "Figure 9: nothing to attach to"),
+        ("paragraph", "After."),
+    ]
 
 
 def test_footnote_that_a_table_owns_appears_once():
@@ -141,6 +180,34 @@ def test_footnote_that_a_table_owns_appears_once():
     assert [(b.kind, b.text) for b in blocks] == [("table", ""), ("footnote", "1 A free note.")]
     # The table's own HTML carries the footnote it owns.
     assert "".join(b.text + b.html for b in blocks).count("* a table note") == 1
+
+
+def test_text_in_a_table_cell_is_only_in_the_table_html():
+    doc = new_doc()
+    group = add_table_with_rich_cell(doc, "CELL TEXT")
+    doc.add_heading("CELL HEAD", parent=group, prov=prov())
+    add_table_with_rich_cell(doc, "OTHER TEXT")  # the rule holds for every table, not the first
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    blocks = _to_blocks(doc, frozenset())
+    assert [(b.kind, b.text) for b in blocks] == [("table", ""), ("table", ""), ("paragraph", TEXT)]
+    assert "CELL TEXT" in blocks[0].html and "CELL HEAD" in blocks[0].html
+    assert "OTHER TEXT" in blocks[1].html
+
+
+def test_picture_in_a_table_cell_is_a_picture_block_right_after_the_table():
+    # The table HTML has no image, so the picture keeps a block of its own to be cropped later.
+    doc = new_doc()
+    group = add_table_with_rich_cell(doc, "CELL TEXT")
+    doc.add_picture(parent=group, prov=prov(box=(100, 600, 200, 500)))
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    blocks = _to_blocks(doc, frozenset())
+    assert [(b.kind, b.text) for b in blocks] == [
+        ("table", ""),
+        ("picture", ""),
+        ("paragraph", TEXT),
+    ]
+    assert blocks[1].bbox == (100, 192, 200, 292)
+    assert "CELL TEXT" in blocks[0].html
 
 
 def test_footnote_that_a_picture_owns_comes_right_after_the_picture():

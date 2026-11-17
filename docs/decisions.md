@@ -135,13 +135,26 @@ error for either.
   formula's `text` empty and puts the text-layer text in `orig`, so a test on `text` alone would
   drop every formula before `materialize_regions` can crop it.
 - A `document_index` item (a contents page) is a table item with no text, so it maps to a table.
-  A caption that no table or picture owns is dropped, as the plan says.
+- A caption that a table or picture owns is not a block of its own: its text is in the table HTML
+  or in the picture's `Block.caption`. Any other caption is a `paragraph` in its place in reading
+  order (R-50). The plan dropped such captions, but spec section 5 allows no content lost without
+  a warning. A caption of a code block follows the code block as a paragraph. It does not go into
+  the code block's `Block.caption`: `write_book` renders a caption only for a block that has an
+  image, so a code block that stays text would lose it (R-51).
 - docling-core 2.107.1 ignores `add_caption` in `TableItem.export_to_html(doc)`. The call stays as
   the plan has it, so the table HTML holds the caption as `<caption>` and its footnotes after
   `</table>`. That is how a table caption reaches the book, because `write_book` renders
-  `Block.caption` only for images. A footnote that a table owns (it is in the table's `footnotes`)
-  is therefore not a block of its own (R-48), or its text would appear twice. Free footnotes and
-  footnotes owned by code stay `footnote` blocks.
+  `Block.caption` only for images. The HTML also holds the items of a rich cell (an item group
+  that a cell points to; Docling makes one for a table it finds no grid in and for a cell that
+  holds a picture). So no item under a table is a block of its own (R-52), or its text would be in
+  the book twice. R-48 skipped only the footnotes. A picture in a cell is the exception, because
+  the HTML has no image: it stays a `picture` block and follows the table. Docling leaves a
+  picture that owns a caption or a footnote out of the cells (`_match_table_pictures`), so such a
+  picture has nothing to repeat. Free footnotes and footnotes owned by code stay `footnote`
+  blocks.
+- Field items under a table exist only with the Docling option `extract_form_fields`, which eco
+  leaves off. They are skipped with the rest, but the table HTML does not carry them: for a field
+  region it writes an HTML comment. Turning that option on needs a new decision.
 - `iterate_items` goes into a picture only for its captions, so it never yields a footnote the
   picture owns. `_to_blocks` adds each one as a `footnote` block right after the picture, with the
   page and box of its own provenance or, without one, the picture's (R-49; spec section 5 allows no
