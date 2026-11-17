@@ -416,3 +416,19 @@ error for either.
   For `0.0.0.0` and `::` the browser opens at `127.0.0.1` or `[::1]`, which a browser can reach;
   it opens after 1 s so the server already listens, and not at all if the server stopped first.
 - FastAPI's `/docs`, `/redoc` and `/openapi.json` are off: their pages load scripts from a CDN.
+
+## 2026-11-18: One server per data folder; no framing (M2-R12, M2-R13)
+
+- uvicorn runs the app's startup before it binds the port, so a second `eco web` on the same data
+  folder used to run `purge()` and `runner.start()` before it failed, and settled the first
+  server's running job as stopped. Now `server_lock(data)` holds an OS lock on
+  `<data>/jobs/server.lock` (msvcrt on Windows, flock elsewhere; it ends with the process, so a
+  crash leaves no stale lock). The app's lifespan holds it around purge, start and the whole run;
+  `eco web` tries it first, so a second server prints `error: Another eco web is already using
+  <data>` and exits 1 before it starts. Two `eco web` started at the same instant: the loser
+  passes the first try and its lifespan fails (uvicorn's startup error, exit 3), still before it
+  touches a job. Only a held lock gives that message; any other lock error is shown as it is.
+  If it turns out wrong: a file system without locks (some network shares) stops `eco web` with
+  the OS's error.
+- Every response also carries `X-Frame-Options: DENY`, so no other site can frame the app. The
+  plan's CSP string stays exactly as it is.

@@ -201,11 +201,15 @@ def _web(args: argparse.Namespace) -> int:
     import uvicorn
 
     from eco.web.app import create_app  # imported late: FastAPI is for this command only
+    from eco.web.jobs import server_lock
 
+    data = resolve_data_dir(args.data)
+    with server_lock(data):  # a second eco web on these jobs stops here, with one error line
+        pass  # the app holds the lock while it runs
     token = args.token or os.environ.get("ECO_TOKEN") or None
     if token is None and args.host not in _LOOPBACK:
         token = secrets.token_urlsafe(24)
-    app = create_app(resolve_data_dir(args.data), token=token, max_upload_mb=args.max_upload_mb)
+    app = create_app(data, token=token, max_upload_mb=args.max_upload_mb)
     host = f"[{args.host}]" if ":" in args.host else args.host
     query = f"?token={quote(token, safe='')}" if token else ""
     print(f"Open: http://{host}:{args.port}/{query}", flush=True)

@@ -8,11 +8,13 @@ import threading
 from urllib.parse import quote
 
 import pytest
+from fakes import endless_work, wait_for
 from fastapi.testclient import TestClient
 
 from eco import cli
 from eco.cli import main
 from eco.options import Options
+from eco.web import jobs
 from eco.web.app import CSP, create_app
 from eco.web.jobs import JobStore, Runner
 from eco.web.strings import STRINGS
@@ -24,6 +26,7 @@ SECURE = {
     ),
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY",
 }
 DENIED = {"error": "Missing or invalid token"}
 
@@ -339,6 +342,49 @@ def test_startup_purges_before_the_runner_starts_and_shutdown_stops_it(
     assert calls == ["purge", "start", "stop"]
 
 
+def record_calls(monkeypatch):
+    """The names of the JobStore.purge, Runner.start and Runner.stop calls from now on."""
+    calls = []
+    for cls, name in ((JobStore, "purge"), (Runner, "start"), (Runner, "stop")):
+        original = getattr(cls, name)
+
+        def record(self, *a, _name=name, _original=original, **k):
+            calls.append(_name)
+            return _original(self, *a, **k)
+
+        monkeypatch.setattr(cls, name, record)
+    return calls
+
+
+def test_second_server_on_the_same_data_stops_before_it_touches_a_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "_work", endless_work)
+    first = create_app(tmp_path, token=None)
+    with TestClient(first, base_url=LOCAL):
+        store = first.state.store
+        job = store.create([("a.md", io.BytesIO(b"# A"))], Options())
+        first.state.runner.submit(job.id)
+        wait_for(lambda: store.events(job.id), 10)  # its worker runs
+        calls = record_calls(monkeypatch)
+        try:
+            with TestClient(create_app(tmp_path, token=None), base_url=LOCAL):
+                refused = None
+        except RuntimeError as e:
+            refused = str(e)
+        # the first server's job goes on as if nothing happened
+        assert store.get(job.id).status == "running"
+        assert store.events(job.id) == [{"type": "file", "index": 0, "status": "started"}]
+        assert calls == []
+        assert refused == f"Another eco web is already using {tmp_path}"
+
+
+def test_servers_on_other_data_folders_and_one_after_another_run(tmp_path):
+    a, b = create_app(tmp_path / "a", token=None), create_app(tmp_path / "b", token=None)
+    with TestClient(a, base_url=LOCAL) as ca, TestClient(b, base_url=LOCAL) as cb:
+        assert (ca.get("/").status_code, cb.get("/").status_code) == (200, 200)
+    with TestClient(create_app(tmp_path / "a", token=None), base_url=LOCAL) as again:
+        assert again.get("/").status_code == 200
+
+
 def test_app_keeps_its_store_runner_and_upload_limit(tmp_path):
     app = create_app(tmp_path, token=None, max_upload_mb=7)
     assert app.state.store.root == tmp_path / "jobs"
@@ -434,6 +480,29 @@ def test_web_ipv6_any_address_is_bracketed_and_needs_a_token(served, capsys, tmp
     [line] = open_line(capsys.readouterr().out)
     assert line.startswith("Open: http://[::]:8000/?token=")
     assert served["run"][1]["host"] == "::"
+
+
+def test_second_eco_web_on_the_same_data_stops_with_one_line(capsys, monkeypatch, tmp_path):
+    ran = []
+
+    def run(app, **kwargs):  # as uvicorn: the app's lifespan runs
+        ran.append(app)
+        with TestClient(app):
+            pass
+
+    monkeypatch.setattr("uvicorn.run", run)
+    with TestClient(create_app(tmp_path, token=None), base_url=LOCAL):
+        calls = record_calls(monkeypatch)
+        code = main(["web", "--port", "8001", "--no-browser", "--data", str(tmp_path)])
+        assert (code, ran, calls) == (1, [], [])
+    out, err = capsys.readouterr()
+    assert (out, err) == ("", f"error: Another eco web is already using {tmp_path}\n")
+
+
+def test_eco_web_on_another_data_folder_runs(served, capsys, tmp_path):
+    with TestClient(create_app(tmp_path / "a", token=None), base_url=LOCAL):
+        assert main(["web", "--no-browser", "--data", str(tmp_path / "b")]) == 0
+    assert served["run"] is not None
 
 
 def test_web_passes_the_data_folder_and_upload_limit(served, tmp_path):

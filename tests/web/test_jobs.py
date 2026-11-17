@@ -5,10 +5,10 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from fakes import crashing_work, stubborn_work, wait_for
+from fakes import crashing_work, hold_server_lock, stubborn_work, wait_for
 
 from eco.options import Options
-from eco.web.jobs import STOPPED, JobStore, Runner, safe_name
+from eco.web.jobs import STOPPED, JobStore, Runner, safe_name, server_lock
 
 
 def md(name="a.md", text=b"# A\n\nText.\n"):
@@ -363,3 +363,36 @@ def test_new_server_settles_the_jobs_an_old_one_left(tmp_path, started, fake_wor
     assert store.events(was_running.id)[-1] == {"type": "end", "status": "done"}
     # a job that never started keeps its place and runs
     wait_for(lambda: store.get(was_queued.id).status == "done", 10)
+
+
+def test_server_lock_is_held_once_per_data_folder(tmp_path):
+    with server_lock(tmp_path):
+        with pytest.raises(RuntimeError) as busy, server_lock(tmp_path):
+            pass
+        assert str(busy.value) == f"Another eco web is already using {tmp_path}"
+        with server_lock(tmp_path / "other"):  # another data folder is free
+            pass
+    with server_lock(tmp_path):  # free again once released
+        pass
+
+
+def free(data_dir) -> bool:
+    try:
+        with server_lock(data_dir):
+            return True
+    except RuntimeError:
+        return False
+
+
+def test_server_lock_of_a_killed_process_is_free(tmp_path):
+    ctx = multiprocessing.get_context("spawn")
+    held = ctx.Event()
+    proc = ctx.Process(target=hold_server_lock, args=(str(tmp_path), held), daemon=True)
+    proc.start()
+    try:
+        assert held.wait(30)
+        assert not free(tmp_path)  # another process holds it
+    finally:
+        proc.kill()  # as a crash: the lock is never released by the process itself
+        proc.join(10)
+    wait_for(lambda: free(tmp_path), 10)

@@ -29,13 +29,19 @@ import tempfile
 import threading
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import BinaryIO
 
 from eco.events import PageEvent, StageEvent
 from eco.options import Options
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 RETENTION_DAYS = 7
 KINDS = {".pdf": "pdf", ".md": "md", ".epub": "epub"}
@@ -95,6 +101,33 @@ def _file(name: str, path: Path) -> JobFile:
 def _status(info: JobInfo) -> str:
     """How a job ends when it was not cancelled: done if any file converted."""
     return "done" if any(f.outputs for f in info.files) else "failed"
+
+
+@contextmanager
+def server_lock(data_dir: Path) -> Iterator[None]:
+    """Hold `<data>/jobs/server.lock` while a server uses the jobs of `data_dir`, so a second
+    server stops before it touches a job: RuntimeError `Another eco web is already using <data>`.
+
+    The lock is the OS's (msvcrt on Windows, flock elsewhere) on a file that is never written, so
+    it ends with the process and a crash leaves no stale lock. A second hold fails even in the
+    same process, and a worker process does not inherit it (Python's files are not inheritable).
+    """
+    path = Path(data_dir) / "jobs" / "server.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as f:
+        f.seek(0)  # msvcrt locks from the file position
+        try:
+            if os.name == "nt":
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, PermissionError):  # held: EWOULDBLOCK, or EACCES on Windows
+            raise RuntimeError(f"Another eco web is already using {data_dir}") from None
+        try:
+            yield
+        finally:
+            if os.name == "nt":  # at once; Windows releases a closed file's lock in its own time
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 class JobStore:

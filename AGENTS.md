@@ -68,7 +68,7 @@ src/eco/pdf/code.py          reextract_code(), fix_code_blocks()
 src/eco/pdf/regions.py       materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
-src/eco/web/jobs.py          JobStore, Runner, JobInfo, JobFile, safe_name(), RETENTION_DAYS, _work() (worker process)
+src/eco/web/jobs.py          JobStore, Runner, JobInfo, JobFile, safe_name(), server_lock(), RETENTION_DAYS, _work() (worker process)
 src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP
 src/eco/web/strings.py       STRINGS: every English text of the GUI
 src/eco/web/templates/index.html  src/eco/web/static/app.css

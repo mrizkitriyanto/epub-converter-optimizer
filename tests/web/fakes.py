@@ -47,6 +47,13 @@ def fake_work(job_dir, options, data_dir, q) -> None:
     q.put({"type": "end", "status": "done"})
 
 
+def endless_work(job_dir, options, data_dir, q) -> None:
+    """Starts its first file and never ends by itself; SIGTERM ends it."""
+    q.put({"type": "file", "index": 0, "status": "started"})
+    while True:
+        time.sleep(0.1)
+
+
 def stubborn_work(job_dir, options, data_dir, q) -> None:
     """Ignores SIGTERM (Windows has no way to ignore TerminateProcess) and never ends by itself."""
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -61,3 +68,13 @@ def crashing_work(job_dir, options, data_dir, q) -> None:
     q.close()
     q.join_thread()  # the event reaches the runner before the process dies
     os._exit(3)
+
+
+def hold_server_lock(data_dir, held) -> None:
+    """Holds the server lock of `data_dir` until the process is killed."""
+    from eco.web.jobs import server_lock
+
+    with server_lock(data_dir):
+        held.set()
+        while True:
+            time.sleep(0.1)

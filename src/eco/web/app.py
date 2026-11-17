@@ -10,7 +10,8 @@ Every request passes `_Guard` before any route sees it, and every response leave
   in the `eco_token` cookie, else 401. `GET /?token=<token>` sets the cookie and redirects to
   `/`, so the token leaves the address bar.
 - Both modes refuse a POST, PUT, PATCH or DELETE whose `Origin` is another site's: 403.
-- Every response, refusals and errors included, carries CSP, nosniff and no-referrer.
+- Every response, refusals and errors included, carries CSP, nosniff, no-referrer and
+  `X-Frame-Options: DENY` (no other site can frame the app).
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from eco.web.jobs import JobStore, Runner
+from eco.web.jobs import JobStore, Runner, server_lock
 from eco.web.strings import STRINGS
 
 HERE = Path(__file__).parent
@@ -35,6 +36,7 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
 }
 COOKIE = "eco_token"
 _LOOPBACK_NAMES = ("127.0.0.1", "localhost", "[::1]")
@@ -127,18 +129,20 @@ class _App(FastAPI):
 
 def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -> FastAPI:
     """The app on the jobs of `data_dir`. With a token it is in network mode, else in local mode
-    (an empty token is none). The runner starts and stops with the app."""
+    (an empty token is none). While it runs, it holds the data folder's `server_lock` and runs
+    the job runner."""
     store = JobStore(data_dir)
     runner = Runner(store, data_dir)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        store.purge()  # before start(), which would queue again the expired jobs left queued
-        runner.start()
-        try:
-            yield
-        finally:
-            runner.stop()
+        with server_lock(data_dir):  # first: a second server on these jobs stops here
+            store.purge()  # before start(), which would queue again the expired jobs left queued
+            runner.start()
+            try:
+                yield
+            finally:
+                runner.stop()
 
     # no /docs, /redoc or /openapi.json: their pages load scripts from a CDN
     app = _App(token or None, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
