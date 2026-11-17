@@ -94,3 +94,15 @@ error for either.
 - When `reextract_code` finds no chars on a page that is not scanned, `fix_code_blocks` keeps
   Docling's text and records a `code_not_restored` warning (spec section 8.4, item 2). Same text
   as before records nothing.
+
+## 2026-11-17: Region crops: colour, format by content, picture pages
+
+- Formulas are cropped in grey. Pictures, table twins and page images are cropped in colour,
+  because spec section 8.8 keeps colour on `general`; the optimizer greys them for Xteink.
+- Picture crops and page images are saved as PNG when `_is_line_art` says so, and as baseline JPEG
+  at quality 92 otherwise. Formulas and table twins are always PNG. The optimizer keeps PNG
+  sources as PNG on `general`, so a photo saved as PNG would ship at about 10x its JPEG size.
+- A page becomes one page image (alt "Page <n>", `page_as_image` info finding) when its picture
+  blocks, clipped to the page, cover more than 80% of the page area and the page has fewer than
+  200 chars. The area comes from Docling's picture blocks, not `PageInfo.image_ratio`, so vector
+  diagrams count and OCR'd text scans do not.

@@ -136,6 +136,29 @@ def scanned_pdf(directory: Path) -> tuple[Path, str]:
     return path, text
 
 
+def tall_pdf(directory: Path) -> Path:
+    source = "#set page(width: 400pt, height: 2400pt, margin: 20pt)\n" + SERIF + "#lorem(900)\n"
+    return _write(directory, "tall.pdf", _compile(source))
+
+
+def photo_pdf(directory: Path) -> tuple[Path, Bbox]:
+    """A full-page noise picture with no text layer. The bbox lies inside it."""
+    rng = random.Random(5)
+    noise = Image.frombytes("RGB", (153, 198), rng.randbytes(153 * 198 * 3))
+    path = directory / "photo.pdf"
+    noise.resize((612, 792), Image.Resampling.BICUBIC).save(path, resolution=72)
+    return path, (100.0, 100.0, 300.0, 250.0)
+
+
+def shapes_pdf(directory: Path) -> tuple[Path, Bbox]:
+    """Two flat-colour rectangles at whole points, so a crop has only a few colours."""
+    source = PAGE + "".join(
+        f'#place(top + left, dx: {x}pt, dy: {y}pt, rect(width: 100pt, height: 60pt, fill: rgb("{c}")))\n'
+        for x, y, c in ((100, 100, "#ff0000"), (220, 100, "#0000ff"))
+    )
+    return _write(directory, "shapes.pdf", _compile(source)), (100.0, 100.0, 320.0, 160.0)
+
+
 def build_all(directory: Path) -> dict:
     return {
         "two_column": two_column_pdf(directory),
@@ -144,6 +167,9 @@ def build_all(directory: Path) -> dict:
         "blank": blank_middle_pdf(directory),
         "hyphen": hyphen_pdf(directory),
         "scanned": scanned_pdf(directory),
+        "tall": tall_pdf(directory),
+        "photo": photo_pdf(directory),
+        "shapes": shapes_pdf(directory),
     }
 
 
