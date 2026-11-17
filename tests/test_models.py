@@ -3,6 +3,7 @@ import os
 import socket
 import subprocess
 import sys
+from pathlib import PureWindowsPath
 
 import httpx
 import pytest
@@ -16,7 +17,13 @@ from huggingface_hub.errors import (
 
 from eco import models
 from eco.cli import main
-from eco.models import download_models, models_ready, offline_env, unsafe_files
+from eco.models import _model_name, download_models, models_ready, offline_env, unsafe_files
+
+
+def test_model_names_in_messages_use_forward_slashes():
+    # A Windows path must give the same name as on Linux and macOS (ruling R-61).
+    path = PureWindowsPath("C:/data/models/RapidOcr/onnx/det.onnx")
+    assert _model_name(path, PureWindowsPath("C:/data/models")) == "RapidOcr/onnx/det.onnx"
 
 
 def test_retry_then_success(tmp_path, monkeypatch):

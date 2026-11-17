@@ -145,14 +145,20 @@ def _docling_download(*, output_dir: Path) -> None:
     # exists, so every file is checked here and the bad ones are deleted for the retry to fetch.
     bad = []
     for path, expected in _rapidocr_expected(ocr_dir).items():
-        name = path.relative_to(output_dir)
+        name = _model_name(path, output_dir)
         if expected is None:
             raise RuntimeError(f"rapidocr's registry has no SHA-256 for {name}; refusing it")
         if not path.is_file() or _sha256(path) != expected:
             path.unlink(missing_ok=True)
-            bad.append(str(name))
+            bad.append(name)
     if bad:
         raise ChecksumMismatch(f"SHA-256 does not match rapidocr's registry: {', '.join(bad)}")
+
+
+def _model_name(path: Path, models_dir: Path) -> str:
+    """How messages name a model file: its path under the models folder, with forward slashes
+    on every OS."""
+    return path.relative_to(models_dir).as_posix()
 
 
 def _sha256(path: Path) -> str:
@@ -248,6 +254,6 @@ def download_models(d: Path, *, ipv4: bool = False, attempts: int = 8, sleep=tim
                 sleep(wait)
     bad = unsafe_files(d)
     if bad:
-        names = ", ".join(str(p.relative_to(d)) for p in bad)
+        names = ", ".join(_model_name(p, d) for p in bad)
         raise RuntimeError(f"Refused model files that are not in a data format: {names}")
     (d / MARKER).write_text(version("docling"))
