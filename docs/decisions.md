@@ -140,9 +140,12 @@ error for either.
   the plan has it, so the table HTML holds the caption as `<caption>` and its footnotes after
   `</table>`. That is how a table caption reaches the book, because `write_book` renders
   `Block.caption` only for images. A footnote that a table owns (it is in the table's `footnotes`)
-  is therefore not a block of its own (R-48), or its text would appear twice. Only tables do
-  this: free footnotes and footnotes owned by code stay `footnote` blocks. docling-core does not
-  yield a footnote that is a child of a picture at all, so those are lost.
+  is therefore not a block of its own (R-48), or its text would appear twice. Free footnotes and
+  footnotes owned by code stay `footnote` blocks.
+- `iterate_items` goes into a picture only for its captions, so it never yields a footnote the
+  picture owns. `_to_blocks` adds each one as a `footnote` block right after the picture, with the
+  page and box of its own provenance or, without one, the picture's (R-49; spec section 5 allows no
+  content lost without a warning). Text inside a figure stays out.
 - `on_page` is called only for pages Docling finished without error (R-47). Task 17 compares the
   pages it asked for with the pages reported and warns about each missing one (`page_failed`).
   Docling catches and logs any exception a progress callback raises (`ProgressReporter._emit`),

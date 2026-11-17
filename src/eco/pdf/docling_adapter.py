@@ -34,6 +34,27 @@ _KIND = {
 }
 
 
+def _position(doc, item):
+    """The page and top-left bbox of an item's first provenance. Page 0 and no bbox without one."""
+    if not item.prov:
+        return 0, None
+    prov = item.prov[0]
+    box = prov.bbox.to_top_left_origin(doc.pages[prov.page_no].size.height)
+    return prov.page_no, (box.l, box.t, box.r, box.b)
+
+
+def _picture_footnotes(doc, picture, scanned: frozenset[int]) -> list[Block]:
+    """The footnotes a picture owns, as blocks. iterate_items goes into a picture only for its
+    captions, so it never yields them. A footnote without a place of its own takes the picture's."""
+    blocks = []
+    for ref in picture.footnotes:
+        note = ref.resolve(doc)
+        if note.text.strip():
+            page, bbox = _position(doc, note if note.prov else picture)
+            blocks.append(Block("footnote", note.text, page=page, bbox=bbox, ocr=page in scanned))
+    return blocks
+
+
 def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
     """Map a docling_core DoclingDocument to blocks in reading order. Nothing in `doc` changes."""
     # The HTML of a table already holds the footnotes it owns, so they are not blocks of their own.
@@ -48,11 +69,7 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
         # picture or table is cropped from the page later, so those three are kept without text.
         if not text.strip() and kind not in ("formula", "picture", "table"):
             continue
-        page, bbox = 0, None
-        if item.prov:
-            page = item.prov[0].page_no
-            box = item.prov[0].bbox.to_top_left_origin(doc.pages[page].size.height)
-            bbox = (box.l, box.t, box.r, box.b)
+        page, bbox = _position(doc, item)
         level = 0
         if kind == "heading":
             level = 1 if item.label == "title" else item.level
@@ -68,6 +85,8 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
                 ocr=page in scanned,
             )
         )
+        if kind == "picture":
+            blocks.extend(_picture_footnotes(doc, item, scanned))
     return blocks
 
 

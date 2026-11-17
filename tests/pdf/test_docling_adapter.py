@@ -62,9 +62,10 @@ def add_caption(doc, owner, text):
     owner.captions.append(caption.get_ref())
 
 
-def add_footnote(doc, owner, text):
-    """Docling's reading order adds a footnote as a child of its table, like a caption."""
-    footnote = doc.add_text(DocItemLabel.FOOTNOTE, text, parent=owner, prov=prov())
+def add_footnote(doc, owner, text, **kwargs):
+    """Docling's reading order adds a footnote as a child of its table or picture."""
+    kwargs.setdefault("prov", prov())
+    footnote = doc.add_text(DocItemLabel.FOOTNOTE, text, parent=owner, **kwargs)
     owner.footnotes.append(footnote.get_ref())
 
 
@@ -142,17 +143,38 @@ def test_footnote_that_a_table_owns_appears_once():
     assert "".join(b.text + b.html for b in blocks).count("* a table note") == 1
 
 
-def test_footnote_that_a_picture_owns_stays_a_block():
-    # docling-core yields only a picture's captions, so a footnote that is a child of a picture
-    # never reaches us. One beside the picture does, and only tables swallow their footnotes.
+def test_footnote_that_a_picture_owns_comes_right_after_the_picture():
+    # iterate_items goes into a picture only for its captions, so it never yields this footnote.
     doc = new_doc()
     picture = doc.add_picture(prov=prov())
-    footnote = doc.add_text(DocItemLabel.FOOTNOTE, "A figure note.", prov=prov())
-    picture.footnotes.append(footnote.get_ref())
-    assert [(b.kind, b.text) for b in _to_blocks(doc, frozenset())] == [
+    add_footnote(doc, picture, "A figure note.")
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    blocks = _to_blocks(doc, frozenset())
+    assert [(b.kind, b.text) for b in blocks] == [
         ("picture", ""),
         ("footnote", "A figure note."),
+        ("paragraph", TEXT),
     ]
+
+
+def test_picture_footnote_has_its_own_page_and_box_or_the_pictures():
+    doc = new_doc()
+    doc.add_page(page_no=2, size=Size(width=500, height=700))
+    picture = doc.add_picture(prov=prov())
+    add_footnote(doc, picture, "Own place.", prov=prov(page=2, box=(10, 690, 110, 600)))
+    add_footnote(doc, picture, "Picture's place.", prov=None)
+    blocks = _to_blocks(doc, frozenset({2}))
+    assert [b.text for b in blocks] == ["", "Own place.", "Picture's place."]
+    _, own, borrowed = blocks
+    assert (own.page, own.bbox, own.ocr) == (2, (10, 10, 110, 100), True)
+    assert (borrowed.page, borrowed.bbox, borrowed.ocr) == (1, BLOCK_BOX, False)
+
+
+def test_picture_footnote_without_text_is_skipped():
+    doc = new_doc()
+    picture = doc.add_picture(prov=prov())
+    add_footnote(doc, picture, "")
+    assert [b.kind for b in _to_blocks(doc, frozenset())] == ["picture"]
 
 
 def test_empty_text_is_skipped_except_for_formulas_pictures_and_tables():
