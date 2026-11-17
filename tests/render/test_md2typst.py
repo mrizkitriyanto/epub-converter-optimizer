@@ -139,6 +139,28 @@ def test_chapter_marker_reports_the_first_page_of_the_chapter(tmp_path):
     assert [m["page"] for m in marks] == [2, 3]
 
 
+def test_page_marker_before_a_chapter_heading_follows_the_chapter_break(tmp_path):
+    main, files = convert(
+        tmp_path, "<!-- page: 1 -->\n\n# One\n\ntext\n\n<!-- page: 2 -->\n\n# Two\n"
+    )
+    assert main.count("#pagebreak(weak: true)\n#context [#metadata((title:") == 2
+    assert '"Two", page: here().page())) <chap>]\n#context [#metadata((src: 2,' in main
+    marks = query(files, "<srcpage>", "value")
+    assert [(m["src"], m["page"]) for m in marks] == [(1, 1), (2, 2)]
+
+
+def test_marker_before_a_nested_heading_stays_where_it_is(tmp_path):
+    main, _ = convert(tmp_path, "<!-- page: 2 -->\n\n> # Quoted\n")
+    assert main.index("(src: 2,") < main.index("Quoted")
+    assert main.count("<chap>]") == 0
+
+
+def test_long_raw_lines_wrap_inside_the_page(tmp_path):
+    main, files = convert(tmp_path, "# C\n\n```\n" + "x" * 160 + "\n```\n")
+    assert "sym.zws" in main
+    assert compiles(files) == 1
+
+
 def test_marker_title_is_a_safe_string(tmp_path):
     main, files = convert(tmp_path, '# Say "hi" \\ *bold* `code`\n')
     assert '(title: "Say \\"hi\\" \\\\ bold code"' in main

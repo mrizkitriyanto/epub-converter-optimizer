@@ -41,6 +41,8 @@ _FORMAT_SUFFIX = {"PNG": ".png", "JPEG": ".jpg", "MPO": ".jpg", "GIF": ".gif", "
 _SVG_ROOT = "{http://www.w3.org/2000/svg}svg"
 _GLYPH_EM = 0.55  # average glyph width, to guess how many lines a caption takes
 _FIGURE_GAP_EM = 0.65  # Typst's default gap between a figure and its caption
+_MONO_EM = 0.602  # glyph advance of DejaVu Sans Mono
+_RAW_EM = 0.62  # code is set at this share of the body size
 _MIN_IMAGE_SHARE = 0.25  # an image keeps at least this share of the body height
 
 # Typst markup characters, plus "~" (non-breaking space), "/" (term lists, comments) and the
@@ -195,6 +197,7 @@ class _Converter:
         self.files: dict[str, bytes | Path] = {}
         self._found: dict[Path, tuple[str, tuple[int, int] | None] | None] = {}  # None: left out
         self._twin = ""
+        self._lead: list[str] = []  # page markers that wait for the chapter heading after them
         self._env: dict = {}
 
     def convert(self) -> str:
@@ -229,8 +232,20 @@ class _Converter:
             "hyphenate: true)\n"
             f"#set par(justify: true, leading: {round(s.line_height - 1, 3)}em)\n"
             '#show raw: set text(font: "DejaVu Sans Mono", size: 0.62em)\n'
+            f"{self._raw_wrap()}\n"
             "#show heading.where(level: 1): it => { pagebreak(weak: true); it }\n"
             "#show figure.caption: it => it.body\n"
+        )
+
+    def _raw_wrap(self) -> str:
+        """A raw line that is wider than the page runs past the edge. Zero-width spaces between the
+        characters of any run of `fit` characters or more let it wrap at the page edge."""
+        width = self._page_size()[0] - 2 * self.settings.margin
+        fit = max(8, int(width / (_MONO_EM * _RAW_EM * self.settings.font_size)))
+        return (
+            "#show raw: it => {\n"
+            f'  show regex("[^ ]{{{fit},}}"): m => m.text.clusters().join(sym.zws)\n'
+            "  it\n}"
         )
 
     # Blocks
@@ -242,9 +257,11 @@ class _Converter:
             if token.type == "html_block":
                 comment = token.content.strip()
                 if m := _PAGE.fullmatch(comment):
-                    out.append(
-                        f"#context [#metadata((src: {m[1]}, page: here().page())) <srcpage>]"
-                    )
+                    marker = f"#context [#metadata((src: {m[1]}, page: here().page())) <srcpage>]"
+                    # A marker right before a chapter heading goes after the chapter's page break,
+                    # so it lands on the chapter's first page and not on the last page before it.
+                    waits = not nested and self._chapter_follows(tokens, i)
+                    (self._lead if waits else out).append(marker)
                     i += 1
                     continue
                 if m := _TWIN.fullmatch(comment):
@@ -262,6 +279,15 @@ class _Converter:
             if text:
                 out.append(text)
         return out
+
+    @staticmethod
+    def _chapter_follows(tokens: list[Token], i: int) -> bool:
+        """True when only page markers separate token `i` from a level-1 heading."""
+        for token in tokens[i + 1 :]:
+            if token.type == "html_block" and _PAGE.fullmatch(token.content.strip()):
+                continue
+            return token.type == "heading_open" and token.tag == "h1"
+        return False
 
     def _leaf(self, token: Token) -> str:
         if token.type in ("fence", "code_block"):
@@ -298,9 +324,11 @@ class _Converter:
         if level > 1:
             return text
         title = _str(_plain(inline) or self.title)
-        marker = f'#context [#metadata((title: "{title}", page: here().page())) <chap>]'
-        # The break is explicit so the marker lands on the chapter's own first page.
-        return f"#pagebreak(weak: true)\n{marker}\n{text}"
+        markers = [f'#context [#metadata((title: "{title}", page: here().page())) <chap>]']
+        markers += self._lead
+        self._lead = []
+        # The break is explicit so the markers land on the chapter's own first page.
+        return "#pagebreak(weak: true)\n" + "\n".join(markers) + f"\n{text}"
 
     def _list(self, token: Token, inner: list[Token]) -> str:
         number = int(token.attrGet("start") or 1) if token.type == "ordered_list_open" else None
