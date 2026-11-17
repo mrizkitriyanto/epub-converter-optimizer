@@ -36,6 +36,8 @@ _STOCK_BOX = "#rect(width: 100%, stroke: 1pt + gray)[Image not shown on stock fi
 _TWIN_MIN_COLUMNS = 5  # Xteink tables wider than 4 columns use their image twin
 # What a damaged image can raise while PIL reads it. One bad image must not fail the render.
 _BAD_IMAGE = (OSError, SyntaxError, ValueError, Image.DecompressionBombError)
+_FORMAT_SUFFIX = {"PNG": ".png", "JPEG": ".jpg", "GIF": ".gif", "WEBP": ".webp"}  # what Typst reads
+_SVG_ROOT = "{http://www.w3.org/2000/svg}svg"
 _GLYPH_EM = 0.55  # average glyph width, to guess how many lines a caption takes
 _FIGURE_GAP_EM = 0.65  # Typst's default gap between a figure and its caption
 _MIN_IMAGE_SHARE = 0.25  # an image keeps at least this share of the body height
@@ -439,27 +441,48 @@ class _Converter:
     def _load(self, path: Path) -> tuple[str, tuple[int, int] | None] | None:
         key = path.relative_to(self.base).as_posix()
         if self.profile is None:
-            if path.suffix.lower() == ".svg":
-                ET.parse(path)  # Typst refuses a broken SVG for the whole page
-                size = None
-            else:
-                with Image.open(path) as im:
-                    im.load()  # Typst refuses a truncated or corrupt image for the whole page
-                    size = im.size
-            self.files[key] = path
-            return key, size
+            return self._load_as_is(path, key)
         result = transform_image(path.read_bytes(), self.profile)
         if result is None:
             return None
-        stem = Path(key).with_suffix("").as_posix()
-        key, n = f"{stem}.{result.ext}", 1
-        while key in self.files:
-            n += 1
-            key = f"{stem}-{n}.{result.ext}"
+        key = self._unique(key, result.ext)
         with Image.open(BytesIO(result.data)) as im:
             size = im.size
         self.files[key] = result.data
         return key, size
+
+    def _load_as_is(self, path: Path, key: str) -> tuple[str, tuple[int, int] | None] | None:
+        """Check an image that is passed on unchanged. Typst picks the decoder from the extension
+        and refuses the whole page for a file it cannot read, so the name must match the format."""
+        suffix = path.suffix.lower()
+        if suffix == ".svg":
+            root = ET.parse(path).getroot()
+            if root.tag not in ("svg", _SVG_ROOT):
+                return None
+            key = self._unique(key, "svg")
+            self.files[key] = path
+            return key, None
+        with Image.open(path) as im:
+            im.load()
+            size, ext = im.size, _FORMAT_SUFFIX.get(im.format or "")
+        if ext is None:
+            return None
+        if ext == suffix or (ext == ".jpg" and suffix == ".jpeg"):
+            key = self._unique(key, suffix[1:])  # a renamed file may have taken the name
+            self.files[key] = path
+            return key, size
+        key = self._unique(key, ext[1:])  # for example a JPEG saved as .png
+        self.files[key] = path.read_bytes()
+        return key, size
+
+    def _unique(self, key: str, ext: str) -> str:
+        """`key` with its extension replaced by `ext`, made unique among the files."""
+        stem = Path(key).with_suffix("").as_posix()
+        name, n = f"{stem}.{ext}", 1
+        while name in self.files:
+            n += 1
+            name = f"{stem}-{n}.{ext}"
+        return name
 
     def _html(self, markup: str) -> str:
         html = _Html(markup)

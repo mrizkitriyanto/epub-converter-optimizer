@@ -588,3 +588,56 @@ def test_unreadable_table_twin_falls_back_to_the_table(tmp_path):
     main, files = convert(tmp_path, f"<!-- table-image: t.png -->\n<table>{table}</table>\n")
     assert "#table(\n  columns: 6," in main and "image(" not in main
     assert compiles(files) == 1
+
+
+# Fix round 2
+
+SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="9" height="9"/></svg>'
+
+
+def test_image_whose_suffix_does_not_match_its_format_is_renamed(tmp_path):
+    Image.new("RGB", (60, 40), "red").save(tmp_path / "photo.png", "JPEG")  # a JPEG named .png
+    Image.new("L", (30, 20), 120).save(tmp_path / "plain.png")
+    Image.new("L", (30, 20), 120).save(tmp_path / "shot.jpeg", "PNG")  # a PNG named .jpeg
+    Image.new("L", (30, 20), 90).save(tmp_path / "photo.jpg", "JPEG")  # the name a rename wants
+    main, files = convert(
+        tmp_path, "![](photo.png)\n\n![](plain.png)\n\n![](shot.jpeg)\n\n![](photo.jpg)\n"
+    )
+    # The JPEG named .png is met first and takes photo.jpg; the real photo.jpg then gets -2.
+    assert 'image("photo.jpg", width: 60pt' in main
+    assert 'image("photo-2.jpg", width: 30pt' in main
+    assert 'image("shot.png", width: 30pt' in main and 'image("plain.png"' in main
+    assert files["photo.jpg"] == (tmp_path / "photo.png").read_bytes()
+    assert files["photo-2.jpg"].resolve() == (tmp_path / "photo.jpg").resolve()
+    assert isinstance(files["plain.png"], Path)  # matching files are still passed as they are
+    assert compiles(files) == 1
+
+
+def test_jpeg_named_png_keeps_its_good_neighbours(tmp_path):
+    Image.new("RGB", (60, 40), "red").save(tmp_path / "photo.png", "JPEG")
+    Image.new("L", (30, 20), 120).save(tmp_path / "ok.png")
+    main, files = convert(tmp_path, "![](photo.png)\n\n![](ok.png)\n\nafter\n")
+    assert main.count("#figure(") == 2 and "after" in main
+    assert compiles(files) == 1
+
+
+def test_svg_with_a_foreign_root_is_left_out_and_real_svgs_stay(tmp_path):
+    (tmp_path / "page.svg").write_text("<html/>")
+    (tmp_path / "other.svg").write_text('<svg xmlns="http://x.test/"/>')
+    (tmp_path / "good.svg").write_text(SVG)
+    (tmp_path / "bare.svg").write_text(
+        '<svg width="20" height="20"><rect width="9" height="9"/></svg>'
+    )
+    main, files = convert(
+        tmp_path, "![a](page.svg)\n\n![b](other.svg)\n\n![c](good.svg)\n\n![d](bare.svg)\n\nafter\n"
+    )
+    assert 'image("page.svg"' not in main and 'image("other.svg"' not in main
+    assert 'image("good.svg"' in main and 'image("bare.svg"' in main and "after" in main
+    assert compiles(files) >= 1  # vector images fill the body width, so the page count varies
+
+
+def test_image_in_a_format_typst_cannot_read_is_left_out(tmp_path):
+    Image.new("RGB", (30, 20), "red").save(tmp_path / "scan.png", "BMP")  # a BMP named .png
+    main, files = convert(tmp_path, "![](scan.png)\n\nafter\n")
+    assert "image(" not in main and len(files) == 1
+    assert compiles(files) == 1
