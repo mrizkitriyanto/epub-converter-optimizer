@@ -49,6 +49,7 @@ def test_batch_continues_after_bad_file(tmp_path, capsys):
     assert (tmp_path / "o" / "a b.x4.epub").exists()
     assert "error: Not a readable PDF: broken.pdf" in out.err
     assert "Traceback" not in out.err
+    assert out.out.splitlines()[-1] == "1 converted, 1 failed: broken.pdf"
 
 
 def test_password_pdf(tmp_path, capsys, encrypted_pdf):
@@ -206,8 +207,7 @@ def test_folder_of_earlier_outputs_only_is_empty(tmp_path, capsys):
     assert "error: No PDF, Markdown or EPUB files in" in capsys.readouterr().err
 
 
-def test_home_folder_is_expanded_in_inputs_and_output(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+def test_home_folder_is_expanded_in_inputs_and_output(home, tmp_path, monkeypatch):
     work = tmp_path / "cwd"
     work.mkdir()
     monkeypatch.chdir(work)
@@ -218,11 +218,40 @@ def test_home_folder_is_expanded_in_inputs_and_output(tmp_path, monkeypatch):
     assert not (work / "~").exists()
 
 
-def test_extract_expands_the_home_folder(tmp_path, monkeypatch, fake_blocks, fixtures_dir):
-    monkeypatch.setenv("HOME", str(tmp_path))
+def test_extract_expands_the_home_folder(home, tmp_path, monkeypatch, fake_blocks, fixtures_dir):
     monkeypatch.chdir(tmp_path / "..")
     (tmp_path / "x.pdf").write_bytes(fixtures_dir["blank"].read_bytes())
     args = ["extract", "~/x.pdf", "-o", "~/out", "--data", str(tmp_path / "d")]
     assert main(args) == 0
     assert (tmp_path / "out" / "x.book" / "book.md").is_file()
     assert not (Path.cwd() / "~").exists()
+
+
+def test_failure_while_printing_a_summary_does_not_stop_the_batch(tmp_path, capsys, monkeypatch):
+    for name in ("a", "b"):
+        (tmp_path / f"{name}.md").write_text("# T\n")
+    calls = []
+
+    def flaky(findings):
+        calls.append(findings)
+        if len(calls) == 1:
+            raise UnicodeEncodeError("charmap", "x", 0, 1, "cannot encode")
+
+    monkeypatch.setattr("eco.cli._print_findings", flaky)
+    assert convert(tmp_path, tmp_path / "a.md", tmp_path / "b.md") == 1
+    out = capsys.readouterr()
+    assert sorted(p.name for p in tmp_path.glob("*.epub")) == ["a.x4.epub", "b.x4.epub"]
+    assert out.out.splitlines()[-1] == "1 converted, 1 failed: a.md"
+
+
+def test_clean_batch_summary_counts_files(tmp_path, capsys):
+    for name in ("a", "b"):
+        (tmp_path / f"{name}.md").write_text("# T\n")
+    assert convert(tmp_path, tmp_path / "a.md", tmp_path / "b.md") == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "2 converted"
+
+
+def test_single_clean_file_has_no_batch_line(tmp_path, capsys):
+    (tmp_path / "a.md").write_text("# T\n")
+    assert convert(tmp_path, tmp_path / "a.md") == 0
+    assert "converted" not in capsys.readouterr().out

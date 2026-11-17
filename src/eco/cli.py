@@ -54,11 +54,11 @@ def _print_findings(findings: list[Finding]) -> None:
             print(f"  warning: page {f.page}: {f.message}")
 
 
-def _expand(inputs: list[str]) -> tuple[list[Path], int]:
-    """The files to convert, and how many folders gave none. A folder stands for the files and
+def _expand(inputs: list[str]) -> tuple[list[Path], list[str]]:
+    """The files to convert, and the folders that gave none. A folder stands for the files and
     `.book` folders in it, except `<stem>.<device>.epub`, the output of an earlier run. A `.book`
     folder, or a file named on the command line, is itself an input."""
-    files, failed = [], 0
+    files, empty = [], []
     for name in inputs:
         path = Path(name).expanduser()
         if path.is_dir() and path.suffix != ".book":
@@ -74,11 +74,11 @@ def _expand(inputs: list[str]) -> tuple[list[Path], int]:
             )
             if not found:
                 _error(FileNotFoundError(f"No PDF, Markdown or EPUB files in {path}"))
-                failed += 1
+                empty.append(str(path))
             files += found
         else:
             files.append(path)
-    return files, failed
+    return files, empty
 
 
 def _convert(args: argparse.Namespace) -> int:
@@ -99,6 +99,7 @@ def _convert(args: argparse.Namespace) -> int:
     )
     files, failed = _expand(args.inputs)
     written: list[Path] = []
+    converted = 0
     for path in files:
         try:
             if not path.exists():
@@ -111,15 +112,20 @@ def _convert(args: argparse.Namespace) -> int:
                 on_event=_progress,
                 inputs=(*files, *written),
             )
+            out = result.outputs["epub"]
+            written.append(out)
+            print(out)
+            print(f"  size: {_human(_size(path))} -> {_human(result.sizes['epub'])}")
+            _print_findings(result.findings)
+            converted += 1
         except Exception as e:  # noqa: BLE001  one bad file must not stop the batch
             _error(e)
-            failed += 1
-            continue
-        out = result.outputs["epub"]
-        written.append(out)
-        print(out)
-        print(f"  size: {_human(_size(path))} -> {_human(result.sizes['epub'])}")
-        _print_findings(result.findings)
+            failed.append(path.name)
+    if len(files) > 1 or failed:
+        print(
+            f"{converted} converted"
+            + (f", {len(failed)} failed: {', '.join(failed)}" if failed else "")
+        )
     return 1 if failed else 0
 
 

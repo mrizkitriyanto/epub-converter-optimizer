@@ -118,3 +118,11 @@ def encrypted_pdf(fixtures_dir, tmp_path):
     with path.open("wb") as f:
         writer.write(f)
     return path
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """`~` points at tmp_path: HOME for POSIX, USERPROFILE for Windows (which ignores HOME)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    return tmp_path
