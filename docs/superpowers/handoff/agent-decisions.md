@@ -153,3 +153,14 @@ Entry format:
 - Why: the refusal marks the copy as a change the owner must approve. Only the owner can approve an admin install.
 - Cost if wrong: M1 waits for one owner action.
 - Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
+
+### Q-15 (replaces the mechanism of Q-11): GitHub cannot start CI by hand on a milestone branch, because `main` has no workflow. How does CI run?
+- Date, milestone, task: 2026-11-17, M1.
+- Evidence: `gh workflow run ci.yml --ref m1-core-cli` answers `HTTP 404: workflow ci.yml not found on the default branch`, and `actions/workflows` lists no workflow. GitHub dispatches only workflows that exist on the default branch, and `origin/main` (2e0363c) holds only the design docs.
+- Answer:
+  - Add the milestone branches to the `push` trigger of `.github/workflows/ci.yml` (`branches: [main, "m[0-9]-*"]`) in a commit on `m1-core-cli`. Keep `pull_request` and `workflow_dispatch` as they are.
+  - Push `m1-core-cli` (a normal push; never force, never `main`) once that commit and R-54 are reviewed, so CI runs before the M1 final review, as Q-11 intended. This push comes earlier than Q-3's "after the final review"; the branch has been public with unfinished work since the handoff.
+  - Every later push of a milestone branch then runs CI by itself. Still no PR. Q-10 still applies to failures.
+- Why: a push trigger is the only way to run CI without a PR or a push to `main`. GitHub's Windows runner has the Visual C++ runtime this laptop lacks (Q-14), so CI also checks the Windows fast suite and the slow tests (integration job) while they are blocked here.
+- Cost if wrong: Actions minutes on each push of a milestone branch (free for a public repo). The owner can drop the branch pattern before merging.
+- Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
