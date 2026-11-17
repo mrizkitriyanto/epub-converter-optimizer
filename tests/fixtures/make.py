@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 import typst
+from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.t2CharStringPen import T2CharStringPen
 from fontTools.ttLib import TTFont
@@ -149,24 +150,32 @@ def build_all(directory: Path) -> dict:
 FONT_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,;:!?'-"
 
 
-def make_font(chars: str = FONT_CHARS, flavor: str | None = None) -> bytes:
-    """A real OpenType font (CFF outlines) with one square glyph per character."""
+def make_font(
+    chars: str = FONT_CHARS, flavor: str | None = None, small_caps: bool = False
+) -> bytes:
+    """A real OpenType font (CFF outlines) with one square glyph per character. With `small_caps`
+    every lowercase letter also has a `.sc` glyph that an `smcp` feature substitutes for it."""
     names = [".notdef", *(f"u{ord(c):04X}" for c in chars)]
+    lower = [f"u{ord(c):04X}" for c in chars if c.islower()] if small_caps else []
+    order = names + [f"{name}.sc" for name in lower]
     fb = FontBuilder(1000, isTTF=False)
-    fb.setupGlyphOrder(names)
+    fb.setupGlyphOrder(order)
     fb.setupCharacterMap({ord(c): f"u{ord(c):04X}" for c in chars})
     pen = T2CharStringPen(600, None)
     pen.moveTo((0, 0))
     for point in ((0, 500), (500, 500), (500, 0)):
         pen.lineTo(point)
     pen.closePath()
-    glyphs = dict.fromkeys(names, pen.getCharString())
+    glyphs = dict.fromkeys(order, pen.getCharString())
     fb.setupCFF("FixtureSerif", {"FullName": "Fixture Serif"}, glyphs, {})
-    fb.setupHorizontalMetrics({name: (600, 0) for name in names})
+    fb.setupHorizontalMetrics({name: (600, 0) for name in order})
     fb.setupHorizontalHeader(ascent=800, descent=-200)
     fb.setupNameTable({"familyName": "Fixture Serif", "styleName": "Regular"})
     fb.setupOS2()
     fb.setupPost()
+    if lower:
+        subs = "".join(f"sub {name} by {name}.sc;" for name in lower)
+        addOpenTypeFeaturesFromString(fb.font, f"feature smcp {{{subs}}} smcp;")
     out = BytesIO()
     fb.save(out)
     if flavor:

@@ -13,7 +13,7 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, unquote, unquote_to_bytes, urlsplit, urlunsplit
 
-from fontTools.subset import Subsetter
+from fontTools import subset
 from fontTools.ttLib import TTFont
 from PIL import Image
 
@@ -206,8 +206,9 @@ def _is_raster(path: str, media: str) -> bool:
 
 def _subset(data: bytes, text: str) -> bytes:
     font = TTFont(BytesIO(data))
-    subsetter = Subsetter()
-    subsetter.populate(text=text)
+    # a stylesheet can show the other case (text-transform, small caps) and any layout feature
+    subsetter = subset.Subsetter(subset.Options(layout_features=["*"]))
+    subsetter.populate(text=text + text.upper() + text.lower())
     subsetter.subset(font)
     out = BytesIO()
     font.save(out)  # the flavor (woff, woff2) is the input's
@@ -442,13 +443,13 @@ class _Package:
         return _rel(owner, self.data_uris[uri])
 
     def _svg(self) -> None:
+        """Xteink readers show no SVG: cover wrappers become <img>, everything else goes."""
+        if not self.xteink:
+            return
         inline = files = 0
         for _, doc in self._pages():
             _unwrap_svg(doc.root)
-            if self.xteink:
-                inline += _prune(doc.root, lambda el: el.tag == f"{{{SVG}}}svg")
-        if not self.xteink:
-            return
+            inline += _prune(doc.root, lambda el: el.tag == f"{{{SVG}}}svg")
         for path, item in list(self.items.items()):
             if item.get("media-type") == "image/svg+xml" or path.lower().endswith(".svg"):
                 self._remove(path)
@@ -752,7 +753,9 @@ class _Package:
 
 def optimize_epub(src: Path, dst: Path, options: Options) -> OptimizeReport:
     """Write an optimized copy of an EPUB for the device in `options`; the input stays as it is."""
-    if dst.resolve() == src.resolve():
+    # resolve() sees through ".." and symlinks even when dst does not exist yet; samefile() sees
+    # through hard links and, on a filesystem that ignores case, a name in another case
+    if dst.resolve() == src.resolve() or (dst.exists() and dst.samefile(src)):
         raise ValueError(f"The output is the same file as the input: {src.name}")
     package = _Package(src, options)
     package.run()

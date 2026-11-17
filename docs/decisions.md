@@ -23,8 +23,12 @@ All three are pending device verification by the owner.
 
 ## 2026-11-17: Optimizer choices
 
-- On `general`, embedded fonts are subset with fontTools (MIT) to the characters of the book. WOFF2
-  needs brotli, which is not a dependency, so a WOFF2 font stays as it is, with an info finding.
+- On `general`, embedded fonts are subset with fontTools (MIT) to the characters of the book and
+  their upper and lower case forms (CSS `text-transform` and small caps show them), keeping every
+  OpenType layout feature. WOFF2 needs brotli, which is not a dependency, so a WOFF2 font stays as
+  it is, with an info finding.
+- An SVG cover wrapper becomes an `<img>` on Xteink only. On `general` it stays, with its `viewBox`
+  fit to the page (spec §8.8).
 - On Xteink, a chapter over the limit is cut between the children of the body, or of the single
   wrapper (div, section, article) that holds the body. The cut leaves 5% of the limit free for the
   links that point into other parts.

@@ -331,9 +331,8 @@ def test_general_messy_keeps_what_the_profile_keeps(tmp_path, messy_epub):
     ch1 = text_of(z, "OPS/xhtml/ch1.xhtml")
     assert "float:left" in ch1 and "svg" in ch1 and 'src="../img/spacer.png"' in ch1
     assert manifest(z)["OPS/xhtml/ch1.xhtml"].get("properties") == "svg"  # inline SVG stays
-    assert manifest(z)["OPS/xhtml/cover.xhtml"].get("properties") is None  # wrapper became <img>
-    cover = ET.fromstring(z.read("OPS/xhtml/cover.xhtml"))
-    assert cover.find(".//h:img", NS).get("src") == "../img/cover.jpg"
+    assert manifest(z)["OPS/xhtml/cover.xhtml"].get("properties") == "svg"  # so does the cover
+    assert z.read("OPS/xhtml/cover.xhtml") == src.read("OPS/xhtml/cover.xhtml")  # wrapper as is
 
 
 def test_general_subsets_the_font_to_the_characters_of_the_book(tmp_path, messy_epub):
@@ -345,9 +344,34 @@ def test_general_subsets_the_font_to_the_characters_of_the_book(tmp_path, messy_
     used = "".join("".join(ET.fromstring(z.read(n)).itertext()) for n in pages)
     used += text_of(z, "OPS/css/style.css")
     cmap = TTFont(BytesIO(data)).getBestCmap()
-    assert ord("T") in cmap and ord("Q") not in cmap
-    assert {chr(c) for c in cmap} == set(FONT_CHARS) & set(used)
+    cased = used + used.upper() + used.lower()  # text-transform and small caps show the other case
+    assert ord("T") in cmap and ord("?") not in cmap
+    assert {chr(c) for c in cmap} == set(FONT_CHARS) & set(cased)
     assert manifest(z)["OPS/fonts/serif.otf"].get("media-type") == "font/otf"
+
+
+def test_general_subset_keeps_the_case_forms_that_text_transform_shows(tmp_path):
+    css = (
+        "@font-face{font-family:F;src:url(../fonts/f.otf)}"
+        "h1{text-transform:uppercase}p{text-transform:lowercase}"
+    )
+    files = {"fonts/f.otf": make_font(), "css/s.css": css}
+    src = package(tmp_path, {"c": f"{LINK}<h1>Chapter one</h1><p>XYZ</p>"}, files)
+    z, _ = run(tmp_path, src, GENERAL)
+    chars = {chr(c) for c in TTFont(BytesIO(z.read("OEBPS/fonts/f.otf"))).getBestCmap()}
+    assert set("CHAPTERONE") <= chars  # uppercase shows "CHAPTER ONE"
+    assert set("xyz") <= chars  # lowercase shows "xyz"
+
+
+def test_general_subset_keeps_every_opentype_feature_and_the_glyphs_it_reaches(tmp_path):
+    css = "@font-face{font-family:F;src:url(../fonts/f.otf)}p{font-variant:small-caps}"
+    files = {"fonts/f.otf": make_font(small_caps=True), "css/s.css": css}
+    src = package(tmp_path, {"c": f"{LINK}<p>abc</p>"}, files)
+    z, _ = run(tmp_path, src, GENERAL)
+    out = TTFont(BytesIO(z.read("OEBPS/fonts/f.otf")))
+    features = {r.FeatureTag for r in out["GSUB"].table.FeatureList.FeatureRecord}
+    assert "smcp" in features  # fontTools keeps only a short list of features unless told to
+    assert {"u0061.sc", "u0062.sc", "u0063.sc"} <= set(out.getGlyphOrder())
 
 
 def test_general_keeps_the_font_flavor(tmp_path):
@@ -666,7 +690,7 @@ def test_a_broken_data_uri_is_left_alone(tmp_path):
     assert not [p for p in z.namelist() if "/images/" in p]
 
 
-def test_svg_wrapper_with_a_title_is_unwrapped_and_other_svg_is_kept_on_general(tmp_path):
+def test_svg_wrapper_with_a_title_is_unwrapped_on_xteink_and_kept_on_general(tmp_path):
     svg = "http://www.w3.org/2000/svg"
     wrapper = (
         f'<svg xmlns="{svg}" xmlns:xlink="http://www.w3.org/1999/xlink" width="100%" height="100%">'
@@ -678,15 +702,16 @@ def test_svg_wrapper_with_a_title_is_unwrapped_and_other_svg_is_kept_on_general(
         {"c": f"<div>{wrapper}</div><p>between</p>{drawing}"},
         {"img/a.png": image_bytes((80, 80), "PNG")},
     )
-    for options in (GENERAL, X4):
-        z, rep = run(tmp_path, src, options)
-        root = ET.fromstring(z.read("OEBPS/text/c.xhtml"))
-        img = root.find(".//h:div/h:img", NS)
-        assert img is not None and set(img.attrib) == {"src", "alt"} and img.get("alt") == ""
-        assert root.find(".//h:p", NS).text == "between"
-        inline = root.findall(f".//{{{svg}}}svg")
-        assert len(inline) == (1 if options is GENERAL else 0)
-        assert ("svg_removed" in kinds(rep)) == (options is X4)
+    z, rep = run(tmp_path, src, X4)
+    root = ET.fromstring(z.read("OEBPS/text/c.xhtml"))
+    img = root.find(".//h:div/h:img", NS)
+    assert img is not None and set(img.attrib) == {"src", "alt"} and img.get("alt") == ""
+    assert root.find(".//h:p", NS).text == "between"
+    assert root.findall(f".//{{{svg}}}svg") == [] and "svg_removed" in kinds(rep)
+    z, rep = run(tmp_path, src, GENERAL)
+    root = ET.fromstring(z.read("OEBPS/text/c.xhtml"))
+    assert root.find(".//h:img", NS) is None  # the wrapper keeps its own fit to the page
+    assert len(root.findall(f".//{{{svg}}}svg")) == 2 and "svg_removed" not in kinds(rep)
 
 
 def test_svg_files_are_removed_on_xteink_with_every_reference(tmp_path):
@@ -989,6 +1014,25 @@ def test_the_input_is_never_overwritten(tmp_path, messy_epub):
         optimize_epub(messy_epub, messy_epub, X4)
     with pytest.raises(ValueError, match="same file"):
         optimize_epub(messy_epub, tmp_path / "sub" / ".." / messy_epub.name, X4)
+    assert messy_epub.read_bytes() == before
+
+
+def test_a_hard_link_to_the_input_is_not_an_output(tmp_path, messy_epub):
+    link = tmp_path / "link.epub"
+    os.link(messy_epub, link)
+    before = messy_epub.read_bytes()
+    with pytest.raises(ValueError, match="same file"):
+        optimize_epub(messy_epub, link, X4)
+    assert messy_epub.read_bytes() == before
+
+
+def test_the_input_under_a_name_in_another_case_is_not_an_output(tmp_path, messy_epub):
+    swapped = messy_epub.with_name(messy_epub.name.upper())
+    if not swapped.exists():
+        pytest.skip("the filesystem tells names apart by case")
+    before = messy_epub.read_bytes()
+    with pytest.raises(ValueError, match="same file"):
+        optimize_epub(messy_epub, swapped, X4)
     assert messy_epub.read_bytes() == before
 
 
