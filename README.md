@@ -18,6 +18,8 @@ Today it is a command-line tool. A web GUI and XTC output are planned.
 
 You need [uv](https://docs.astral.sh/uv/). It installs Python 3.12 for you.
 
+On Windows, install the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) before `eco setup`. A clean Windows 10/11 machine can lack it, and without it PyTorch, onnxruntime and rtree cannot load, so `eco setup` and every PDF conversion fail with a DLL error.
+
 ## Install
 
 ```bash

@@ -23,7 +23,7 @@
 - **One milestone at a time, in order M1 → M2 → M3 → M4.** After a milestone's final whole-branch review, stop, report to the owner, and wait for the owner's go before the next milestone.
 - **Language:** talk to the owner in **Indonesian**. Write code, comments, commit messages, UI text and new docs in **English**. The README exists in two languages. The spec and research notes stay in Indonesian.
 - **Plugins:** follow ponytail and antislop. antislop requires `DESIGN.md` before any UI work; M1 Task 3 creates it with style B ("neutral and clean").
-- **Downloads:** before any download larger than 50 MB (AI models are ~568 MB, Docker images several GB), state the measured size and wait for a yes.
+- **Downloads:** before any download larger than 50 MB (AI models are ~417 MB, Docker images several GB), state the measured size and wait for a yes.
 - **Device testing is deferred.** Values marked "verify on device" stay provisional and are logged in `docs/decisions.md`.
 - **Repo:** public on GitHub, MIT license. The git identity is set in the repo config to the owner's GitHub noreply address; do not change it.
 - **Never commit** `samples/`, any book file, or any `*.pdf|*.epub|*.xtc|*.xtch` outside `tests/fixtures/`. **Never overwrite** an input file.
@@ -60,7 +60,7 @@ If your harness has no superpowers skills (for example another agent at another 
    - IPv6/NAT64 resets TLS connections, and Hugging Face's `hf-xet` downloader stalls.
    - Use `eco setup --ipv4`, keep `HF_HUB_DISABLE_XET=1`, and expect Hugging Face speeds of 125 KB/s–1.4 MB/s.
    - PyPI is fast.
-4. M1 Task 11 and later need the models (`eco setup`, ~568 MB). Ask the owner first.
+4. M1 Task 11 and later need the models (`eco setup`, ~417 MB). Ask the owner first.
 5. M1 Task 19 (acceptance) runs only where `samples/` exists, which is the owner's Mac; it is skipped elsewhere.
 
 ## Verified facts the plans rely on

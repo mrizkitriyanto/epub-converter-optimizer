@@ -18,6 +18,8 @@ Saat ini eco berupa alat baris perintah. GUI web dan output XTC sedang direncana
 
 Anda memerlukan [uv](https://docs.astral.sh/uv/). uv memasang Python 3.12 untuk Anda.
 
+Di Windows, pasang [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) sebelum menjalankan `eco setup`. Windows 10/11 yang baru dipasang bisa belum memilikinya; tanpa itu PyTorch, onnxruntime, dan rtree tidak bisa dimuat, sehingga `eco setup` dan setiap konversi PDF gagal dengan galat DLL.
+
 ## Pemasangan
 
 ```bash

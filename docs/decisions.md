@@ -272,3 +272,85 @@ error for either.
 - `uv.lock` is now revision 5 and needs a recent uv (0.13.9 wrote it).
 - Cost: 4.12 lags 5.0 on fixes. Revisit when an upstream KleidiCV fix ships. The fallback is
   `cv2.setNumThreads(1)` on 5.0, which passed once on the Mac.
+
+## 2026-11-17: Reading order: a narrow centred block spans both columns (R-13)
+
+- In `is_multicolumn`, a block that crosses the vertical centre line of the page (`x0 < W/2 - 6` and
+  `x1 > W/2 + 6`) counts as a spanning block, like a full-width one, and does not disqualify the
+  page. Real papers, such as the ResNet sample, have centred title and author lines that are
+  narrow. With the plan's literal rule they fall in neither column, the page is never detected as
+  multi-column, and acceptance criteria AC4 and AC5 would depend on Docling's own order, which is
+  wrong on those pages.
+- If it turns out wrong: the T12 unit test passes either way, because its title and author blocks
+  are full width. Revert to the literal rule.
+
+## 2026-11-17: Image rules: minimum size, output format, transparency, never bigger (R-15, R-19, R-24, R-25)
+
+- `ImageProfile.min_px` is 20 for Xteink and 0 for `general`. `transform_image` removes an image
+  only when its width or height is below `min_px`. Spec section 8.8 keeps images under 20 px on
+  `general` and removes them on Xteink; the plan's Global Constraints scope the rule to Xteink and
+  its Task 7 text dropped that scope.
+- `png_line_art` keeps its value `False` on `general`, and the flag means this. True (Xteink): the
+  format follows the content, line art to PNG and everything else to baseline JPEG. False
+  (`general`): PNG and GIF sources become optimized PNG, every other source becomes baseline JPEG at
+  the profile quality (spec section 8.8, row `general`).
+- On `general`, PNG output keeps its transparency. Alpha is flattened to white only for JPEG output
+  and on Xteink. Flattening on `general` would put white boxes on dark or sepia themes.
+- `transform_image` never makes an image bigger. When no resize is needed and the source is already
+  in an acceptable final form (PNG or baseline JPEG; on grayscale profiles also mode L or 1 without
+  alpha), it returns the smaller of the source bytes and the re-encode. On `general`, grey sources
+  stay grey (L and 1 to L, LA to LA). Re-encoding L, 1 and P PNGs grew them by 39% to 84% in
+  measurements.
+- If any of it turns out wrong: each rule is one field, one branch or one comparison. Drop the size
+  comparison, the transparency branch or `min_px` on its own.
+
+## 2026-11-17: Pictures are cropped from a render at scale 3, clamped to the page (R-17, R-31)
+
+- Picture crops come from rendering the page at scale 3 (about 216 dpi), not from the embedded
+  raster at its native resolution (spec section 8.4, item 5, "source resolution"). Rendering also
+  covers vector figures, and the optimizer shrinks every image to the device or to 1600 px anyway.
+  If it turns out wrong: extract embedded rasters with pypdfium2 `PdfImage` for pictures that are
+  pure raster.
+- `crop()` clamps the pixel box to the rendered page. Inside the page the formula is unchanged.
+  Pillow fills an out-of-bounds crop with black, so a block at the page edge would get black bars
+  in the EPUB. If it turns out wrong: remove the clamp.
+
+## 2026-11-17: Book folder: a missing report is empty, any block with an image is an image (R-20, R-21)
+
+- `read_report` returns `[]` when `report.json` is missing, because spec section 8.5 makes a
+  hand-made `.book` folder valid input. If it turns out wrong: callers check that the file exists.
+- A block of any kind except `table` with a non-empty `image` is written as an image, with the text
+  as alt text, or the kind when there is no text. Spec section 8.5 says formula and code crops live
+  in `images/` and the book folder stands alone, and Tasks 13 and 14 already turn such blocks into
+  `image` blocks. This replaces the earlier rule that unlisted kinds become paragraphs, and it
+  guards against losing an image path without a warning. If it turns out wrong: one condition.
+
+## 2026-11-17: EPUB builder: text cover, bare ampersands, no front matter plugin (R-16, R-22, R-23)
+
+- When a book has no cover, `build_epub` draws a plain text cover with the title and author, in
+  Pillow's built-in scalable font (`ImageFont.load_default(size=...)`). Spec section 8.7 asks for
+  it for Markdown without a cover, and the plan left it out. If it turns out wrong: delete about 20
+  lines.
+- A bare `&` in raw HTML becomes `&amp;` before the XML check, as void tags are already normalised.
+  A bare `&` is legal HTML. Without this, a table cell such as `R&D` makes the whole table fall back
+  to escaped text. If it turns out wrong: one regex.
+- The builder does not use the `front_matter_plugin` of mdit-py-plugins. `BookSource.markdown` never carries
+  front matter, because `load_source` strips it, so the plugin could only misfire on a leading `---`
+  thematic break: it would drop body text and leave an empty `front.xhtml` in the spine. Nothing
+  changes if this is wrong.
+
+## 2026-11-17: Optimizer: stock firmware warning, cover image kept (R-26, R-27)
+
+- Provisional (R-26): when the firmware is `stock` on an Xteink device and the output still has
+  images, the optimizer adds one warning finding that stock firmware does not show EPUB images. The
+  images stay so the file is useful after a firmware change. When `small` with `stock` drops the
+  images, it adds one info finding with the count (spec section 8.8, last bullet). Whether stock X4
+  Pro and Classic show images is unverified; the device test is deferred. If stock firmware shows
+  images: delete the two findings.
+- `drop_images` never drops the cover image (the manifest `cover-image` item or the
+  `<meta name="cover">` target). The cover is transformed like any other image, because the library
+  view needs a cover thumbnail. If it turns out wrong: drop it with the rest.
+- Related entries: R-14 (fontTools subsetting on `general`) and R-29 (SVG cover wrapper unwrapped on
+  Xteink only) are in "Optimizer choices" above. R-14 adds that a font that fails to subset stays
+  unchanged, and that `fonttools` (MIT, spec section 6.3) is a direct dependency; without the step
+  both go.
