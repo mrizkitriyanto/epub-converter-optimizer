@@ -56,7 +56,9 @@ src/eco/models.py            model setup/download/offline
 src/eco/pipeline.py          extract_pdf(), convert_file(), output_path(), Result
 src/eco/epub/builder.py      build_epub()
 src/eco/epub/images.py       transform_image()
-src/eco/epub/optimizer.py    optimize_epub(), DRMError
+src/eco/epub/optimizer.py    optimize_epub(), OptimizeReport, DRMError
+src/eco/epub/css.py          rewrite_css()
+src/eco/epub/split.py        split_document(), anchors()
 src/eco/epub/zipio.py        write_epub_zip()
 src/eco/pdf/pages.py         PageInfo, inspect_pdf(), bookmarks(), pdf_metadata(), render_page(), crop(), to_pdfium_rect()
 src/eco/pdf/docling_adapter.py  extract_blocks()

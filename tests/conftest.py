@@ -1,5 +1,5 @@
 import pytest
-from fixtures.make import build_all
+from fixtures.make import build_all, make_epub, make_messy_epub
 from PIL import Image
 
 from eco.book import Block, Book
@@ -36,3 +36,24 @@ def small_book(tmp_path):
     book = Book(title="Small Book", author="A. Writer", cover="images/cover.png", blocks=blocks)
     write_book(book, folder, [])
     return folder
+
+
+@pytest.fixture
+def messy_epub(tmp_path):
+    """A publisher EPUB with every problem the optimizer handles (see make_messy_epub)."""
+    return make_messy_epub(tmp_path)
+
+
+@pytest.fixture
+def drm_epub(tmp_path):
+    """An EPUB with an Adobe rights file next to its content."""
+    files = {
+        "META-INF/container.xml": (
+            '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+            'media-type="application/oebps-package+xml"/></rootfiles></container>'
+        ),
+        "META-INF/rights.xml": '<rights xmlns="http://ns.adobe.com/adept"/>',
+        "OEBPS/content.opf": '<package xmlns="http://www.idpf.org/2007/opf" version="3.0"/>',
+    }
+    return make_epub(tmp_path / "drm.epub", files)

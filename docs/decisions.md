@@ -20,3 +20,13 @@ All three are pending device verification by the owner.
 - Chapter size limit: 100 000 bytes.
 - CSS `white-space: pre-wrap` is assumed to be supported by the CrossPoint firmware.
 - XTC header layout follows CrossPoint `XtcTypes.h`.
+
+## 2026-11-17: Optimizer choices
+
+- On `general`, embedded fonts are subset with fontTools (MIT) to the characters of the book. WOFF2
+  needs brotli, which is not a dependency, so a WOFF2 font stays as it is, with an info finding.
+- On Xteink, a chapter over the limit is cut between the children of the body, or of the single
+  wrapper (div, section, article) that holds the body. The cut leaves 5% of the limit free for the
+  links that point into other parts.
+- A manifest item is dropped only when its file name appears nowhere in the book. When in doubt it
+  stays.
