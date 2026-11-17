@@ -163,3 +163,48 @@ error for either.
   pages it asked for with the pages reported and warns about each missing one (`page_failed`).
   Docling catches and logs any exception a progress callback raises (`ProgressReporter._emit`),
   so `on_page` cannot stop a conversion by raising; Task 17 checks `cancel` between chunks.
+
+## 2026-11-17: Pipeline: the extraction cache holds the PDF, not the output options (R-45)
+
+- The extraction of a PDF is cached as `<data>/cache/<sha256[:16]>-x<EXTRACTOR_VERSION>-<ocr>.book`.
+  The key is the PDF's hash, the extractor version and `--ocr`. Device, firmware, size, title,
+  author and language do not change the extraction, so changing them runs neither Docling nor OCR
+  again (spec section 8.2).
+- The front matter of the cached book comes from the PDF alone: title and author from the PDF
+  metadata (the title falls back to the file stem), the language detected from the first 5000
+  characters of the text, and `source` as the file name plus the SHA-256 (spec section 8.5; the
+  builder makes `dc:identifier` from it). `--title`, `--author` and `--lang` are applied on top of
+  the metadata at build time, for PDF, Markdown and book folders alike. If they went into the cached
+  book, a later `--title` would be ignored; if they went into the key, a new title would run Docling.
+- `write_book` writes `report.json` last, so a folder without it is what a cancelled or crashed run
+  left behind. It is deleted before the next extraction. A folder with one is reused, and its
+  findings are reported again.
+- A page that was asked for and that Docling never reports as finished becomes a `page_failed`
+  warning (R-47). A blank page becomes a `blank_page` info finding, a scanned page an `ocr_page` one
+  (unless `--ocr off`).
+
+## 2026-11-17: Pipeline: a cancel takes effect between chunks
+
+- Docling runs over the non-blank pages in chunks: each run of consecutive pages is cut into pieces
+  of at most 50. It swallows an exception raised in its progress callback, so `cancel()` is checked
+  before and after each chunk and raises `Cancelled` there. In M1 a cancel waits for the chunk that
+  is running: up to 50 pages, and longer when they are scans. The web GUI (M2) will cancel faster by
+  stopping a worker process (spec section 8.2).
+
+## 2026-11-17: Pipeline: `--mode reflow` is `auto` in M1; page images on `general` (R-10, R-9)
+
+- Known gap: the spec names `--mode reflow` but does not say how it differs from `auto`, and no
+  pass has a switch for it. In M1 `reflow` behaves like `auto`. Telling them apart needs a flag in
+  the fix stage and `mode` in the cache key.
+- `--mode pages` on a PDF builds a temporary book folder (never cached) with one image per screen of
+  every non-blank page, then builds and optimizes it like a book folder. Xteink devices use their
+  fixed screen. A `general` device has none, so its screen is `max_w` of the image profile by
+  100 000 px: a page stays one image. The optimizer still fits every image into `max_w` by `max_h`
+  (equal on `general`), so such a page ends up at most `max_w` px on its long side.
+
+## 2026-11-17: Output names never overwrite an input
+
+- The output is `<out dir>/<stem>.<device>.epub`. A stem that already ends in `.<device>` loses it
+  first, so converting `book.x4.epub` again gives `book.x4-1.epub`. While the path is the same file
+  as any input of the batch (paths resolved, plus `samefile` for hard links and case-insensitive
+  names), `-1`, `-2` and so on are added before the extension.

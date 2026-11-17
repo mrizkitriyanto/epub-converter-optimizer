@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -51,6 +52,22 @@ jobs:
       - name: Validate every EPUB
         run: |
           for f in out/epubcheck/*.epub; do java -jar epubcheck-5.4.0/epubcheck.jar "$f" || exit 1; done
+
+  integration:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.local/share/eco/models
+          key: docling-2.150.1
+      - run: uv sync --locked
+      - run: uv run eco setup --yes
+      - run: uv run pytest -m slow
 
   guard:
     runs-on: ubuntu-latest

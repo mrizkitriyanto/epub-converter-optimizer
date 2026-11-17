@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import platformdirs
 import pytest
@@ -55,6 +56,35 @@ def small_book(tmp_path):
     book = Book(title="Small Book", author="A. Writer", cover="images/cover.png", blocks=blocks)
     write_book(book, folder, [])
     return folder
+
+
+@pytest.fixture
+def fake_blocks(monkeypatch):
+    """Docling's stand-in for the fast pipeline tests: no models, no network.
+
+    Each call logs itself in `calls`, reports every page of its range and returns the blocks of
+    `blocks` that sit on those pages. A test varies the run through `blocks`, `skip` (pages that
+    never report) and `after` (runs at the end of each call).
+    """
+    fake = SimpleNamespace(
+        blocks=[Block("heading", "One", level=1, page=1), Block("paragraph", "Text.", page=3)],
+        skip=set(),
+        after=lambda: None,
+        calls=[],
+    )
+
+    def extract_blocks(pdf, models, *, first, last, ocr, on_page, scanned=frozenset()):
+        fake.calls.append(
+            SimpleNamespace(models=models, first=first, last=last, ocr=ocr, scanned=scanned)
+        )
+        for number in range(first, last + 1):
+            if number not in fake.skip:
+                on_page(number)
+        fake.after()
+        return [b for b in fake.blocks if first <= b.page <= last]
+
+    monkeypatch.setattr("eco.pipeline.extract_blocks", extract_blocks)
+    return fake
 
 
 @pytest.fixture
