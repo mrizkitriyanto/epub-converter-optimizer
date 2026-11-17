@@ -8,15 +8,18 @@ Each book is converted once per session by `python -m eco convert` in a subproce
 read the result. The run is cold: it gets a data folder of its own, with the installed models linked
 in, so no cached extraction can fake the time or the RAM and the owner's own cache stays as it is.
 The pages of a criterion are cut out of the book's `book.md` by its page markers.
+
+Criterion 7 also runs EPUBCheck on every output. Set ECO_JAVA to the path of `java` and
+ECO_EPUBCHECK_JAR to the path of `epubcheck.jar`; without them that part is skipped.
+
+The books' own text that a test needs (a page transcript, code listings) is read from
+`samples/ground-truth/` and is never kept in this public repo.
 """
 
-import os
+import platform
 import re
 import signal
-import subprocess
 import sys
-import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,9 +27,17 @@ import pytest
 from metrics import (
     code_blocks,
     epub_text,
+    epubcheck_problems,
+    epubcheck_tools,
+    ground_truth_blocks,
+    hardware,
     headings,
+    link_dir,
     pages,
+    run_timed,
+    sample,
     sequence_scores,
+    time_verdict,
     word_recall,
     words,
     x4_problems,
@@ -36,36 +47,10 @@ from eco.bookfolder import load_source
 
 pytestmark = pytest.mark.acceptance
 
-SAMPLES = Path(__file__).resolve().parents[2] / "samples"
-TIMEOUT = 3600  # seconds: a conversion that takes longer is killed, so a hang cannot stall the run
+TIMEOUT = 4 * 3600  # seconds: only stops a hang, a book takes hours on a slow laptop
 FOUR_GIB = 4 * 2**30
-
-# Forensic, PDF page 106. The book lists three `icat` commands there; the layout model cuts the
-# listing in two, so these two lines are one code block (spec section 9 asks for it) and the third
-# command, `icat image.raw 267 > super-updater57.exe_`, is a code block of its own.
-ICAT = [
-    "$ icat image.raw 68 > photo.jpg_",
-    "$ icat image.raw 34 > customerlist.xls_",
-]
-# Malware, Listing 11-1: the page break (PDF pages 268 and 269) cuts it into two parts of 5 lines.
-# The book draws its numbered call-outs with these private-use glyphs.
-CALL_OUT_1, CALL_OUT_2 = chr(0xF075), chr(0xF076)
-LISTING_11_1 = [
-    [
-        "100014A0 WlxLoggedOutSAS",
-        "100014A0 push esi",
-        "100014A1 push edi",
-        '100014A2 push offset aWlxloggedout_0 ; "WlxLoggedOutSAS"',
-        f"100014A7 call Call_msgina_dll_function {CALL_OUT_1}",
-    ],
-    [
-        "...",
-        "100014FB push eax ; Args",
-        '100014FC push offset aUSDSPSOpS ;"U: %s D: %s P: %s OP: %s"',
-        '10001501 push offset aDRIVERS ; "drivers\\tcpudp.sys"',
-        f"10001503 call Log_To_File {CALL_OUT_2}",
-    ],
-]
+LIMIT_SECONDS = 900  # AC2: 15 minutes, on an M3 Mac
+BOOKS = ["threat_hunting", "bicara", "forensic", "malware", "resnet", "publisher_epub"]
 
 
 @dataclass
@@ -73,42 +58,11 @@ class Conversion:
     epub: Path
     book: Path | None  # the extracted book folder; an EPUB input has none
     seconds: float
-    peak_bytes: int | None  # None where the OS cannot tell (Windows)
+    peak_bytes: int  # the most RAM the conversion process held at once
 
     @property
     def markdown(self) -> str:
         return load_source(self.book).markdown
-
-
-def sample(pattern: str) -> Path:
-    found = sorted(SAMPLES.glob(pattern))
-    if not found:
-        pytest.skip(f"samples/{pattern} is missing")
-    return found[0]
-
-
-def run_timed(cmd: list[str], log: Path) -> tuple[int, float, int | None]:
-    """Run `cmd` with its output in `log`; return its exit code, seconds and peak RSS in bytes.
-
-    The peak comes from `os.wait4`, the rusage of this child alone. `RUSAGE_CHILDREN` would give
-    the largest child of the whole session, so a small book would inherit the peak of a big one.
-    """
-    start = time.monotonic()
-    with log.open("wb") as out:
-        proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT)
-        killer = threading.Timer(TIMEOUT, proc.kill)
-        killer.start()
-        try:
-            if hasattr(os, "wait4"):
-                _, status, usage = os.wait4(proc.pid, 0)
-                proc.returncode = os.waitstatus_to_exitcode(status)
-                peak = usage.ru_maxrss * (1 if sys.platform == "darwin" else 1024)  # bytes, KiB
-            else:
-                proc.wait()
-                peak = None
-        finally:
-            killer.cancel()
-    return proc.returncode, time.monotonic() - start, peak
 
 
 @pytest.fixture(scope="session")
@@ -117,10 +71,10 @@ def convert(tmp_path_factory, models):
         work = tmp_path_factory.mktemp("convert")
         data, out, log = work / "data", work / "out", work / "eco.log"
         data.mkdir()
-        (data / "models").symlink_to(models, target_is_directory=True)
+        link_dir(data / "models", models)
         cmd = [sys.executable, "-m", "eco", "convert", str(source)]
         cmd += ["--data", str(data), "-o", str(out)]
-        code, seconds, peak = run_timed(cmd, log)
+        code, seconds, peak = run_timed(cmd, log, TIMEOUT)
         if code != 0:
             how = f"was killed by {signal.Signals(-code).name}" if code < 0 else f"exited {code}"
             tail = "\n".join(log.read_text(errors="replace").splitlines()[-15:])
@@ -165,11 +119,15 @@ def publisher_epub(convert):
 
 
 def check_peak_ram(label: str, conversion: Conversion) -> None:
-    if conversion.peak_bytes is None:
-        pytest.skip("the peak RAM of a child is measured with os.wait4, which Windows lacks")
     gib = conversion.peak_bytes / 2**30
     print(f"{label}: peak RAM {gib:.2f} GiB (limit 4)")
     assert conversion.peak_bytes <= FOUR_GIB, f"peak RAM {gib:.2f} GiB, the limit is 4 GiB"
+
+
+def sharing_a_line(expected: list[list[str]], blocks: list[list[str]]) -> list[list[str]]:
+    """The code blocks that have a line of more than one word in common with the expected ones."""
+    lines = {line for block in expected for line in block if " " in line}
+    return [block for block in blocks if lines & set(block)]
 
 
 def test_ac1_threat_hunting_text_matches_the_publisher_epub(threat_hunting):
@@ -198,8 +156,15 @@ def test_ac2_bicara_headings_on_pages_80_to_92_are_exact(bicara):
 
 
 def test_ac2_bicara_converts_in_15_minutes(bicara):
-    print(f"AC2: {bicara.seconds:.0f} s (limit 900)")
-    assert bicara.seconds <= 900, f"{bicara.seconds:.0f} s, the limit is 900 s"
+    where = hardware()
+    print(f"AC2: {bicara.seconds:.0f} s (limit {LIMIT_SECONDS}) on {where}")
+    verdict = time_verdict(bicara.seconds, LIMIT_SECONDS, platform.system(), platform.machine())
+    if verdict == "skip":
+        pytest.skip(
+            f"{bicara.seconds:.0f} s is over {LIMIT_SECONDS} s, but that limit is for an M3 Mac "
+            f"and the time is not comparable on {where}"
+        )
+    assert verdict == "pass", f"{bicara.seconds:.0f} s, the limit is {LIMIT_SECONDS} s ({where})"
 
 
 def test_ac2_bicara_peak_ram(bicara):
@@ -207,16 +172,26 @@ def test_ac2_bicara_peak_ram(bicara):
 
 
 def test_ac3_forensic_icat_block_has_exactly_the_2_lines(forensic):
+    expected = ground_truth_blocks("forensic-p106-icat.txt")
+    assert [len(block) for block in expected] == [2], expected
     blocks = code_blocks(pages(forensic.markdown, 105, 117))
-    with_icat = [b for b in blocks if any("icat" in line for line in b)]
-    assert ICAT in blocks, f"code blocks with icat on pages 105 to 117: {with_icat}"
+    assert expected[0] in blocks, (
+        f"expected {expected[0]}\n"
+        f"code blocks on pages 105 to 117 that share a line with it: "
+        f"{sharing_a_line(expected, blocks)}"
+    )
 
 
 def test_ac3_malware_listing_11_1_lines_are_whole(malware):
+    expected = ground_truth_blocks("malware-p268-269-listing-11-1.txt")
+    assert [len(part) for part in expected] == [5, 5], expected
     blocks = code_blocks(pages(malware.markdown, 262, 274))
-    missing = [part for part in LISTING_11_1 if part not in blocks]
-    near = [b for b in blocks if any("100014" in line for line in b)]
-    assert not missing, f"missing: {missing}\ncode blocks with 100014 on pages 262 to 274: {near}"
+    missing = [part for part in expected if part not in blocks]
+    assert not missing, (
+        f"missing: {missing}\n"
+        f"code blocks on pages 262 to 274 that share a line with them: "
+        f"{sharing_a_line(expected, blocks)}"
+    )
 
 
 def test_ac4_resnet_headings_run_title_abstract_introduction(resnet):
@@ -238,8 +213,16 @@ def test_ac6_malware_peak_ram(malware):
     check_peak_ram("AC6", malware)
 
 
-def test_ac7_x4_epub_has_no_progressive_jpeg_big_image_or_banned_file(publisher_epub):
-    problems = x4_problems(publisher_epub.epub)
+@pytest.mark.parametrize("book", BOOKS)
+def test_ac7_x4_output_has_no_banned_file_big_image_or_bad_mimetype(book, request):
+    problems = x4_problems(request.getfixturevalue(book).epub)
+    assert not problems, "\n".join(problems)
+
+
+@pytest.mark.parametrize("book", BOOKS)
+def test_ac7_x4_output_passes_epubcheck(book, request):
+    java, jar = epubcheck_tools()
+    problems = epubcheck_problems(request.getfixturevalue(book).epub, java, jar)
     assert not problems, "\n".join(problems)
 
 

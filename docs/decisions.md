@@ -354,3 +354,25 @@ error for either.
   Xteink only) are in "Optimizer choices" above. R-14 adds that a font that fails to subset stays
   unchanged, and that `fonttools` (MIT, spec section 6.3) is a direct dependency; without the step
   both go.
+
+## 2026-11-17: Acceptance tests: RAM on Windows, the AC2 time, EPUBCheck on every output (R-55, R-56, R-58)
+
+- On Windows the harness takes the peak RAM of a conversion from `PeakWorkingSetSize`
+  (`GetProcessMemoryInfo`) on the handle `Popen` still holds after the child has exited; POSIX keeps
+  `os.wait4`. The `python.exe` of a venv only starts the base interpreter and waits, so a handle on
+  it read 5 MiB for a child that touched 300 MiB. The harness starts the base interpreter with
+  `__PYVENV_LAUNCHER__`, as `multiprocessing` does (bpo-35797), and a fast test with a 300 MiB
+  child pins it. If it turns out wrong: the Windows working set and the macOS RSS are not the same
+  figure, so re-measure AC2 and AC6 on the Mac.
+- AC2's 900 s is defined for an M3 Mac. A run within 900 s passes on any machine. Over 900 s it
+  fails on macOS arm64 and is skipped elsewhere as "not comparable", with the seconds, CPU and RAM
+  in the reason. `TIMEOUT` is 4 hours and only stops a hang. If it turns out wrong: a real slowdown
+  shows only when the Mac measures it.
+- Criterion 7 is checked on every output of the suite (all six conversions use the default device,
+  `x4`): no progressive JPEG, no image over 480x800, no font, SVG, WebP or GIF, `mimetype` first
+  and stored, and EPUBCheck 5.4.0 without errors when `ECO_JAVA` and `ECO_EPUBCHECK_JAR` name a
+  Java and the jar. Without them the EPUBCheck tests are skipped. If it turns out wrong: extra
+  minutes per run; drop the extra outputs.
+- The code listings that AC3 compares with are read from `samples/ground-truth/` and a missing file
+  skips the test, so the public repo holds no book text. On Windows the models folder is linked into
+  each fresh data folder with a junction, which needs no admin rights.
