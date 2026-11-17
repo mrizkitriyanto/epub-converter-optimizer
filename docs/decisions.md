@@ -398,3 +398,21 @@ error for either.
 - Upload names (M2-R10, plus): besides the ruling's rules, a Windows device name (`nul.pdf`) gets a
   `_` in front, because the output is named after the upload, and a name is cut to 120 characters,
   type kept, so the paths stay under Windows' 260. If it turns out wrong: an odd stored name.
+
+## 2026-11-18: Web app guard and `eco web` (M2-R11)
+
+- One ASGI layer, `_Guard`, sits outside all of FastAPI's own middleware (`build_middleware_stack`
+  of a FastAPI subclass), so it runs before routing and every response passes it, the 500 of an
+  unhandled error too. It sets CSP, nosniff and no-referrer on every response.
+- Local mode (no token): a request must be addressed to `127.0.0.1`, `localhost` or `[::1]` with
+  the port the server listens on (the ASGI `server` address; no port only when that is 80), else
+  403. This stops DNS rebinding. Network mode (a token): `Authorization: Bearer` or the
+  `eco_token` cookie, compared as bytes with `hmac.compare_digest`, else 401 on every path;
+  `GET /?token=` sets an `HttpOnly; SameSite=Strict; Path=/` session cookie and redirects to `/`.
+  Both modes refuse a POST, PUT, PATCH or DELETE whose `Origin` is not `<scheme>://<Host>`: 403.
+  If it turns out wrong: a reverse proxy in front of a loopback server must use network mode.
+- `eco web` treats only `127.0.0.1`, `localhost` and `::1` as this computer. Any other `--host`,
+  `127.0.0.2` too, gets a token (`--token`, else `ECO_TOKEN`, else `secrets.token_urlsafe(24)`).
+  For `0.0.0.0` and `::` the browser opens at `127.0.0.1` or `[::1]`, which a browser can reach;
+  it opens after 1 s so the server already listens, and not at all if the server stopped first.
+- FastAPI's `/docs`, `/redoc` and `/openapi.json` are off: their pages load scripts from a CDN.

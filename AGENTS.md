@@ -47,7 +47,7 @@ uv run ruff format
 ```
 src/eco/__init__.py          version
 src/eco/__main__.py          python -m eco
-src/eco/cli.py               argparse: setup, convert, extract
+src/eco/cli.py               argparse: setup, convert, extract, web
 src/eco/options.py           Options, DEVICES, ImageProfile, image_profile(), resolve_data_dir()
 src/eco/events.py            Finding, StageEvent, PageEvent, FindingEvent, STAGES, Cancelled
 src/eco/book.py              Block, Book
@@ -69,6 +69,9 @@ src/eco/pdf/regions.py       materialize_regions(), render_cover(), page_slices(
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
 src/eco/web/jobs.py          JobStore, Runner, JobInfo, JobFile, safe_name(), RETENTION_DAYS, _work() (worker process)
+src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP
+src/eco/web/strings.py       STRINGS: every English text of the GUI
+src/eco/web/templates/index.html  src/eco/web/static/app.css
 tests/conftest.py  tests/fixtures/make.py  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
 ```
 

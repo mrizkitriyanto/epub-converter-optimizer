@@ -1,10 +1,14 @@
 import argparse
 import json
+import os
 import re
+import secrets
 import shutil
 import sys
+import threading
 from collections import Counter
 from pathlib import Path
+from urllib.parse import quote
 
 from eco import __version__, models
 from eco.events import Finding, FindingEvent, PageEvent, StageEvent
@@ -21,6 +25,8 @@ from eco.options import (
 
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
+_LOOPBACK = ("127.0.0.1", "localhost", "::1")
+_BROWSER_DELAY = 1.0  # seconds: the server listens by then
 
 
 def _error(e: Exception) -> None:
@@ -189,6 +195,35 @@ def _setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _web(args: argparse.Namespace) -> int:
+    import webbrowser
+
+    import uvicorn
+
+    from eco.web.app import create_app  # imported late: FastAPI is for this command only
+
+    token = args.token or os.environ.get("ECO_TOKEN") or None
+    if token is None and args.host not in _LOOPBACK:
+        token = secrets.token_urlsafe(24)
+    app = create_app(resolve_data_dir(args.data), token=token, max_upload_mb=args.max_upload_mb)
+    host = f"[{args.host}]" if ":" in args.host else args.host
+    query = f"?token={quote(token, safe='')}" if token else ""
+    print(f"Open: http://{host}:{args.port}/{query}", flush=True)
+    # a browser cannot connect to the any-address; this computer's loopback reaches the server
+    local = {"0.0.0.0": "127.0.0.1", "::": "[::1]"}.get(args.host, host)
+    browser = threading.Timer(
+        _BROWSER_DELAY, webbrowser.open, [f"http://{local}:{args.port}/{query}"]
+    )
+    browser.daemon = True
+    if not args.no_browser:
+        browser.start()
+    try:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    finally:
+        browser.cancel()  # the server stopped first, for example because the port is taken
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eco", description="Convert PDF and Markdown to EPUB.")
     parser.add_argument("--version", action="store_true", help="show the version and exit")
@@ -226,6 +261,27 @@ def _parser() -> argparse.ArgumentParser:
     extract.add_argument("input", metavar="INPUT.pdf")
     extract.add_argument("-o", "--output", metavar="DIR", help="folder for the book folder")
     extract.add_argument("--ocr", choices=OCR_MODES, default="auto")
+
+    web = commands.add_parser("web", parents=[common], help="open the converter in a web browser")
+    web.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="address to listen on (default: 127.0.0.1, this computer only; "
+        "an address other than 127.0.0.1, localhost or ::1 needs a token)",
+    )
+    web.add_argument("--port", type=int, default=8000, help="port to listen on (default: 8000)")
+    web.add_argument(
+        "--token",
+        help="access token (default: ECO_TOKEN; made up and printed when another address needs one)",
+    )
+    web.add_argument("--no-browser", action="store_true", help="do not open a browser")
+    web.add_argument(
+        "--max-upload-mb",
+        type=int,
+        default=500,
+        metavar="MB",
+        help="largest upload in MB (default: 500)",
+    )
     return parser
 
 
@@ -237,13 +293,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"eco {__version__}")
             return 0
         if args.command is None:
-            parser.error("a command is required: setup, convert or extract")
+            parser.error("a command is required: setup, convert, extract or web")
         if args.command == "convert" and args.landscape and args.device == "general":
             parser.error("--landscape needs an Xteink device, not --device general")
     except SystemExit as e:  # argparse exits on a usage error; main returns the code instead
         return e.code
     try:
-        return {"setup": _setup, "convert": _convert, "extract": _extract}[args.command](args)
+        commands = {"setup": _setup, "convert": _convert, "extract": _extract, "web": _web}
+        return commands[args.command](args)
     except Exception as e:  # noqa: BLE001  every failure ends as one error line
         _error(e)
         return 1
