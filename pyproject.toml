@@ -57,6 +57,17 @@ markers = [
     "slow: needs downloaded models",
     "acceptance: needs the samples/ directory",
 ]
+# Docling's own code reads some of its deprecated options while it runs, so every real conversion
+# warns. eco sets none of those options. Each filter below is one of those messages, nothing wider.
+filterwarnings = [
+    # Docling serialises its OCR options, which reads the deprecated force_full_page_ocr field.
+    'ignore:`force_full_page_ocr` is deprecated; set `mode=OcrMode\.FULL_PAGE` instead\.:DeprecationWarning',
+    # standard_pdf_pipeline reads the deprecated generate_table_images option.
+    'ignore:This field is deprecated\. Use `generate_page_images=True` and call `TableItem\.get_image\(\)` to extract table images from page images\.:DeprecationWarning',
+    # rapid_ocr_model reads the deprecated rec_font_path option. The message is one word, so the
+    # module is part of the match.
+    'ignore:deprecated$:DeprecationWarning:docling\.models\.stages\.ocr\.rapid_ocr_model',
+]
 
 [tool.ruff]
 line-length = 100
