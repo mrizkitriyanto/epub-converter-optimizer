@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import io
 import json
@@ -10,12 +11,13 @@ from urllib.parse import quote
 import pytest
 from fakes import endless_work, wait_for
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from eco import cli
 from eco.cli import main
 from eco.options import Options
 from eco.web import jobs
-from eco.web.app import CSP, create_app
+from eco.web.app import CSP, _Guard, create_app
 from eco.web.jobs import JobStore, Runner
 from eco.web.strings import STRINGS
 
@@ -29,6 +31,8 @@ SECURE = {
     "x-frame-options": "DENY",
 }
 DENIED = {"error": "Missing or invalid token"}
+GOOD = "A-z_0123456789ab"  # 16 characters: the shortest token eco web takes
+TOKEN_RULE = "error: The token must be at least 16 characters, each one of A-Z, a-z, 0-9, - or _."
 
 
 def local(tmp_path, **kwargs):
@@ -290,6 +294,56 @@ def test_token_mode_still_refuses_a_state_change_from_another_origin(tmp_path):
     assert c.post("/echo").status_code == 200
 
 
+# Websockets and other scopes (M2-R14)
+
+
+@pytest.mark.parametrize(
+    "token, headers",
+    [
+        (None, {}),  # local mode, this computer's address
+        ("s3cret", {"Authorization": "Bearer s3cret"}),  # network mode, the right token
+        ("s3cret", {"Host": "evil.example:8000"}),  # network mode, no token, another site
+    ],
+)
+def test_websocket_is_refused_before_any_route(tmp_path, token, headers):
+    app = create_app(tmp_path, token=token)
+    reached = []
+
+    @app.websocket("/ws")
+    async def ws(websocket: WebSocket):
+        reached.append(True)
+        await websocket.accept()
+        await websocket.send_text("the user's books")
+
+    c = TestClient(app, base_url=LOCAL)
+    with (
+        pytest.raises(WebSocketDisconnect) as closed,
+        c.websocket_connect("ws://127.0.0.1:8000/ws", headers=headers),
+    ):
+        pass
+    assert (closed.value.code, reached) == (1008, [])
+
+
+def test_guard_lets_only_lifespan_and_http_through():
+    reached, sent = [], []
+
+    async def app(scope, receive, send):
+        reached.append(scope["type"])
+
+    async def receive():
+        return {"type": "websocket.connect"}
+
+    async def send(message):
+        sent.append(message)
+
+    for token in (None, "s3cret"):
+        guard = _Guard(app, token)
+        for kind in ("lifespan", "websocket", "webtransport", "something-new"):
+            asyncio.run(guard({"type": kind}, receive, send))
+    assert reached == ["lifespan", "lifespan"]
+    assert sent == [{"type": "websocket.close", "code": 1008}] * 2
+
+
 # The page
 
 
@@ -449,17 +503,55 @@ def test_web_made_up_token_is_new_each_time(served, capsys, tmp_path):
 
 
 def test_web_token_from_env_and_option(served, capsys, monkeypatch, tmp_path):
-    monkeypatch.setenv("ECO_TOKEN", "from-env")
+    monkeypatch.setenv("ECO_TOKEN", "token-from-the-env")
     main(["web", "--no-browser", "--data", str(tmp_path)])
-    main(["web", "--token", "from option", "--no-browser", "--data", str(tmp_path)])
+    main(["web", "--token", "token_from_the_option", "--no-browser", "--data", str(tmp_path)])
     assert open_line(capsys.readouterr().out) == [
-        "Open: http://127.0.0.1:8000/?token=from-env",
-        "Open: http://127.0.0.1:8000/?token=from%20option",
+        "Open: http://127.0.0.1:8000/?token=token-from-the-env",
+        "Open: http://127.0.0.1:8000/?token=token_from_the_option",
     ]
     app, _ = served["run"]
     c = TestClient(app, base_url=LOCAL)
-    assert c.get("/", headers={"Authorization": "Bearer from-env"}).status_code == 401
-    assert c.get("/", headers={"Authorization": "Bearer from option"}).status_code == 200
+    assert c.get("/", headers={"Authorization": "Bearer token-from-the-env"}).status_code == 401
+    assert c.get("/", headers={"Authorization": "Bearer token_from_the_option"}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "short",
+        GOOD[:15],
+        "café-café-café-café",
+        "aaaaaaaaaa bbbbbbbbbb",
+        "abcdefghijklmnop.",
+        "abcdefghijklmnop+",
+        "abcdefghijklmnop\n",
+    ],
+)
+@pytest.mark.parametrize("host", ["127.0.0.1", "0.0.0.0"])
+def test_web_refuses_a_weak_token(served, capsys, tmp_path, token, host):
+    argv = ["web", "--host", host, "--token", token, "--no-browser", "--data", str(tmp_path / "d")]
+    assert main(argv) == 2
+    assert capsys.readouterr() == ("", TOKEN_RULE + "\n")
+    assert served["run"] is None
+    assert not (tmp_path / "d").exists()  # refused before anything is made
+
+
+@pytest.mark.parametrize("token", ["short", "café-café-café-café"])
+def test_web_refuses_a_weak_eco_token(served, capsys, monkeypatch, tmp_path, token):
+    monkeypatch.setenv("ECO_TOKEN", token)
+    assert main(["web", "--no-browser", "--data", str(tmp_path)]) == 2
+    assert capsys.readouterr() == ("", TOKEN_RULE + "\n")
+    assert served["run"] is None
+
+
+@pytest.mark.parametrize("token", [GOOD, "Z" * 64, "-_-_-_-_-_-_-_-_"])
+def test_web_takes_a_strong_token(served, capsys, tmp_path, token):
+    assert main(["web", f"--token={token}", "--no-browser", "--data", str(tmp_path)]) == 0
+    assert open_line(capsys.readouterr().out) == [f"Open: http://127.0.0.1:8000/?token={token}"]
+    app, _ = served["run"]
+    c = TestClient(app, base_url=LOCAL)
+    assert c.get("/", headers={"Authorization": f"Bearer {token}"}).status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -517,9 +609,9 @@ def test_web_passes_the_data_folder_and_upload_limit(served, tmp_path):
     [
         ([], "http://127.0.0.1:8000/"),
         (["--host", "::1", "--port", "8001"], "http://[::1]:8001/"),
-        (["--host", "0.0.0.0", "--token", "t"], "http://127.0.0.1:8000/?token=t"),
-        (["--host", "::", "--token", "t"], "http://[::1]:8000/?token=t"),
-        (["--host", "192.168.1.20", "--token", "t"], "http://192.168.1.20:8000/?token=t"),
+        (["--host", "0.0.0.0", "--token", GOOD], f"http://127.0.0.1:8000/?token={GOOD}"),
+        (["--host", "::", "--token", GOOD], f"http://[::1]:8000/?token={GOOD}"),
+        (["--host", "192.168.1.20", "--token", GOOD], f"http://192.168.1.20:8000/?token={GOOD}"),
     ],
 )
 def test_web_opens_the_browser_once_the_server_runs(served, tmp_path, argv, url):

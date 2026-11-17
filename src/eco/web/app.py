@@ -10,6 +10,7 @@ Every request passes `_Guard` before any route sees it, and every response leave
   in the `eco_token` cookie, else 401. `GET /?token=<token>` sets the cookie and redirects to
   `/`, so the token leaves the address bar.
 - Both modes refuse a POST, PUT, PATCH or DELETE whose `Origin` is another site's: 403.
+- Websockets are closed (1008) before any route; only HTTP and lifespan scopes reach the app.
 - Every response, refusals and errors included, carries CSP, nosniff, no-referrer and
   `X-Frame-Options: DENY` (no other site can frame the app).
 """
@@ -72,10 +73,15 @@ class _Guard:
         self.token = token
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":  # lifespan; a websocket route would need these checks too
+        if scope["type"] == "lifespan":
             await self.app(scope, receive, send)
-            return
+        elif scope["type"] == "websocket":  # the GUI uses none (SSE), so none is let in
+            await send({"type": "websocket.close", "code": 1008})
+        elif scope["type"] == "http":
+            await self._http(scope, receive, send)
+        # any other kind of scope never reaches the app
 
+    async def _http(self, scope: Scope, receive: Receive, send: Send) -> None:
         async def send_secured(message: Message) -> None:
             if message["type"] == "http.response.start":
                 MutableHeaders(scope=message).update(SECURITY_HEADERS)

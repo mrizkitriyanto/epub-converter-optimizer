@@ -8,7 +8,6 @@ import sys
 import threading
 from collections import Counter
 from pathlib import Path
-from urllib.parse import quote
 
 from eco import __version__, models
 from eco.events import Finding, FindingEvent, PageEvent, StageEvent
@@ -26,6 +25,8 @@ from eco.options import (
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
 _LOOPBACK = ("127.0.0.1", "localhost", "::1")
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{16,}")
+_TOKEN_RULE = "The token must be at least 16 characters, each one of A-Z, a-z, 0-9, - or _."
 _BROWSER_DELAY = 1.0  # seconds: the server listens by then
 
 
@@ -203,15 +204,18 @@ def _web(args: argparse.Namespace) -> int:
     from eco.web.app import create_app  # imported late: FastAPI is for this command only
     from eco.web.jobs import server_lock
 
+    token = args.token or os.environ.get("ECO_TOKEN") or None
+    if token is not None and not _TOKEN.fullmatch(token):
+        print(f"error: {_TOKEN_RULE}", file=sys.stderr)
+        return 2
+    if token is None and args.host not in _LOOPBACK:
+        token = secrets.token_urlsafe(24)
     data = resolve_data_dir(args.data)
     with server_lock(data):  # a second eco web on these jobs stops here, with one error line
         pass  # the app holds the lock while it runs
-    token = args.token or os.environ.get("ECO_TOKEN") or None
-    if token is None and args.host not in _LOOPBACK:
-        token = secrets.token_urlsafe(24)
     app = create_app(data, token=token, max_upload_mb=args.max_upload_mb)
     host = f"[{args.host}]" if ":" in args.host else args.host
-    query = f"?token={quote(token, safe='')}" if token else ""
+    query = f"?token={token}" if token else ""  # URL-safe: _TOKEN or token_urlsafe
     print(f"Open: http://{host}:{args.port}/{query}", flush=True)
     # a browser cannot connect to the any-address; this computer's loopback reaches the server
     local = {"0.0.0.0": "127.0.0.1", "::": "[::1]"}.get(args.host, host)
@@ -276,7 +280,8 @@ def _parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=8000, help="port to listen on (default: 8000)")
     web.add_argument(
         "--token",
-        help="access token (default: ECO_TOKEN; made up and printed when another address needs one)",
+        help="access token, 16 or more of A-Z a-z 0-9 - _ (default: ECO_TOKEN; "
+        "made up and printed when another address needs one)",
     )
     web.add_argument("--no-browser", action="store_true", help="do not open a browser")
     web.add_argument(

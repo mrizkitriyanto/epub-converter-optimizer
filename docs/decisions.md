@@ -432,3 +432,18 @@ error for either.
   the OS's error.
 - Every response also carries `X-Frame-Options: DENY`, so no other site can frame the app. The
   plan's CSP string stays exactly as it is.
+
+## 2026-11-18: The guard refuses websockets; `eco web` tokens are strong (M2-R14)
+
+- `_Guard` lets only `lifespan` and `http` scopes reach the app. A `websocket` scope is closed
+  with code 1008 before any route, whatever its Host or token: the GUI uses SSE, and a websocket
+  route would otherwise skip the Host, token and Origin checks. Any other scope type is dropped.
+  If a later task wants a websocket: give it the same checks in the guard first.
+- A token given to `eco web` (`--token` or `ECO_TOKEN`, local or network mode) must be at least 16
+  characters, each one of `A-Z a-z 0-9 - _`. Otherwise `eco web` prints `error: The token must
+  be at least 16 characters, each one of A-Z, a-z, 0-9, - or _.` and exits 2 before it makes the
+  data folder. An empty value still means no token. Such a token is URL-safe as it is, so the
+  printed `?token=` needs no quoting, and it is ASCII, so a Bearer header carries it (Starlette
+  reads headers as latin-1). `create_app` itself takes any token. There is no rate limit on 401;
+  16 characters of that alphabet are what keeps an online guess from the LAN out of reach.
+  A token that starts with `-` must be written `--token=-...` (argparse).
