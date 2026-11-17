@@ -155,6 +155,51 @@ def test_small_image_is_never_upscaled():
     assert _open(out).size == (100, 60)
 
 
+def test_general_gray_png_stays_gray_and_not_larger():
+    data = _encode(_noise(300, 300, "L"), "PNG", optimize=True)
+    out = transform_image(data, GENERAL)
+    assert _open(out).mode == "L" and len(out.data) <= len(data)
+
+
+def test_general_gray_alpha_png_stays_la():
+    data = _encode(Image.new("LA", (50, 50), (100, 128)), "PNG")
+    assert _open(transform_image(data, GENERAL)).mode == "LA"
+
+
+def test_general_gray_source_becomes_gray_jpeg():
+    out = transform_image(_encode(_noise(100, 100, "L"), "TIFF"), GENERAL)
+    assert (out.ext, _open(out).mode) == ("jpg", "L")
+
+
+def test_general_palette_png_is_not_larger():
+    data = _encode(_noise(300, 300).quantize(64), "PNG", optimize=True)
+    out = transform_image(data, GENERAL)
+    assert len(out.data) <= len(data)
+
+
+def test_baseline_jpeg_saved_below_profile_quality_is_returned_unchanged():
+    data = _encode(_noise(300, 300), "JPEG", quality=30)
+    out = transform_image(data, GENERAL)
+    assert out.data == data and (out.ext, out.media_type) == ("jpg", "image/jpeg")
+
+
+def test_progressive_jpeg_is_reencoded_to_baseline_even_if_larger():
+    data = _encode(_noise(300, 300), "JPEG", quality=30, progressive=True)
+    out = transform_image(data, GENERAL)
+    assert len(out.data) > len(data) and not _open(out).info.get("progressive")
+
+
+def test_resized_image_is_never_returned_unchanged():
+    data = _encode(_noise(900, 900), "JPEG", quality=30)
+    assert _open(transform_image(data, X4)).size == (480, 480)
+
+
+def test_truncated_jpeg_raises_oserror():
+    data = _encode(_noise(300, 300), "JPEG")
+    with pytest.raises(OSError):
+        transform_image(data[: len(data) // 2], GENERAL)
+
+
 def test_unreadable_data_raises():
     with pytest.raises(UnidentifiedImageError):
         transform_image(b"not an image", X4)
