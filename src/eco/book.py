@@ -17,6 +17,7 @@ class Block:
     image: str = ""  # path relative to the book folder
     caption: str = ""
     ocr: bool = False
+    markdown: bool = False  # text is Markdown that is already escaped (the EPUB reader)
 
 
 @dataclass

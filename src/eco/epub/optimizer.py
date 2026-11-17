@@ -20,7 +20,7 @@ from PIL import Image
 from eco.epub.css import rewrite_css
 from eco.epub.images import ImageResult, transform_image
 from eco.epub.split import anchors, split_document
-from eco.epub.zipio import write_epub_zip
+from eco.epub.zipio import check_expansion, write_epub_zip
 from eco.events import Finding
 from eco.options import CHAPTER_LIMIT_BYTES, DEVICES, Options, image_profile
 
@@ -274,6 +274,7 @@ class _Package:
         unsafe = 0
         try:
             with zipfile.ZipFile(src) as z:
+                check_expansion(z, self.name)
                 infos = [info for info in z.infolist() if not info.is_dir()]
                 self.before = _sizes(infos)
                 for info in infos:
