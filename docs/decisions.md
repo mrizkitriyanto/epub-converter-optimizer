@@ -376,3 +376,25 @@ error for either.
 - The code listings that AC3 compares with are read from `samples/ground-truth/` and a missing file
   skips the test, so the public repo holds no book text. On Windows the models folder is linked into
   each fresh data folder with a junction, which needs no admin rights.
+
+## 2026-11-18: Web jobs: worker process, end status, restart, upload names (M2-R4, M2-R10)
+
+- Each job runs in a fresh `spawn` worker process; the runner thread converts one job at a time,
+  first in first out. `Runner(worker=...)` defaults to `_work`, looked up when the Runner is made,
+  so a test swaps `jobs._work` for a module-level fake that the spawned child imports by name.
+  Cancel is `terminate()`, `join(5)`, `kill()`, `join(5)`; the worker is the base interpreter
+  itself (multiprocessing skips the venv launcher, bpo-35797) and eco's conversion starts no other
+  process, so nothing outlives it. If it turns out wrong: a library that starts its own process
+  needs a Windows job object or a POSIX process group.
+- A file that fails gets `JobFile.error` and the next file goes on. A job ends `done` if any file
+  converted, else `failed`; `cancelled` only by Cancel. A worker that dies without its `end` event
+  gives its unconverted files `The conversion stopped unexpectedly (exit code N).`
+- When the server stops, or a new server finds a job left `running`, that job is not run again: its
+  unconverted files get `The server stopped before this file was converted.` and it ends by the
+  rule above. Jobs left `queued` never started, so they keep their place, oldest first. `purge`
+  skips only `running` jobs. If it turns out wrong: an interrupted job is rebuilt by hand.
+- Outputs are converted into the worker's `tmp/` and moved into `output/` under the upload's name
+  (`output_path`, never the name of an earlier output), so `output/` never holds half a file.
+- Upload names (M2-R10, plus): besides the ruling's rules, a Windows device name (`nul.pdf`) gets a
+  `_` in front, because the output is named after the upload, and a name is cut to 120 characters,
+  type kept, so the paths stay under Windows' 260. If it turns out wrong: an odd stored name.
