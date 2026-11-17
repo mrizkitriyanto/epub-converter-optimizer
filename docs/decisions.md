@@ -57,10 +57,21 @@ error for either.
 - Model files must end in `.safetensors`, `.onnx`, `.npz`, `.json`, `.txt`, `.yaml`, `.yml` or
   `.md`. Everything else is refused, except huggingface_hub's bookkeeping in
   `<repo folder>/.cache/huggingface/` and eco's `.complete` marker.
-- Only network errors are retried (up to 8 attempts, waits of 2 to 60 s): connection and timeout
-  errors from httpx, requests and the standard library, and HTTP 429 or 5xx from the Hub. Other
-  errors stop at once. Finished files are kept between attempts. huggingface_hub 1.33 resumes a
-  partial file only within one attempt, so a file cut off by a connection reset starts again.
-- eco imports `huggingface_hub` (Apache-2.0), `httpx` (BSD-3-Clause) and `requests` (Apache-2.0)
-  directly, so they are listed in `pyproject.toml`. All three were already in the lock through
-  Docling.
+- Each RapidOCR file is checked against the SHA-256 in rapidocr's registry after every download
+  attempt, including files that were already on disk. Docling's helper saves an HTTP error page
+  as the model and later skips any file that exists, so without this check a bad file would stay
+  for good. A file that does not match is deleted and the attempt counts as failed. A file with
+  no SHA-256 in the registry is refused. The three files eco uses all have one.
+- Retries (up to 8 attempts, waits of 2 to 60 s) cover network errors and OCR files with the
+  wrong SHA-256. The network errors are connection and timeout errors from httpx, requests and the
+  standard library, and HTTP 429 or 5xx from the Hub. Other errors stop at once. Files that
+  finished downloading are kept between attempts.
+- Known limit (R-34, accepted for M1): huggingface_hub 1.33 cannot resume a partly downloaded
+  file in a later attempt. It resumes only within one attempt, and only after connect errors,
+  timeouts and protocol errors. If a connection reset cuts a file off mid-download, the next
+  attempt downloads that whole file again. For the 213 MB TableFormer file that can mean many
+  minutes. eco has no Range downloader of its own. The first real `eco setup` on the owner's
+  network will show whether one is needed. The spike downloaded the same files on that network.
+- eco imports `huggingface_hub` (Apache-2.0), `httpx` (BSD-3-Clause), `requests` (Apache-2.0)
+  and `rapidocr` (Apache-2.0) directly, so they are listed in `pyproject.toml`. All four were
+  already in the lock through Docling.

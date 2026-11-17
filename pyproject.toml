@@ -18,6 +18,7 @@ dependencies = [
     "huggingface-hub>=1.33",
     "httpx>=0.28",
     "requests>=2.32",
+    "rapidocr>=3.10",
 ]
 
 [project.scripts]

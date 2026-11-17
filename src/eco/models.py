@@ -1,9 +1,11 @@
 """AI model setup: the only code in eco that may use the network (spec §6.4, §6.5, §8.14)."""
 
+import hashlib
 import logging
 import os
 import socket
 import time
+from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -54,6 +56,10 @@ MARKER = ".complete"
 class ModelsMissing(Exception):
     def __init__(self):
         super().__init__("AI models are not installed. Run: eco setup")
+
+
+class ChecksumMismatch(Exception):
+    """A downloaded file is not the one the registry lists. It is deleted, so a retry fetches it."""
 
 
 def models_dir(data_dir: Path) -> Path:
@@ -133,20 +139,60 @@ def _docling_download(*, output_dir: Path) -> None:
         )
     # Docling's default language and the backend conversion uses. The download URLs are pinned
     # by the rapidocr version in uv.lock. Files already on disk are skipped.
-    RapidOcrModel.download_models(
-        backend="onnxruntime",
-        local_dir=output_dir / RapidOcrModel._model_repo_folder,
-        progress=True,
+    ocr_dir = output_dir / RapidOcrModel._model_repo_folder
+    RapidOcrModel.download_models(backend="onnxruntime", local_dir=ocr_dir, progress=True)
+    # Docling's helper saves an HTTP error page as the model and later skips any file that
+    # exists, so every file is checked here and the bad ones are deleted for the retry to fetch.
+    bad = []
+    for path, expected in _rapidocr_expected(ocr_dir).items():
+        name = path.relative_to(output_dir)
+        if expected is None:
+            raise RuntimeError(f"rapidocr's registry has no SHA-256 for {name}; refusing it")
+        if not path.is_file() or _sha256(path) != expected:
+            path.unlink(missing_ok=True)
+            bad.append(str(name))
+    if bad:
+        raise ChecksumMismatch(f"SHA-256 does not match rapidocr's registry: {', '.join(bad)}")
+
+
+def _sha256(path: Path) -> str:
+    with path.open("rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+def _rapidocr_expected(ocr_dir: Path) -> dict[Path, str | None]:
+    """Each RapidOCR file conversion loads from `ocr_dir`, with its SHA-256 from rapidocr's
+    registry (None if the registry has none). Docling's own helpers pick the files."""
+    from docling.models.stages.ocr import rapid_ocr_model as r
+    from rapidocr.inference_engine.base import InferSession
+
+    def entries(node):
+        if isinstance(node, Mapping):
+            if "model_dir" in node:
+                yield node["model_dir"], node.get("SHA256")
+            for value in node.values():
+                yield from entries(value)
+
+    sha = dict(entries(InferSession.model_info))
+    spec = r._resolve_rapidocr(r._RAPIDOCR_DEFAULT_LANGUAGE, "onnxruntime")
+    artifacts = r._rapidocr_artifacts(
+        ocr_dir,
+        r._backend_to_engine_type("onnxruntime"),
+        spec.ppocr_version,
+        spec.rapidocr_code,
     )
+    return {path: sha.get(url) for a in artifacts.values() for path, url in a.files.items()}
 
 
 def _retryable(e: BaseException | None) -> bool:
-    """True if `e`, or an error it was raised from, is a network failure worth another try."""
+    """True if `e`, or an error it was raised from, is a network failure or a bad download
+    worth another try."""
     import httpx
     import requests
     from huggingface_hub.errors import HfHubHTTPError, OfflineModeIsEnabled
 
-    network = (
+    transient = (
+        ChecksumMismatch,
         ConnectionError,
         TimeoutError,
         httpx.NetworkError,
@@ -161,17 +207,19 @@ def _retryable(e: BaseException | None) -> bool:
             return False
         if isinstance(e, HfHubHTTPError):
             return e.response.status_code == 429 or e.response.status_code >= 500
-        if isinstance(e, network):
+        if isinstance(e, transient):
             return True
         e = e.__cause__ or e.__context__
     return False
 
 
 def download_models(d: Path, *, ipv4: bool = False, attempts: int = 8, sleep=time.sleep) -> None:
-    """Download the models into `d`, retrying network failures, then check every file's format.
+    """Download the models into `d`, retrying network failures and OCR files whose SHA-256 is
+    wrong, then check every file's format.
 
-    Raises RuntimeError when the download still fails after `attempts` tries, or when a file is
-    not in an allowed format. Other errors are raised as they are.
+    Raises RuntimeError when the download still fails after `attempts` tries, when an OCR file
+    has no SHA-256 in rapidocr's registry, or when a file is not in an allowed format. Other
+    errors are raised as they are.
     """
     d.mkdir(parents=True, exist_ok=True)
     with force_ipv4() if ipv4 else nullcontext():
@@ -191,10 +239,10 @@ def download_models(d: Path, *, ipv4: bool = False, attempts: int = 8, sleep=tim
                     ) from e
                 wait = min(2**attempt, 60)
                 log.warning(
-                    "Download interrupted (%s). Retry %d of %d in %d s.",
-                    reason,
-                    attempt + 1,
+                    "Attempt %d of %d failed (%s). Retrying in %d s.",
+                    attempt,
                     attempts,
+                    reason,
                     wait,
                 )
                 sleep(wait)

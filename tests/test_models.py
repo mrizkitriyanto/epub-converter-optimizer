@@ -1,3 +1,4 @@
+import hashlib
 import os
 import socket
 import subprocess
@@ -148,6 +149,7 @@ def test_fetch_uses_pinned_models(tmp_path, monkeypatch):
         "docling.models.stages.ocr.rapid_ocr_model.RapidOcrModel.download_models",
         lambda **kw: ocr.append(kw),
     )
+    monkeypatch.setattr("eco.models._rapidocr_expected", lambda ocr_dir: {})
     models._docling_download(output_dir=tmp_path)
     assert hf == [
         {
@@ -164,6 +166,86 @@ def test_fetch_uses_pinned_models(tmp_path, monkeypatch):
         },
     ]
     assert ocr == [{"backend": "onnxruntime", "local_dir": tmp_path / "RapidOcr", "progress": True}]
+
+
+def test_rapidocr_hashes_come_from_the_registry(tmp_path):
+    """The files conversion loads, with rapidocr 3.10.0's SHA-256 (they change with that pin)."""
+    assert models._rapidocr_expected(tmp_path) == {
+        tmp_path / "PP-OCRv6_det_small.onnx": (
+            "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"
+        ),
+        tmp_path / "ch_ppocr_mobile_v2.0_cls_mobile.onnx": (
+            "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"
+        ),
+        tmp_path / "PP-OCRv6_rec_small.onnx": (
+            "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884"
+        ),
+    }
+
+
+GOOD = b"onnx model"
+
+
+@pytest.fixture
+def ocr_payloads(monkeypatch):
+    """Fake the OCR download of one file whose registry SHA-256 is that of GOOD.
+
+    Each download writes the next payload. Like Docling's helper, it skips a file that exists.
+    """
+    payloads = []
+
+    def download(*, backend, local_dir, progress):
+        local_dir.mkdir(parents=True, exist_ok=True)
+        if not (local_dir / "det.onnx").exists():
+            (local_dir / "det.onnx").write_bytes(payloads.pop(0))
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", lambda **kw: None)
+    monkeypatch.setattr(
+        "docling.models.stages.ocr.rapid_ocr_model.RapidOcrModel.download_models", download
+    )
+    monkeypatch.setattr(
+        "eco.models._rapidocr_expected",
+        lambda ocr_dir: {ocr_dir / "det.onnx": hashlib.sha256(GOOD).hexdigest()},
+    )
+    return payloads
+
+
+def test_bad_ocr_file_is_fetched_again(tmp_path, ocr_payloads):
+    ocr_payloads += [b"<html>502 Bad Gateway</html>", GOOD]
+    waits = []
+    download_models(tmp_path, sleep=waits.append)
+    assert (tmp_path / "RapidOcr/det.onnx").read_bytes() == GOOD
+    assert len(waits) == 1 and models_ready(tmp_path)
+
+
+def test_existing_bad_ocr_file_is_replaced(tmp_path, ocr_payloads):
+    (tmp_path / "RapidOcr").mkdir()
+    (tmp_path / "RapidOcr/det.onnx").write_bytes(b"cut off")
+    ocr_payloads += [GOOD]
+    download_models(tmp_path, sleep=lambda s: None)
+    assert (tmp_path / "RapidOcr/det.onnx").read_bytes() == GOOD
+    assert models_ready(tmp_path)
+
+
+def test_bad_ocr_file_fails_setup_after_last_attempt(monkeypatch, capsys, tmp_path, ocr_payloads):
+    ocr_payloads += [b"bad"] * 8
+    waits = []
+    monkeypatch.setitem(download_models.__kwdefaults__, "sleep", waits.append)
+    assert main(["setup", "--yes", "--data", str(tmp_path)]) == 1
+    err = capsys.readouterr().err
+    assert "RapidOcr/det.onnx" in err and "SHA-256" in err
+    assert len(err.strip().splitlines()) == 1 and "Traceback" not in err
+    assert len(waits) == 7 and not ocr_payloads
+    assert not (tmp_path / "models/RapidOcr/det.onnx").exists()
+    assert not models_ready(tmp_path / "models")
+
+
+def test_ocr_file_without_registry_hash_is_refused(monkeypatch, tmp_path, ocr_payloads):
+    ocr_payloads += [GOOD]
+    monkeypatch.setattr("eco.models._rapidocr_expected", lambda d: {d / "det.onnx": None})
+    with pytest.raises(RuntimeError, match="det.onnx"):
+        download_models(tmp_path, sleep=lambda s: pytest.fail("retried"))
+    assert not models_ready(tmp_path)
 
 
 def test_import_sets_hub_defaults_and_stays_lazy():
