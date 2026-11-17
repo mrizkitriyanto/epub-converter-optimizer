@@ -333,6 +333,20 @@ def test_html_void_tags_and_named_entities_become_xml(tmp_path):
     assert next(root.iter(tag("img"))).get("alt") == ""
 
 
+def test_bare_ampersands_in_raw_html_are_escaped(tmp_path):
+    md = (
+        "# A\n\n<table><tr><td>R&D</td><td>AT&T</td></tr></table>\n\n"
+        '<p><a href="https://example.com/?a=1&b=2&copy=3">x&#169;y &copy; &amp; &bogus;</a></p>\n'
+    )
+    z, findings = build(tmp_path, md)
+    assert findings == []
+    root = read_xml(z, "OEBPS/text/ch001.xhtml")
+    assert [td.text for td in root.iter(tag("td"))] == ["R&D", "AT&T"]
+    link = next(root.iter(tag("a")))
+    assert link.get("href") == "https://example.com/?a=1&b=2&copy=3"
+    assert link.text == "x©y © & &bogus;"
+
+
 def test_images_get_safe_names_and_manifest_entries(tmp_path):
     folder = tmp_path / "my book"
     (folder / "images dir").mkdir(parents=True)

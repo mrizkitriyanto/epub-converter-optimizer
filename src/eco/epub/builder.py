@@ -50,7 +50,7 @@ _PAGE = re.compile(r"<!--\s*page:\s*(\d+)\s*-->")
 _TWIN = re.compile(r"<!--\s*table-image:\s*(.*?)\s*-->")
 _NEWLINE = re.compile(r"\r\n?|\n")
 _NOT_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff]")
-_ENTITY = re.compile(r"&([A-Za-z][A-Za-z0-9]*);")
+_ENTITY = re.compile(r"&(?:([A-Za-z][A-Za-z0-9]*);|#(?:[0-9]+|x[0-9A-Fa-f]+);)?")
 _VOID = re.compile(
     r"<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)"
     r"(?=[\s/>])([^<>]*?)\s*/?>",
@@ -320,12 +320,17 @@ def _esc(text: str) -> str:
 
 
 def _fix(markup: str) -> str:
-    """Turn raw HTML into XML: named entities become characters, void tags self-close."""
+    """Turn raw HTML into XML.
+
+    Named entities become characters, a bare "&" is escaped, void tags self-close.
+    """
     return _VOID.sub(_void, _ENTITY.sub(_entity, markup))
 
 
 def _entity(m: re.Match) -> str:
-    if m[1] in ("amp", "lt", "gt", "quot", "apos"):
+    if m[0] == "&":  # not a reference at all
+        return "&amp;"
+    if m[1] is None or m[1] in ("amp", "lt", "gt", "quot", "apos"):  # numeric, or XML's own
         return m[0]
     char = html5.get(f"{m[1]};")
     return html.escape(char) if char else f"&amp;{m[1]};"
