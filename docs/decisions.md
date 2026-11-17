@@ -176,6 +176,11 @@ error for either.
   builder makes `dc:identifier` from it). `--title`, `--author` and `--lang` are applied on top of
   the metadata at build time, for PDF, Markdown and book folders alike. If they went into the cached
   book, a later `--title` would be ignored; if they went into the key, a new title would run Docling.
+- The key is the content of the PDF, not its name, so a renamed or copied PDF reads the same cached
+  book. The file name must not leak through it: for a PDF without a title, `convert_file` sets the
+  title to the stem of the current file at build time, before `--title` is applied. The cached
+  `book.md` keeps the stem of the first extraction, and so does `source`, which names the file the
+  book was first made from (that keeps `dc:identifier` the same for every copy).
 - `write_book` writes `report.json` last, so a folder without it is what a cancelled or crashed run
   left behind. It is deleted before the next extraction. A folder with one is reused, and its
   findings are reported again.

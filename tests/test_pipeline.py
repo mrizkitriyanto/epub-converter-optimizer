@@ -1,4 +1,5 @@
 import hashlib
+import shutil
 import socket
 import xml.etree.ElementTree as ET
 import zipfile
@@ -178,6 +179,30 @@ def test_title_author_and_language_do_not_re_extract(tmp_path, fixtures_dir, fak
     assert metadata(first.outputs["epub"])["title"] == "blank_middle"
     assert metadata(second.outputs["epub"]) == {"title": "New", "creator": "Au", "language": "id"}
     assert load_source(second.book_dir).meta["title"] == "blank_middle"
+
+
+def test_renamed_pdf_without_a_title_is_titled_after_its_new_name(
+    tmp_path, fixtures_dir, fake_blocks
+):
+    old = tmp_path / "scan_0012.pdf"
+    shutil.copy(fixtures_dir["blank"], old)
+    first = convert(old, tmp_path, out="one")
+    new = old.rename(tmp_path / "Atomic Habits.pdf")
+    second = convert(new, tmp_path, out="two")
+    given = convert(new, tmp_path, Options(title="Given"), out="three")
+    assert len(fake_blocks.calls) == 2  # the renamed file read the cache
+    assert second.book_dir == first.book_dir
+    assert metadata(first.outputs["epub"])["title"] == "scan_0012"
+    assert metadata(second.outputs["epub"])["title"] == "Atomic Habits"
+    assert metadata(given.outputs["epub"])["title"] == "Given"
+
+
+def test_renamed_pdf_keeps_the_title_in_its_metadata(tmp_path, titled_pdf, fake_blocks):
+    first = convert(titled_pdf, tmp_path, out="one")
+    second = convert(titled_pdf.rename(tmp_path / "renamed.pdf"), tmp_path, out="two")
+    assert len(fake_blocks.calls) == 2
+    assert metadata(first.outputs["epub"])["title"] == "A Book"
+    assert metadata(second.outputs["epub"])["title"] == "A Book"
 
 
 def test_options_override_the_metadata_of_markdown_and_book_folders(tmp_path, small_book):

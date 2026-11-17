@@ -319,6 +319,10 @@ def convert_file(
             else:
                 source_path = path
             source = load_source(source_path)
+            if kind == "pdf" and "title" not in pdf_metadata(path):
+                # the cache serves every file with these bytes, so the file name it saw first
+                # must not become the title of a copy that has another name
+                source.meta["title"] = path.stem
             _override(source.meta, options)
             built = scratch / "built.epub"
             with _stage(on_event, "epub"):
