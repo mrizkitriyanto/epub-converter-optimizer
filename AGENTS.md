@@ -53,7 +53,7 @@ src/eco/events.py            Finding, StageEvent, PageEvent, FindingEvent, STAGE
 src/eco/book.py              Block, Book
 src/eco/bookfolder.py        write_book(), load_source(), BookSource, write_report()
 src/eco/models.py            model setup/download/offline
-src/eco/pipeline.py          extract_pdf(), convert_file(), output_path(), Result
+src/eco/pipeline.py          extract_pdf(), page_book(), convert_file(), output_path(), Result
 src/eco/epub/builder.py      build_epub()
 src/eco/epub/images.py       transform_image()
 src/eco/epub/optimizer.py    optimize_epub(), OptimizeReport, DRMError
@@ -61,15 +61,18 @@ src/eco/epub/css.py          rewrite_css()
 src/eco/epub/split.py        split_document(), anchors()
 src/eco/epub/zipio.py        write_epub_zip(), check_expansion(), MAX_EPUB_BYTES
 src/eco/epub/reader.py       epub_to_book()
-src/eco/pdf/pages.py         PageInfo, inspect_pdf(), bookmarks(), pdf_metadata(), render_page(), crop(), to_pdfium_rect()
+src/eco/pdf/pages.py         PageInfo, inspect_pdf(), bookmarks(), pdf_metadata(), page_count(), render_page(), render_page_fit(), crop(), to_pdfium_rect()
 src/eco/pdf/docling_adapter.py  extract_blocks()
 src/eco/pdf/reading_order.py fix_reading_order()
 src/eco/pdf/code.py          reextract_code(), fix_code_blocks()
 src/eco/pdf/regions.py       materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
+src/eco/render/md2typst.py   to_typst(), RenderSettings, VIEWS
+src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered, ChapterNotFound
 src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild), Runner, JobInfo, JobFile, safe_name(), server_lock(), RETENTION_DAYS, _work() (worker process)
 src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs routes, _Upload (a streamed upload), Server (uvicorn that tells the app to stop)
+src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError
 src/eco/web/strings.py       STRINGS: every English text of the GUI
 src/eco/web/templates/index.html  src/eco/web/static/app.css
 tests/conftest.py  tests/fixtures/make.py  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}

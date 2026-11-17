@@ -25,4 +25,16 @@ STRINGS = {
     "error_output": "No such output file",
     "error_finished": "This job has already finished",
     "error_server": "Something went wrong on the server",
+    # The preview API (eco.web.preview) answers its errors the same way.
+    "error_view": "Unknown view: {view}",
+    "error_format": "Unknown format: {format}",
+    "error_size": "Unknown size: {size}",
+    "error_not_converted": "This file has not been converted yet",
+    "error_page": "No such page",
+    "error_chapter": "No such chapter",
+    "error_no_source": "This file has no source pages",
+    "error_live_target": "Give exactly one of page and chapter",
+    "error_no_preview": "No preview is available for this file",
+    "error_no_text": "This file has no text to show",
+    "error_pdf": "This PDF could not be read",
 }

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import typst
-from PIL import Image
+from PIL import Image, ImageFile
 from pypdf import PdfReader
 
 from eco.bookfolder import load_source
@@ -701,3 +701,36 @@ def test_multi_picture_jpeg_goes_through_the_profile(tmp_path, device):
     assert len(names) == 1 and names[0].startswith("mpo.") and f'image("{names[0]}"' in main
     assert isinstance(files[names[0]], bytes)  # re-encoded: the first picture only
     assert compiles(files) == 1
+
+
+# An image over the pixel limit, but under twice the limit: PIL only warns there, and then decodes it
+
+
+@pytest.mark.filterwarnings("ignore:Image size:PIL.Image.DecompressionBombWarning")
+@pytest.mark.parametrize("use_profile", [False, True])
+def test_an_image_over_the_pixel_limit_is_left_out_before_it_is_decoded(
+    tmp_path, monkeypatch, use_profile
+):
+    Image.new("L", (40, 30), 120).save(tmp_path / "bomb.png")  # 1,200 pixels
+    Image.new("L", (30, 30), 120).save(tmp_path / "fine.png")  # 900 pixels
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)
+    decoded = []
+    real = ImageFile.ImageFile.load
+
+    def load(self):
+        decoded.append(self.size)
+        return real(self)
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", load)
+    profile = image_profile(Options(device="x4")) if use_profile else None
+    main, files = convert(tmp_path, "![](bomb.png)\n\n![](fine.png)\n", profile=profile)
+    assert 'image("bomb.png"' not in main and "fine.png" in main
+    assert (40, 30) not in decoded and (30, 30) in decoded  # the other one is read as before
+    assert compiles(files) == 1
+
+
+def test_a_picture_without_a_pixel_limit_is_kept(tmp_path, monkeypatch):
+    Image.new("L", (40, 30), 120).save(tmp_path / "big.png")
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", None)  # a user who turned the check off
+    main, _ = convert(tmp_path, "![](big.png)\n")
+    assert 'image("big.png"' in main

@@ -2,7 +2,7 @@
 
 `render_book` turns the Typst source from `md2typst` into one PNG per device page, a map from device
 page to source page, and the chapter list. `render_chapter` renders one chapter alone, for the live
-preview.
+preview. `read_map` and `page_file` read a finished cache without reading all of its pages.
 """
 
 import json
@@ -27,6 +27,10 @@ _PAGE_FILE = re.compile(r"\d{4}\.png")
 _CHAPTER_START = re.compile(r"(?m)^(?=#pagebreak\(weak: true\)\n#context \[#metadata\(\(title: )")
 _SOURCE_MARKER = re.compile(r"(?m)^[ \t]*#context \[#metadata\(\(src: (\d+), page:")
 _IMAGE_REF = re.compile(r'image\("((?:[^"\\]|\\.)*)"')
+
+
+class ChapterNotFound(LookupError):
+    """`render_chapter` was asked for a chapter that the book does not have."""
 
 
 @dataclass
@@ -68,30 +72,47 @@ def render_chapter(
     device: str,
     settings: RenderSettings,
     view: str,
-    source_page: int,
+    source_page: int | None = None,
+    chapter: int | None = None,
     image_profile: ImageProfile | None = None,
 ) -> tuple[Rendered, int]:
-    """Render the chapter that holds `source_page`.
+    """Render one chapter: the one that holds `source_page`, or the one at index `chapter`.
 
-    The chapter is the one that holds the last page marker at or below `source_page` (the first
-    chapter when there is none). Each chapter starts on a new page, so the pages of the source
-    text cut at the chapter start are laid out exactly as inside the whole book. The excerpt keeps
-    the book's own preamble and the images the chapter refers to. Returns the excerpt and the index
-    of the excerpt page that holds the marker of `source_page`.
+    With `source_page` the chapter is the one that holds the last page marker at or below it (the
+    first chapter when there is none), and the answer is the excerpt and the index of the excerpt
+    page that holds the marker of `source_page`. With `chapter` (0-based, in the order of
+    `Rendered.chapters`) the index is 0, the chapter's first page, and ChapterNotFound says that
+    the book has no such chapter. A book with no chapter heading is one chapter, index 0, though
+    its `chapters` list is empty; the text before the first heading is no chapter. Give one of the
+    two, not both.
+
+    Each chapter starts on a new page, so the pages of the source text cut at the chapter start are
+    laid out exactly as inside the whole book. The excerpt keeps the book's own preamble and the
+    images the chapter refers to.
     """
+    if (source_page is None) == (chapter is None):
+        raise ValueError("Give source_page or chapter, not both and not neither")
     files = to_typst(src, device=device, settings=settings, view=view, image_profile=image_profile)
     main = files["main.typ"].decode()
     head, _, body = main.partition("\n\n")  # the preamble has no blank line
-    chunks = _CHAPTER_START.split(body)
-    chosen = next((n for n, chunk in enumerate(chunks) if chunk.strip()), 0)
-    for n, chunk in enumerate(chunks):
-        if any(int(m[1]) <= source_page for m in _SOURCE_MARKER.finditer(chunk)):
-            chosen = n
-    chunk = chunks[chosen]
+    chunks = _CHAPTER_START.split(body)  # what comes before the first chapter, then each chapter
+    if chapter is not None:
+        chapters = chunks[1:] or chunks  # with no heading the whole body is the one chapter
+        if not 0 <= chapter < len(chapters):
+            raise ChapterNotFound(f"No chapter {chapter}")
+        chunk = chapters[chapter]
+    else:
+        chosen = next((n for n, chunk in enumerate(chunks) if chunk.strip()), 0)
+        for n, chunk in enumerate(chunks):
+            if any(int(m[1]) <= source_page for m in _SOURCE_MARKER.finditer(chunk)):
+                chosen = n
+        chunk = chunks[chosen]
     used = {m[1] for m in _IMAGE_REF.finditer(chunk)}
     excerpt = {"main.typ": f"{head}\n\n{chunk.rstrip()}\n".encode()}
     excerpt |= {key: data for key, data in files.items() if key != "main.typ" and _str(key) in used}
     compiled = _compile(excerpt)
+    if chapter is not None:
+        return compiled.rendered, 0
     below = [page for src_page, page in compiled.markers if src_page <= source_page]
     return compiled.rendered, below[-1] if below else 0
 
@@ -152,19 +173,35 @@ def _gray(png: bytes) -> bytes:
 # was never finished and is rendered again.
 
 
-def _page_file(folder: Path, n: int) -> Path:
+def page_file(folder: Path, n: int) -> Path:
+    """The PNG of page `n` (0-based) of the cache in `folder`."""
     return folder / f"{n + 1:04d}.png"
 
 
-def _read_cache(folder: Path) -> Rendered | None:
+def read_map(folder: Path) -> tuple[list[int], list[tuple[str, int]]] | None:
+    """The page map and the chapters of a finished cache, read without reading any page, or None
+    when `folder` holds none: no readable map.json, or a page file that is missing."""
     try:
         data = json.loads((folder / _MAP).read_text(encoding="utf-8"))
         page_map = [int(n) for n in data["page_map"]]
         chapters = [(str(title), int(page)) for title, page in data["chapters"]]
-        pages = [_page_file(folder, n).read_bytes() for n in range(len(page_map))]
     except (OSError, ValueError, KeyError, TypeError):
         return None
-    return Rendered(pages, page_map, chapters) if pages else None
+    if not page_map or not all(page_file(folder, n).is_file() for n in range(len(page_map))):
+        return None
+    return page_map, chapters
+
+
+def _read_cache(folder: Path) -> Rendered | None:
+    found = read_map(folder)
+    if found is None:
+        return None
+    page_map, chapters = found
+    try:
+        pages = [page_file(folder, n).read_bytes() for n in range(len(page_map))]
+    except OSError:
+        return None
+    return Rendered(pages, page_map, chapters)
 
 
 def _clear_cache(folder: Path) -> None:
@@ -177,7 +214,7 @@ def _clear_cache(folder: Path) -> None:
 
 def _write_cache(folder: Path, rendered: Rendered) -> None:
     for n, png in enumerate(rendered.pages):
-        _page_file(folder, n).write_bytes(png)
+        page_file(folder, n).write_bytes(png)
     data = {"page_map": rendered.page_map, "chapters": rendered.chapters}
     tmp = folder / f"{_MAP}.tmp"
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")

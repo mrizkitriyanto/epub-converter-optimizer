@@ -424,3 +424,21 @@ def test_unsupported_input(tmp_path):
     note.write_text("x")
     with pytest.raises(ValueError, match="Unsupported input: notes.txt"):
         convert(note, tmp_path)
+
+
+def test_page_book_is_public_and_writes_a_book_folder_of_page_images(tmp_path, fixtures_dir):
+    from eco.pipeline import page_book
+
+    folder = page_book(
+        fixtures_dir["blank"],
+        Options(),
+        tmp_path / "pages.book",
+        lambda event: None,
+        lambda: False,
+        [],
+    )
+    text = (folder / "book.md").read_text(encoding="utf-8")
+    assert "<!-- page: 1 -->" in text and "<!-- page: 3 -->" in text
+    assert "<!-- page: 2 -->" not in text  # the blank page is skipped
+    assert len(list((folder / "images").glob("p*-slice-*"))) == 2  # and the cover
+    assert (folder / "report.json").is_file()  # written last: the folder is finished

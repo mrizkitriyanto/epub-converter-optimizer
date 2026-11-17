@@ -519,3 +519,40 @@ error for either.
   (curl's `-J` reads only `filename`). An event stream sends the comment `: keepalive` after 15 s
   with no event, so a proxy does not close it for being idle and a server that follows ASGI spec
   2.4 finds a client that has gone. A browser ignores a comment.
+
+## 2026-11-18: Preview API (M2-R20 to M2-R27, M2-R32)
+
+The rulings fix the routes, the caches (`<job>/preview/<n>/`), the numbering (pages from 1, chapters
+from 0) and the state (409 before the conversion). These are the choices they leave open.
+
+- A source page is drawn 600 px wide and at most 6,000 px tall. A page 1 pt wide and 14,400 pt tall
+  would be 8,640,000 px tall at 600 px wide, and PDFium refuses a bitmap that size; such a page is
+  drawn smaller. "At most 10 times as tall as it is wide" cannot hold for it at any scale, so it is
+  read as 10 times the 600 px. If it turns out wrong: two constants, `SOURCE_WIDTH` and
+  `SOURCE_MAX_HEIGHT`.
+- A book with no `#` heading is chapter 0 of the live preview, though its `chapters` list is empty
+  (M2-R26 calls it one chapter, and without this it would have no chapter to ask for). Text before
+  the first `#` is no chapter: `chapter=0` is the chapter of the first heading. `X-Excerpt-Index`
+  counts from 0 (the page of the excerpt) and `X-Excerpt-Pages` is the number of pages of the
+  excerpt.
+- Statuses the rulings leave open. An unknown `size` is 400 `Unknown size: <s>`, like a view and a
+  format. A `font_size` outside 8 to 96 is 422 with the text of the upload options. A `page` of a
+  file that is not a PDF is 404 like `source`; a `page` the PDF does not have is 404 `No such
+  page`, `page=0` too. A PDF that cannot be read is 422 `This PDF could not be read`. A file whose
+  book cannot be found or built (a reflow PDF whose extraction folder is gone, an EPUB that cannot
+  be read) is 404 `No preview is available for this file`, and for its text `This file has no text
+  to show`. A request is checked in this order: job, file, the values it gives (400, 422), the
+  state (409), then the page or chapter (404).
+- The text route sends the book as the file holds it: the uploaded Markdown, or the `book.md` of an
+  EPUB's book folder or of a reflow PDF's. It has its front matter, and CRLF line endings where
+  `write_book` wrote it on Windows (text mode), and no size limit. The page shows it with
+  `textContent`. If it turns out wrong: cut it at a length, or drop the front matter, in the route.
+- PDFium is not thread-safe, and the routes run on a pool of threads, so every use of PDFium in the
+  server process (the page count, a source page, the page book of a pages-mode PDF) holds one lock.
+  The page book of a long pages-mode PDF therefore makes the source pages wait.
+- An image of more than `Image.MAX_IMAGE_PIXELS` pixels (89.5 million) is left out of a preview,
+  like an unreadable one. PIL refuses only more than twice that, and for the sizes between it warns
+  and decodes the picture whole; an EPUB's images are copied as they are, and a PNG of 90 million
+  pixels takes 400 KB. The check is in `md2typst`, on the header, before any decoding.
+- The routes send no cache headers. The live preview keeps its last 32 answers on the server, and a
+  page that the browser asks for again is a small file.

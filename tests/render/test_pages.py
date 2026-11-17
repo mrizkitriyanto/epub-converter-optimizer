@@ -210,3 +210,73 @@ def test_rerender_drops_pages_left_by_a_longer_book(tmp_path, small_book):
     (cache / "0009.png").write_bytes(b"stale")
     render(load_source(small_book), cache_dir=cache)
     assert sorted(p.name for p in cache.glob("*.png")) == ["0001.png", "0002.png"]
+
+
+# Chapters by index, and the cache read without its pages
+
+
+def chapter_of(src, chapter, **kw):
+    kw.setdefault("settings", RenderSettings(status_bar=False))
+    return render_chapter(src, device="x4", view="crosspoint", chapter=chapter, **kw)
+
+
+def test_chapter_by_index_is_laid_out_as_in_the_book(small_book):
+    src, st = load_source(small_book), RenderSettings(status_bar=False)
+    full = render_book(src, device="x4", settings=st, view="crosspoint")
+    (first, i), (second, j) = chapter_of(src, 0), chapter_of(src, 1)
+    assert (i, j) == (0, 0)  # the first page of the chapter
+    assert (first.chapters, second.chapters) == ([("One", 0)], [("Two", 0)])
+    assert first.pages[0] == full.pages[0] and second.pages[0] == full.pages[1]
+
+
+@pytest.mark.parametrize("chapter", [2, 99, -1])
+def test_a_chapter_that_the_book_does_not_have_is_an_error(small_book, chapter):
+    with pytest.raises(pages_module.ChapterNotFound):
+        chapter_of(load_source(small_book), chapter)
+
+
+def test_text_before_the_first_heading_is_not_a_chapter(tmp_path):
+    src = book(tmp_path, "Intro.\n\n# One\n\ntext\n\n# Two\n\nmore\n")
+    assert chapter_of(src, 0)[0].chapters == [("One", 0)]
+    assert chapter_of(src, 1)[0].chapters == [("Two", 0)]
+    with pytest.raises(pages_module.ChapterNotFound):
+        chapter_of(src, 2)
+
+
+def test_a_book_without_a_heading_is_one_chapter(tmp_path):
+    src = book(tmp_path, "Just text.\n\nMore text.\n")
+    part, index = chapter_of(src, 0)
+    assert (part.chapters, len(part.pages), index) == ([], 1, 0)
+    with pytest.raises(pages_module.ChapterNotFound):
+        chapter_of(src, 1)
+
+
+@pytest.mark.parametrize("kw", [{}, {"source_page": 1, "chapter": 0}])
+def test_a_chapter_is_asked_for_by_page_or_by_index_not_both(small_book, kw):
+    with pytest.raises(ValueError, match="source_page or chapter"):
+        render_chapter(
+            load_source(small_book), device="x4", settings=RenderSettings(), view="crosspoint", **kw
+        )
+
+
+def test_the_map_of_a_cache_is_read_without_its_pages(tmp_path, small_book, monkeypatch):
+    cache = tmp_path / "cache"
+    rendered = render(load_source(small_book), cache_dir=cache)
+    monkeypatch.setattr("pathlib.Path.read_bytes", lambda self: pytest.fail("read a page"))
+    assert pages_module.read_map(cache) == (rendered.page_map, rendered.chapters)
+    monkeypatch.undo()
+    assert pages_module.page_file(cache, 1).read_bytes() == rendered.pages[1]
+
+
+def test_a_folder_that_holds_no_finished_cache_has_no_map(tmp_path, small_book):
+    cache = tmp_path / "cache"
+    assert pages_module.read_map(cache) is None  # no folder
+    render(load_source(small_book), cache_dir=cache)
+    (cache / "0002.png").unlink()
+    assert pages_module.read_map(cache) is None  # a page is missing
+    render(load_source(small_book), cache_dir=cache)
+    assert pages_module.read_map(cache) is not None
+    (cache / "map.json").write_text("{not json")
+    assert pages_module.read_map(cache) is None  # a damaged map
+    (cache / "map.json").unlink()
+    assert pages_module.read_map(cache) is None  # a folder that was never finished

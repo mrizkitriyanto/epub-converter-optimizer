@@ -26,6 +26,19 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
     POST /api/jobs/{id}/rebuild                   JSON options; 201, a new job from the same files
     GET  /api/jobs/{id}/files/{n}/download/{fmt}  an output, as an attachment
 
+The previews of the review stage (`eco.web.preview` does the work, the routes only check what they
+are given, and its errors are answered like all the others). `format` is `epub` and `view` is
+`crosspoint`, `crossink` or `stock` (both have defaults); pages count from 1, chapters from 0:
+
+    GET  /api/jobs/{id}/files/{n}/pages?format=&view=            page counts, page map, chapters
+    GET  /api/jobs/{id}/files/{n}/source/{page}.png              a PDF page, 600 px wide
+    GET  /api/jobs/{id}/files/{n}/preview/{format}/{page}.png    a device page; `?view=`
+    GET  /api/jobs/{id}/files/{n}/live.png                       one page of a chapter, rendered now:
+         ?format=&view=&page=|chapter=&font_size=&size=          `page` (a PDF's source page) or
+                                                                 `chapter`; the PNG has the headers
+                                                                 X-Excerpt-Index and X-Excerpt-Pages
+    GET  /api/jobs/{id}/files/{n}/text                           the book's Markdown, plain text
+
 The upload limit (`--max-upload-mb`, in MiB) is for all the files of a request together. It is
 kept while the body arrives, see `_Upload`: a body that goes over it is refused at once, and
 nothing of it stays on the disk. A request may hold `MAX_FILES` files.
@@ -57,7 +70,7 @@ from urllib.parse import quote
 
 import anyio
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
@@ -80,6 +93,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from eco.options import Options
 from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, safe_name, server_lock
+from eco.web.preview import PreviewError, Previews
 from eco.web.strings import STRINGS
 
 HERE = Path(__file__).parent
@@ -234,6 +248,17 @@ def _disposition(name: str) -> str:
     (RFC 6266, section 4.3)."""
     ascii_name = re.sub(r'[^\x20-\x7e]|["\\]', "_", name)
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"
+
+
+def _page_number(page: str) -> int:
+    """A page number in a URL: a plain decimal, as strict as a file's number. 404 for the rest."""
+    if not _INDEX.fullmatch(page):
+        raise HTTPException(404, STRINGS["error_page"])
+    return int(page)
+
+
+def _png(data: bytes, **headers: str) -> Response:
+    return Response(data, media_type="image/png", headers=headers)
 
 
 def _valid(name: str, value) -> bool:
@@ -530,6 +555,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     app = _App(token or None, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
     app.state.runner = runner
+    previews = app.state.previews = Previews(store)
     app.state.data_dir = Path(data_dir)
     app.state.max_upload_mb = max_upload_mb
     app.state.stopping = threading.Event()  # set by `Server` when it is asked to stop
@@ -557,6 +583,10 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         message = f"{where}: {first['msg']}" if where else first["msg"]
         return JSONResponse({"error": message}, status_code=422)
 
+    @app.exception_handler(PreviewError)
+    async def preview_error(request: Request, exc: PreviewError):
+        return JSONResponse({"error": exc.message}, status_code=exc.status)
+
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, exc: Exception):
         return JSONResponse({"error": STRINGS["error_server"]}, status_code=500)
@@ -568,6 +598,13 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
             return store.get(job_id)
         except KeyError:
             raise HTTPException(404, STRINGS["error_job"]) from None
+
+    def file_of(job_id: str, n: str) -> tuple[JobInfo, int]:
+        """The job and the index of its file `n`. `n` is a plain decimal that the job has."""
+        info = job_of(job_id)
+        if not _INDEX.fullmatch(n) or int(n) >= len(info.files):
+            raise HTTPException(404, STRINGS["error_file"])
+        return info, int(n)
 
     def queue_job(make: Callable[[], JobInfo]) -> JobInfo:
         """Queue the new job `make` makes, and show it as it is once queued: its position."""
@@ -646,10 +683,8 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
 
     @app.get("/api/jobs/{job_id}/files/{n}/download/{fmt}")
     def download(job_id: str, n: str, fmt: str):
-        info = job_of(job_id)
-        if not _INDEX.fullmatch(n) or int(n) >= len(info.files):
-            raise HTTPException(404, STRINGS["error_file"])
-        made = info.files[int(n)].outputs.get(fmt)  # `fmt` is only ever looked up, never a path
+        info, index = file_of(job_id, n)
+        made = info.files[index].outputs.get(fmt)  # `fmt` is only ever looked up, never a path
         path = Path(made) if made else None
         output_folder = (store.job_dir(job_id) / "output").resolve()
         if not path or not path.is_file() or not path.resolve().is_relative_to(output_folder):
@@ -659,5 +694,58 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
             media_type=_MEDIA.get(fmt, "application/octet-stream"),
             headers={"Content-Disposition": _disposition(path.name)},
         )
+
+    # These do file work and long renders, so they are plain `def`: they run on the thread pool.
+
+    @app.get("/api/jobs/{job_id}/files/{n}/pages")
+    def preview_pages(
+        job_id: str,
+        n: str,
+        fmt: str = Query("epub", alias="format"),
+        view: str = "crosspoint",
+    ):
+        info, index = file_of(job_id, n)
+        return previews.pages(info, index, fmt, view)
+
+    @app.get("/api/jobs/{job_id}/files/{n}/source/{page}.png")
+    def source_page(job_id: str, n: str, page: str):
+        info, index = file_of(job_id, n)
+        return _png(previews.source_page(info, index, _page_number(page)))
+
+    @app.get("/api/jobs/{job_id}/files/{n}/preview/{fmt}/{page}.png")
+    def device_page(job_id: str, n: str, fmt: str, page: str, view: str = "crosspoint"):
+        info, index = file_of(job_id, n)
+        return _png(previews.device_page(info, index, fmt, view, _page_number(page)))
+
+    @app.get("/api/jobs/{job_id}/files/{n}/live.png")
+    def live_page(
+        job_id: str,
+        n: str,
+        fmt: str = Query("epub", alias="format"),
+        view: str = "crosspoint",
+        page: int | None = None,
+        chapter: int | None = None,
+        font_size: int | None = None,
+        size: str | None = None,
+    ):
+        info, index = file_of(job_id, n)
+        if (page is None) == (chapter is None):
+            raise HTTPException(422, STRINGS["error_live_target"])
+        if font_size is not None and font_size not in FONT_SIZES:  # it goes into Typst source
+            raise HTTPException(
+                422,
+                STRINGS["error_font_size"].format(low=FONT_SIZES.start, high=FONT_SIZES.stop - 1),
+            )
+        shown = previews.live(
+            info, index, fmt, view, font_size=font_size, size=size, page=page, chapter=chapter
+        )
+        return _png(
+            shown.png, **{"X-Excerpt-Index": str(shown.index), "X-Excerpt-Pages": str(shown.pages)}
+        )
+
+    @app.get("/api/jobs/{job_id}/files/{n}/text")
+    def book_text(job_id: str, n: str):
+        info, index = file_of(job_id, n)
+        return FileResponse(previews.text(info, index), media_type="text/plain; charset=utf-8")
 
     return app

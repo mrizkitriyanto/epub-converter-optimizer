@@ -101,6 +101,17 @@ def _pt(value: float) -> str:
     return f"{round(value, 2):g}pt"
 
 
+def _check_pixels(im: Image.Image) -> None:
+    """Raise DecompressionBombError for an image of more than `Image.MAX_IMAGE_PIXELS` pixels.
+
+    PIL itself refuses only an image of more than twice that and warns for the ones between, then
+    decodes them whole. A small file can hold such a raster, and a preview must not decode one.
+    """
+    limit = Image.MAX_IMAGE_PIXELS
+    if limit and im.width * im.height > limit:
+        raise Image.DecompressionBombError(f"Image of {im.width}x{im.height} pixels is too large")
+
+
 def _words(text: str) -> str:
     return " ".join(text.split())
 
@@ -471,7 +482,10 @@ class _Converter:
         key = path.relative_to(self.base).as_posix()
         if self.profile is None:
             return self._load_as_is(path, key)
-        result = transform_image(path.read_bytes(), self.profile)
+        data = path.read_bytes()
+        with Image.open(BytesIO(data)) as im:
+            _check_pixels(im)
+        result = transform_image(data, self.profile)
         if result is None:
             return None
         key = self._unique(key, result.ext)
@@ -492,6 +506,7 @@ class _Converter:
             self.files[key] = path
             return key, None
         with Image.open(path) as im:
+            _check_pixels(im)
             im.load()
             size, ext = im.size, _FORMAT_SUFFIX.get(im.format or "")
         if ext is None:

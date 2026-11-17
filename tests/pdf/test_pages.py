@@ -4,6 +4,7 @@ import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, TextStringObject
 
+import eco.pdf.pages as pdf_pages
 from eco.pdf.pages import (
     PdfOpenError,
     bookmarks,
@@ -119,3 +120,45 @@ def test_bookmarks_empty(fixtures_dir):
 
 def test_metadata_is_stripped_and_empty_dropped(titled_pdf):
     assert pdf_metadata(titled_pdf) == {"title": "A Book"}
+
+
+# Page count and the preview picture
+
+
+def blank_pdf(tmp_path, width, height):
+    writer = PdfWriter()
+    writer.add_blank_page(width=width, height=height)
+    path = tmp_path / f"{width}x{height}.pdf"
+    with path.open("wb") as f:
+        writer.write(f)
+    return path
+
+
+def test_page_count_does_not_read_the_pages(fixtures_dir):
+    assert pdf_pages.page_count(fixtures_dir["blank"]) == 3
+
+
+def test_page_count_of_a_file_that_is_not_a_pdf(tmp_path):
+    junk = tmp_path / "junk.pdf"
+    junk.write_text("not a pdf")
+    with pytest.raises(PdfOpenError, match="Not a readable PDF: junk.pdf"):
+        pdf_pages.page_count(junk)
+
+
+def test_a_page_is_drawn_as_wide_as_asked(fixtures_dir):
+    im = pdf_pages.render_page_fit(fixtures_dir["blank"], 1, 600, 6000)
+    assert im.mode == "RGB" and im.width == 600 and abs(im.height - 600 * 792 / 612) <= 1
+    assert pdf_pages.render_page_fit(fixtures_dir["blank"], 3, 300, 6000).width == 300
+
+
+def test_a_page_taller_than_the_limit_is_drawn_smaller(tmp_path):
+    # 600 px wide, this page would be 12,000 px tall: the scale drops until it is 6,000
+    tall = pdf_pages.render_page_fit(blank_pdf(tmp_path, 400, 8000), 1, 600, 6000)
+    assert tall.size == (300, 6000)
+    # and a sliver of 1 pt by 14,400 pt is not asked for 8,640,000 rows, which PDFium refuses
+    sliver = pdf_pages.render_page_fit(blank_pdf(tmp_path, 1, 14400), 1, 600, 6000)
+    assert sliver.size == (1, 6000)
+
+
+def test_a_tall_page_under_the_limit_keeps_the_width(fixtures_dir):
+    assert pdf_pages.render_page_fit(fixtures_dir["tall"], 1, 600, 6000).size == (600, 3600)
