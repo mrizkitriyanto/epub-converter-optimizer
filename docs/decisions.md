@@ -118,3 +118,13 @@ error for either.
   The pipeline passes the detected language; `lang=None` protects nothing.
 - The glued-first-letter rule stays as planned. It turns "Pakai iPhone" into "Pakai Phone" in an
   OCR heading; that is a known limit.
+
+## 2026-11-17: Heading levels: in-order bookmark matching, no finding for out-of-range bookmarks
+
+- `assign_heading_levels` walks the bookmarks in order. Each takes the best unmatched heading
+  within one page (ratio of at least 0.8), and a heading matches at most one bookmark. A later,
+  better bookmark does not take a heading from an earlier one.
+- An unmatched bookmark adds a heading (`heading_added` info) only when its page lies between the
+  lowest and highest block page. With `--first`/`--last` the other bookmarks are skipped silently.
+- Without bookmarks, ALL-CAPS (at least 4 letters) and `Chapter`/`Bab`/`BAB` headings get level 1;
+  the rest get level 2.
