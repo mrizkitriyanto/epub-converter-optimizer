@@ -75,3 +75,16 @@ error for either.
 - eco imports `huggingface_hub` (Apache-2.0), `httpx` (BSD-3-Clause), `requests` (Apache-2.0)
   and `rapidocr` (Apache-2.0) directly, so they are listed in `pyproject.toml`. All four were
   already in the lock through Docling.
+
+## 2026-11-17: Code blocks come from the PDF text layer
+
+- Docling's text for a code block loses indentation, so `fix_code_blocks` rebuilds the lines from
+  the PDF text layer. PDFium collapses runs of spaces, so the indent comes from the x position of
+  the visible chars: `round((line_x0 - min_x0) / median_char_width)` spaces. A gap inside a line
+  becomes one space when it is wider than half a char.
+- It uses PDFium's loose char boxes. Their top, left and width come from the font metrics, so line
+  grouping (2 pt) and the char width do not change with the glyph shape. On the code fixture the
+  tight boxes spread one line over 2.3 pt and give a 4.48 pt median width, so the 24 pt indent
+  would come out as 5 spaces.
+- On a scanned page there is no text layer. The code block is cropped to
+  `images/p{page:04d}-code-{n}.png` and becomes an image with the old text as alt text.
