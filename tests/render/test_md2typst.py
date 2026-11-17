@@ -641,3 +641,41 @@ def test_image_in_a_format_typst_cannot_read_is_left_out(tmp_path):
     main, files = convert(tmp_path, "![](scan.png)\n\nafter\n")
     assert "image(" not in main and len(files) == 1
     assert compiles(files) == 1
+
+
+# Fix round 3
+
+
+def save_mpo(path: Path) -> None:
+    """A multi-picture JPEG (phone photos with depth or gain-map data), which PIL reports as MPO."""
+    first = Image.new("RGB", (60, 40), "red")
+    first.save(path, "MPO", save_all=True, append_images=[Image.new("RGB", (60, 40), "blue")])
+    with Image.open(path) as im:
+        assert im.format == "MPO"
+
+
+@pytest.mark.parametrize("name", ["mpo.jpg", "mpo.jpeg"])
+def test_multi_picture_jpeg_is_kept_as_it_is(tmp_path, name):
+    save_mpo(tmp_path / name)
+    main, files = convert(tmp_path, f"![]({name})\n\nafter\n")
+    assert f'image("{name}", width: 60pt, height: 40pt' in main
+    assert isinstance(files[name], Path)  # passed unchanged, not renamed
+    assert compiles(files) == 1
+
+
+def test_multi_picture_jpeg_named_png_is_renamed_to_jpg(tmp_path):
+    save_mpo(tmp_path / "mpo.png")
+    main, files = convert(tmp_path, "![](mpo.png)\n")
+    assert 'image("mpo.jpg", width: 60pt' in main and "mpo.png" not in files
+    assert compiles(files) == 1
+
+
+@pytest.mark.parametrize("device", ["x4", "general"])
+def test_multi_picture_jpeg_goes_through_the_profile(tmp_path, device):
+    save_mpo(tmp_path / "mpo.jpg")
+    profile = image_profile(Options(device=device))
+    main, files = convert(tmp_path, "![](mpo.jpg)\n", device=device, profile=profile)
+    names = [name for name in files if name != "main.typ"]
+    assert len(names) == 1 and names[0].startswith("mpo.") and f'image("{names[0]}"' in main
+    assert isinstance(files[names[0]], bytes)  # re-encoded: the first picture only
+    assert compiles(files) == 1

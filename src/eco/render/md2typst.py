@@ -36,7 +36,8 @@ _STOCK_BOX = "#rect(width: 100%, stroke: 1pt + gray)[Image not shown on stock fi
 _TWIN_MIN_COLUMNS = 5  # Xteink tables wider than 4 columns use their image twin
 # What a damaged image can raise while PIL reads it. One bad image must not fail the render.
 _BAD_IMAGE = (OSError, SyntaxError, ValueError, Image.DecompressionBombError)
-_FORMAT_SUFFIX = {"PNG": ".png", "JPEG": ".jpg", "GIF": ".gif", "WEBP": ".webp"}  # what Typst reads
+# Formats Typst reads, by PIL format name (a multi-picture JPEG is reported as MPO).
+_FORMAT_SUFFIX = {"PNG": ".png", "JPEG": ".jpg", "MPO": ".jpg", "GIF": ".gif", "WEBP": ".webp"}
 _SVG_ROOT = "{http://www.w3.org/2000/svg}svg"
 _GLYPH_EM = 0.55  # average glyph width, to guess how many lines a caption takes
 _FIGURE_GAP_EM = 0.65  # Typst's default gap between a figure and its caption
