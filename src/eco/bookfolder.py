@@ -63,9 +63,10 @@ def write_report(folder: Path, findings: list[Finding]) -> None:
 
 
 def read_report(folder: Path) -> list[Finding]:
-    return [
-        Finding(**item) for item in json.loads((folder / "report.json").read_text(encoding="utf-8"))
-    ]
+    path = folder / "report.json"
+    if not path.is_file():
+        return []
+    return [Finding(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
 
 
 def load_source(path: Path) -> BookSource:

@@ -135,6 +135,10 @@ def test_footnotes_go_before_next_heading_of_same_or_higher_level(tmp_path):
     assert positions == sorted(positions)
 
 
+def test_read_report_without_report_json_is_empty(tmp_path):
+    assert read_report(tmp_path) == []
+
+
 def test_report_round_trip(tmp_path):
     findings = [Finding(3, "ocr", "warning", "low confidence"), Finding(0, "info", "info", "ü")]
     write_book(Book(title="T"), tmp_path, findings)
