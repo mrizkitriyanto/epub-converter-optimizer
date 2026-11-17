@@ -1,0 +1,299 @@
+import os
+import subprocess
+import sys
+from importlib.metadata import version
+from types import SimpleNamespace
+
+import pytest
+from docling_core.types.doc import (
+    BoundingBox,
+    ContentLayer,
+    CoordOrigin,
+    DocItemLabel,
+    DoclingDocument,
+    GroupLabel,
+    ProvenanceItem,
+    Size,
+    TableCell,
+    TableData,
+)
+
+from eco.book import Block
+from eco.models import MARKER, ModelsMissing
+from eco.pdf.docling_adapter import _to_blocks, extract_blocks
+
+TEXT = "Some text."
+# The same box twice: as Docling stores it (bottom-left origin, so top > bottom) and as a Block
+# holds it on a 792 pt page (top-left origin).
+DOCLING_BOX = (50, 700, 300, 650)
+BLOCK_BOX = (50, 92, 300, 142)
+
+
+def new_doc():
+    doc = DoclingDocument(name="t")
+    doc.add_page(page_no=1, size=Size(width=612, height=792))
+    return doc
+
+
+def prov(page=1, box=DOCLING_BOX):
+    left, top, right, bottom = box
+    bbox = BoundingBox(l=left, t=top, r=right, b=bottom, coord_origin=CoordOrigin.BOTTOMLEFT)
+    return ProvenanceItem(page_no=page, charspan=(0, 0), bbox=bbox)
+
+
+def table_data():
+    def cell(text, row, col, header=False):
+        return TableCell(
+            text=text,
+            start_row_offset_idx=row,
+            end_row_offset_idx=row + 1,
+            start_col_offset_idx=col,
+            end_col_offset_idx=col + 1,
+            column_header=header,
+        )
+
+    cells = [cell("H1", 0, 0, True), cell("H2", 0, 1, True), cell("a", 1, 0), cell("b", 1, 1)]
+    return TableData(num_rows=2, num_cols=2, table_cells=cells)
+
+
+def add_caption(doc, owner, text):
+    """Docling's reading order adds a caption as a child of its table or picture."""
+    caption = doc.add_text(DocItemLabel.CAPTION, text, parent=owner, prov=prov())
+    owner.captions.append(caption.get_ref())
+
+
+def adds_text(label):
+    return lambda doc, p: doc.add_text(label, TEXT, prov=p)
+
+
+def adds_list_item(doc, p):
+    return doc.add_list_item(TEXT, parent=doc.add_group(label=GroupLabel.LIST), prov=p)
+
+
+@pytest.mark.parametrize(
+    "add,kind,level",
+    [
+        pytest.param(lambda d, p: d.add_title(TEXT, prov=p), "heading", 1, id="title"),
+        pytest.param(
+            lambda d, p: d.add_heading(TEXT, level=3, prov=p), "heading", 3, id="section_header"
+        ),
+        pytest.param(adds_text(DocItemLabel.TEXT), "paragraph", 0, id="text"),
+        pytest.param(adds_text(DocItemLabel.PARAGRAPH), "paragraph", 0, id="paragraph"),
+        pytest.param(adds_text(DocItemLabel.REFERENCE), "paragraph", 0, id="reference"),
+        pytest.param(adds_list_item, "list_item", 0, id="list_item"),
+        pytest.param(lambda d, p: d.add_code(TEXT, prov=p), "code", 0, id="code"),
+        pytest.param(adds_text(DocItemLabel.FOOTNOTE), "footnote", 0, id="footnote"),
+        pytest.param(adds_text(DocItemLabel.HANDWRITTEN_TEXT), "paragraph", 0, id="other label"),
+    ],
+)
+def test_text_labels(add, kind, level):
+    doc = new_doc()
+    add(doc, prov())
+    assert _to_blocks(doc, frozenset()) == [Block(kind, TEXT, level=level, page=1, bbox=BLOCK_BOX)]
+
+
+def test_picture_and_chart_become_pictures_and_keep_their_caption():
+    doc = new_doc()
+    picture = doc.add_picture(prov=prov())
+    add_caption(doc, picture, "Figure 1: a photo.")
+    chart = doc.add_picture(prov=prov())
+    chart.label = DocItemLabel.CHART
+    assert _to_blocks(doc, frozenset()) == [
+        Block("picture", page=1, bbox=BLOCK_BOX, caption="Figure 1: a photo."),
+        Block("picture", page=1, bbox=BLOCK_BOX),
+    ]
+
+
+def test_table_has_html_and_its_caption():
+    doc = new_doc()
+    table = doc.add_table(data=table_data(), prov=prov())
+    add_caption(doc, table, "Table 1: numbers")
+    [block] = _to_blocks(doc, frozenset())
+    assert (block.kind, block.text, block.caption) == ("table", "", "Table 1: numbers")
+    assert "<th>H1</th><th>H2</th>" in block.html and "<td>a</td><td>b</td>" in block.html
+
+
+def test_document_index_is_a_table():
+    doc = new_doc()
+    doc.add_table(data=table_data(), label=DocItemLabel.DOCUMENT_INDEX, prov=prov())
+    assert [b.kind for b in _to_blocks(doc, frozenset())] == ["table"]
+
+
+def test_caption_without_an_owner_is_skipped():
+    doc = new_doc()
+    doc.add_text(DocItemLabel.CAPTION, "Figure 9: nothing to attach to", prov=prov())
+    assert _to_blocks(doc, frozenset()) == []
+
+
+def test_empty_text_is_skipped_except_for_formulas_pictures_and_tables():
+    doc = new_doc()
+    doc.add_text(DocItemLabel.TEXT, "", prov=prov())
+    # Docling keeps a formula's text-layer text in `orig` and leaves `text` empty. The formula
+    # is cropped from the page later, so it must survive.
+    doc.add_text(DocItemLabel.FORMULA, "", orig="y = F(x) + x", prov=prov())
+    doc.add_picture(prov=prov())
+    doc.add_table(data=TableData(num_rows=0, num_cols=0, table_cells=[]), prov=prov())
+    assert _to_blocks(doc, frozenset()) == [
+        Block("formula", page=1, bbox=BLOCK_BOX),
+        Block("picture", page=1, bbox=BLOCK_BOX),
+        Block("table", page=1, bbox=BLOCK_BOX),
+    ]
+
+
+def test_page_furniture_is_left_out():
+    doc = new_doc()
+    layer = ContentLayer.FURNITURE
+    doc.add_text(DocItemLabel.PAGE_HEADER, "Running head", content_layer=layer, prov=prov())
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    assert [b.text for b in _to_blocks(doc, frozenset())] == [TEXT]
+
+
+def test_page_and_bbox_come_from_the_items_own_page():
+    doc = new_doc()
+    doc.add_page(page_no=2, size=Size(width=500, height=700))
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov(page=2, box=(10, 690, 110, 600)))
+    [block] = _to_blocks(doc, frozenset())
+    assert (block.page, block.bbox) == (2, (10, 10, 110, 100))
+
+
+def test_ocr_follows_the_scanned_pages():
+    doc = new_doc()
+    doc.add_page(page_no=2, size=Size(width=612, height=792))
+    doc.add_text(DocItemLabel.TEXT, "one", prov=prov(page=1))
+    doc.add_text(DocItemLabel.TEXT, "two", prov=prov(page=2))
+    blocks = _to_blocks(doc, frozenset({2}))
+    assert [(b.page, b.ocr) for b in blocks] == [(1, False), (2, True)]
+
+
+def test_item_without_provenance_has_page_zero_and_no_bbox():
+    doc = new_doc()
+    doc.add_text(DocItemLabel.TEXT, TEXT)
+    assert _to_blocks(doc, frozenset()) == [Block("paragraph", TEXT)]
+
+
+def test_blocks_come_in_document_order():
+    doc = new_doc()
+    doc.add_title("A title", prov=prov())
+    table = doc.add_table(data=table_data(), prov=prov())
+    add_caption(doc, table, "Table 1: numbers")
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    assert [b.kind for b in _to_blocks(doc, frozenset())] == ["heading", "table", "paragraph"]
+
+
+def test_document_is_not_changed():
+    doc = new_doc()
+    table = doc.add_table(data=table_data(), prov=prov())
+    add_caption(doc, table, "Table 1: numbers")
+    doc.add_title("A title", prov=prov())
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    before = doc.model_dump_json()
+    _to_blocks(doc, frozenset({1}))
+    assert doc.model_dump_json() == before
+
+
+def test_models_missing(tmp_path):
+    with pytest.raises(ModelsMissing, match="eco setup"):
+        extract_blocks(
+            tmp_path / "book.pdf",
+            tmp_path,
+            first=1,
+            last=1,
+            ocr="auto",
+            on_page=lambda n: pytest.fail("converted"),
+        )
+
+
+PIPELINE_OPTIONS = {
+    "artifacts_path",
+    "do_ocr",
+    "ocr_options",
+    "do_table_structure",
+    "do_code_enrichment",
+    "do_formula_enrichment",
+    "generate_page_images",
+    "generate_picture_images",
+}
+
+
+@pytest.mark.parametrize("ocr", ["auto", "force", "off"])
+def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypatch, ocr):
+    # Docling takes seconds to import, so only this test loads it, and Docling is never run.
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import RapidOcrOptions
+    from docling.datamodel.progress import (
+        ConversionPhase,
+        PageCompletedProgress,
+        PhaseStartedProgress,
+    )
+
+    for name in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / MARKER).write_text(version("docling"))
+    doc = new_doc()
+    doc.add_text(DocItemLabel.TEXT, TEXT, prov=prov())
+    seen = {}
+
+    def fake_convert(self, source, **kwargs):
+        seen.update(
+            source=source,
+            kwargs=kwargs,
+            options=self.format_to_options[InputFormat.PDF].pipeline_options,
+            offline=(os.environ.get("HF_HUB_OFFLINE"), os.environ.get("TRANSFORMERS_OFFLINE")),
+        )
+        progress = kwargs["progress_callback"]
+        base = {"document_index": 1, "document_name": "book"}
+        progress(PhaseStartedProgress(phase=ConversionPhase.BUILD, **base))
+        for page_no, completed in ((2, 1), (1, 2)):  # pages finish out of order
+            progress(
+                PageCompletedProgress(
+                    page_no=page_no, success=True, completed_pages=completed, total_pages=2, **base
+                )
+            )
+        return SimpleNamespace(document=doc)
+
+    monkeypatch.setattr("docling.document_converter.DocumentConverter.convert", fake_convert)
+    pdf, pages = tmp_path / "book.pdf", []
+    blocks = extract_blocks(
+        pdf, tmp_path, first=1, last=2, ocr=ocr, on_page=pages.append, scanned=frozenset({1})
+    )
+
+    assert pages == [2, 1]
+    assert blocks == [Block("paragraph", TEXT, page=1, bbox=BLOCK_BOX, ocr=True)]
+    assert seen["source"] == pdf and seen["kwargs"]["page_range"] == (1, 2)
+    assert seen["offline"] == ("1", "1")
+    assert "HF_HUB_OFFLINE" not in os.environ and "TRANSFORMERS_OFFLINE" not in os.environ
+    options = seen["options"]
+    assert options.model_fields_set >= PIPELINE_OPTIONS  # Docling ignores a misspelled option
+    assert options.artifacts_path == tmp_path
+    assert options.do_ocr is (ocr != "off")
+    assert isinstance(options.ocr_options, RapidOcrOptions)
+    assert options.ocr_options.mode == ("full_page" if ocr == "force" else "default")
+    assert options.do_table_structure is True
+    assert not (options.do_code_enrichment or options.do_formula_enrichment)
+    assert not (options.generate_page_images or options.generate_picture_images)
+
+
+def test_import_does_not_load_docling():
+    """Docling is slow to import, and huggingface_hub reads its offline flags when it loads."""
+    code = (
+        "import sys, eco.pdf.docling_adapter\n"
+        "print(sorted({'docling', 'docling_core', 'huggingface_hub'} & set(sys.modules)))\n"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    ).stdout
+    assert out.strip() == "[]"
+
+
+def test_import_fails_for_another_docling_version():
+    code = (
+        "import importlib.metadata as m\n"
+        "m.version = lambda name: '2.0.0'\n"
+        "import eco.pdf.docling_adapter\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode != 0
+    message = result.stderr.strip().splitlines()[-1]
+    assert "2.150.1" in message and "2.0.0" in message

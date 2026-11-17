@@ -128,3 +128,18 @@ error for either.
   lowest and highest block page. With `--first`/`--last` the other bookmarks are skipped silently.
 - Without bookmarks, ALL-CAPS (at least 4 letters) and `Chapter`/`Bab`/`BAB` headings get level 1;
   the rest get level 2.
+
+## 2026-11-17: Docling adapter: what the mapping keeps, and how tables come out
+
+- Items with no text are dropped, except formulas, pictures and tables. Docling leaves a formula's
+  `text` empty and puts the text-layer text in `orig`, so a test on `text` alone would drop every
+  formula before `materialize_regions` can crop it.
+- A `document_index` item (a contents page) is a table item with no text, so it maps to a table.
+  A caption that no table or picture owns is dropped, as the plan says.
+- docling-core 2.107.1 ignores `add_caption` in `TableItem.export_to_html(doc)`. The call stays as
+  the plan has it, so the table HTML holds the caption as `<caption>`. That is how a table caption
+  reaches the book, because `write_book` renders `Block.caption` only for images. A footnote that
+  belongs to a table is also in that HTML and comes out again as a `footnote` block, so it appears
+  twice.
+- Docling catches and logs any exception a progress callback raises (`ProgressReporter._emit`), so
+  `on_page` cannot stop a conversion by raising.

@@ -5,11 +5,22 @@ from pypdf import PdfReader, PdfWriter
 
 from eco.book import Block, Book
 from eco.bookfolder import write_book
+from eco.models import models_dir, models_ready
+from eco.options import resolve_data_dir
 
 
 @pytest.fixture(scope="session")
 def fixtures_dir(tmp_path_factory):
     return build_all(tmp_path_factory.mktemp("pdf_fixtures"))
+
+
+@pytest.fixture(scope="session")
+def models():
+    """The folder `eco setup` filled. The slow tests skip when it has not run."""
+    d = models_dir(resolve_data_dir(None))
+    if not models_ready(d):
+        pytest.skip("AI models are not installed. Run: eco setup")
+    return d
 
 
 @pytest.fixture
