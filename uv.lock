@@ -9,11 +9,7 @@ resolution-markers = [
 ]
 
 [manifest]
-constraints = [
-    { name = "numpy", specifier = "<2.3" },
-    { name = "opencv-python-headless", specifier = "<4.13" },
-    { name = "setuptools", specifier = ">=84.1" },
-]
+constraints = [{ name = "setuptools", specifier = ">=84.1" }]
 
 [[package]]
 name = "accelerate"
@@ -351,6 +347,7 @@ dependencies = [
     { name = "markdown-it-py" },
     { name = "mdit-py-plugins" },
     { name = "onnxruntime" },
+    { name = "opencv-python-headless" },
     { name = "pillow" },
     { name = "platformdirs" },
     { name = "pypdfium2" },
@@ -379,6 +376,7 @@ requires-dist = [
     { name = "markdown-it-py", specifier = ">=3" },
     { name = "mdit-py-plugins", specifier = ">=0.4" },
     { name = "onnxruntime", specifier = ">=1.23" },
+    { name = "opencv-python-headless", specifier = ">=4.12,<4.13" },
     { name = "pillow", specifier = ">=11" },
     { name = "platformdirs", specifier = ">=4" },
     { name = "pypdfium2", specifier = ">=5.15" },

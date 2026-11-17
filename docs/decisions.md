@@ -266,6 +266,9 @@ error for either.
   is ARM-only, so Windows and Linux x64 just move to the same version: one OpenCV for every OS, and CI
   tests what the Mac runs. `tests/test_dependencies.py` fails if the pin is lost or a KleidiCV HAL
   comes back.
-- 4.12 needs `numpy<2.3`, so the numpy constraint goes with it.
+- The pin is a direct dependency (`opencv-python-headless>=4.12,<4.13` in `[project] dependencies`),
+  not a uv constraint, so `uv tool install` and pip installs get it too. `numpy<2.3` comes with
+  OpenCV 4.12's own metadata: the lock moved numpy 2.5.5 to 2.2.6.
+- `uv.lock` is now revision 5 and needs a recent uv (0.13.9 wrote it).
 - Cost: 4.12 lags 5.0 on fixes. Revisit when an upstream KleidiCV fix ships. The fallback is
   `cv2.setNumThreads(1)` on 5.0, which passed once on the Mac.
