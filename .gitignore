@@ -17,3 +17,7 @@ Thumbs.db
 
 # Mockup brainstorming lokal
 .superpowers/
+
+# Sample books and agent worktrees
+/samples
+.claude/worktrees/

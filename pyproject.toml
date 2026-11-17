@@ -1,0 +1,54 @@
+[project]
+name = "eco"
+version = "0.1.0"
+description = "Convert PDF and Markdown to EPUB"
+requires-python = "==3.12.*"
+license = "MIT"
+dependencies = [
+    "docling==2.150.1",
+    "onnxruntime>=1.23",
+    "torch>=2.13",
+    "torchvision",
+    "pypdfium2>=5.15",
+    "pillow>=11",
+    "markdown-it-py>=3",
+    "mdit-py-plugins>=0.4",
+    "platformdirs>=4",
+]
+
+[project.scripts]
+eco = "eco.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8", "typst>=0.15"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eco"]
+
+[tool.uv]
+constraint-dependencies = ["setuptools>=84.1"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not slow and not acceptance'"
+markers = [
+    "slow: needs downloaded models",
+    "acceptance: needs the samples/ directory",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs", ".superpowers"]
