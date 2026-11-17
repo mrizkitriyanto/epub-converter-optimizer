@@ -184,3 +184,45 @@ def test_setup_error_that_no_retry_helps_is_one_line(monkeypatch, tmp_path, caps
     assert main(["setup", "--yes", "--data", str(tmp_path)]) == 1
     err = capsys.readouterr().err
     assert err == "error: no write access to the models folder\n"
+
+
+def test_folder_expansion_skips_earlier_outputs(tmp_path, capsys):
+    folder = tmp_path / "in"
+    folder.mkdir()
+    (folder / "a.md").write_text("# A\n")
+    for _ in range(2):
+        assert convert(tmp_path, folder) == 0
+    assert sorted(p.name for p in folder.glob("*.epub")) == ["a.x4.epub"]
+    assert capsys.readouterr().out.count(".epub\n") == 2  # one conversion per run
+    assert convert(tmp_path, folder / "a.x4.epub") == 0  # named by the user: converted
+    assert sorted(p.name for p in folder.glob("*.epub")) == ["a.x4-1.epub", "a.x4.epub"]
+
+
+def test_folder_of_earlier_outputs_only_is_empty(tmp_path, capsys):
+    folder = tmp_path / "in"
+    folder.mkdir()
+    (folder / "a.general.epub").write_bytes(b"x")
+    assert convert(tmp_path, folder) == 1
+    assert "error: No PDF, Markdown or EPUB files in" in capsys.readouterr().err
+
+
+def test_home_folder_is_expanded_in_inputs_and_output(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    work = tmp_path / "cwd"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    (tmp_path / "in").mkdir()
+    (tmp_path / "in" / "a.md").write_text("# A\n")
+    assert convert(tmp_path, "~/in", "-o", "~/out") == 0
+    assert (tmp_path / "out" / "a.x4.epub").exists()
+    assert not (work / "~").exists()
+
+
+def test_extract_expands_the_home_folder(tmp_path, monkeypatch, fake_blocks, fixtures_dir):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path / "..")
+    (tmp_path / "x.pdf").write_bytes(fixtures_dir["blank"].read_bytes())
+    args = ["extract", "~/x.pdf", "-o", "~/out", "--data", str(tmp_path / "d")]
+    assert main(args) == 0
+    assert (tmp_path / "out" / "x.book" / "book.md").is_file()
+    assert not (Path.cwd() / "~").exists()

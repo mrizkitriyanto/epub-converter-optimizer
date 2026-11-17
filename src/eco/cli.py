@@ -20,6 +20,7 @@ from eco.options import (
 )
 
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
+_OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
 
 
 def _error(e: Exception) -> None:
@@ -55,15 +56,20 @@ def _print_findings(findings: list[Finding]) -> None:
 
 def _expand(inputs: list[str]) -> tuple[list[Path], int]:
     """The files to convert, and how many folders gave none. A folder stands for the files and
-    `.book` folders in it; a `.book` folder is itself an input."""
+    `.book` folders in it, except `<stem>.<device>.epub`, the output of an earlier run. A `.book`
+    folder, or a file named on the command line, is itself an input."""
     files, failed = [], 0
     for name in inputs:
-        path = Path(name)
+        path = Path(name).expanduser()
         if path.is_dir() and path.suffix != ".book":
             found = sorted(
                 p
                 for p in path.iterdir()
-                if (p.is_file() and p.suffix.lower() in _INPUT_SUFFIXES)
+                if (
+                    p.is_file()
+                    and p.suffix.lower() in _INPUT_SUFFIXES
+                    and not p.name.lower().endswith(_OUTPUT_SUFFIXES)
+                )
                 or (p.is_dir() and p.suffix == ".book")
             )
             if not found:
@@ -100,7 +106,7 @@ def _convert(args: argparse.Namespace) -> int:
             result = convert_file(
                 path,
                 options,
-                Path(args.output) if args.output else path.parent,
+                Path(args.output).expanduser() if args.output else path.parent,
                 data_dir=data,
                 on_event=_progress,
                 inputs=(*files, *written),
@@ -121,7 +127,7 @@ def _extract(args: argparse.Namespace) -> int:
     from eco.pdf.pages import pdf_metadata
     from eco.pipeline import extract_pdf
 
-    pdf = Path(args.input)
+    pdf = Path(args.input).expanduser()
     findings: list[Finding] = []
 
     def on_event(event) -> None:
@@ -136,7 +142,7 @@ def _extract(args: argparse.Namespace) -> int:
         on_event=on_event,
         cancel=lambda: False,
     )
-    out_dir = Path(args.output) if args.output else pdf.parent
+    out_dir = Path(args.output).expanduser() if args.output else pdf.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     n = 0
     while (dest := out_dir / f"{pdf.stem}{f'-{n}' if n else ''}.book").exists():

@@ -232,3 +232,26 @@ error for either.
   its deprecated options: `force_full_page_ocr`, `generate_table_images` and `rec_font_path`. eco
   sets none of them. Each filter matches the whole message, and the one whose message is the single
   word `deprecated` also matches the module. Any other warning still shows.
+
+## 2026-11-17: The CLI: errors, names and folders (Task 18)
+
+- An error prints one line, `error: <message>`, on stderr, with no traceback. `eco convert` goes on
+  with the next file and exits 1 at the end if any file failed. `eco setup` and `eco extract` print
+  the same line and exit 1. A usage error exits 2.
+- `--landscape` with `--device general` is a usage error: landscape only means something on a fixed
+  Xteink screen. A bare `eco` is a usage error too, and exits 2. `eco --version` exits 0.
+- A batch never overwrites an input or another output of the same run: `convert_file` gets every
+  input and every output already written as `inputs`, so `a.pdf` and `a.md` give `a.x4.epub` and
+  `a.x4-1.epub`.
+- `eco extract` copies the cached book folder to `<dir>/<stem>.book` and never overwrites an
+  existing one, because the user may have edited it: it takes the next free `<stem>-1.book`, `-2`
+  and so on.
+- The cache holds the file name its first extraction saw. For a PDF without a metadata title,
+  `eco extract` rewrites the `title` in the copied `book.md` to the current file stem, so a renamed
+  scan is not titled after its old name.
+- A folder given to `eco convert` expands to the `*.pdf`, `*.md` and `*.epub` files and `*.book`
+  folders in it, without recursion, in sorted order, but skips `<stem>.<device>.epub` for every
+  device: those are earlier outputs, and converting the folder twice must not pile up `-1`, `-2`.
+  A file named on the command line is always converted.
+- Input and output paths and `--data` get `expanduser()`, so a quoted `"~/x"` never creates a
+  folder named `~`.
