@@ -164,3 +164,14 @@ Entry format:
 - Why: a push trigger is the only way to run CI without a PR or a push to `main`. GitHub's Windows runner has the Visual C++ runtime this laptop lacks (Q-14), so CI also checks the Windows fast suite and the slow tests (integration job) while they are blocked here.
 - Cost if wrong: Actions minutes on each push of a milestone branch (free for a public repo). The owner can drop the branch pattern before merging.
 - Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
+
+### Q-16 (extends Q-8): other tracked files still hold short book text. Remove it too?
+- Date, milestone, task: 2026-11-17, M1 T19.
+- Found by the T19 implementer: the four `CODE_LINES` of the synthetic code fixture (`tests/fixtures/make.py`) are lines of *Practical Malware Analysis* Listing 11-1, and one slow test looks one of them up; a few short *Bicara* section headings and one sentence fragment sit in `tests/pdf/test_text.py`, `tests/pdf/test_structure.py` and `tests/test_pipeline.py`; `docs/decisions.md` quotes the fixture lines in its R-53 entry. The M1 plan, the spec and the M1 ledger quote some of the same text.
+- Answer:
+  - Tests and `docs/decisions.md`: yes. Replace the book-derived strings with invented text of the same shape: the same line count and character lengths for the fixture lines, so the fixture geometry does not move, and the same OCR-artifact patterns for the headings. Each test must still test what it tested.
+  - The spec, the plans and the handoff records stay as they are. They are the owner's approved documents, and rewriting them is the owner's call. The milestone report says what they still quote.
+  - Git history keeps the old text. Removing it needs a force-push, which is forbidden, so the report names this too.
+- Why: Q-8's reason covers all of it: the repo is public, and book text belongs only in the owner's local samples.
+- Cost if wrong: a small test-only change, and fixtures that no longer mirror a real book line for line. The ground-truth files keep the real text locally.
+- Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.

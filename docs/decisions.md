@@ -218,15 +218,15 @@ error for either.
 
 - The first run on the installed models showed that Docling 2.150.1 does not label the synthetic
   code fixture as `code`. Its layout model (heron) does not treat a short listing without a
-  background as code, so the listing comes back as one `paragraph`, "100014A0 WlxLoggedOutSAS push
-  esi push edi call Call_msgina_dll_function", with bbox (18.0, 137.0, 216.7, 189.3). The fixture's
-  box is (16, 135, 218, 192), so the coordinate space is right. The synthetic formula also comes
+  background as code, so the listing comes back as one `paragraph` that holds the four listing
+  lines of the synthetic code fixture joined on one line, with bbox (18.0, 137.0, 216.7, 189.3).
+  The fixture's box is (16, 135, 218, 192), so the coordinate space is right. The synthetic formula also comes
   back as a `paragraph`. On the real Forensic, Malware and ResNet pages the spike saw `code` and
   `formula` items (`docs/research/2026-11-16-spike-pdf-engines.md`, experiments 1 and 2).
 - The two slow tests on the code fixture therefore do not ask for `kind == "code"`. One checks that
   a single block holds every line of the listing, compared without white space because Docling
-  merges the lines. The other takes the block that holds "push esi" and checks its box to 10 pt.
-  The `code` label is checked by acceptance criterion 3 (spec section 9) on the real Forensic and
+  merges the lines. The other takes the block that holds the fixture's second listing line and
+  checks its box to 10 pt. The `code` label is checked by acceptance criterion 3 (spec section 9) on the real Forensic and
   Malware pages.
 - The pytest config ignores three `DeprecationWarning`s that Docling raises when its own code reads
   its deprecated options: `force_full_page_ocr`, `generate_table_images` and `rec_font_path`. eco

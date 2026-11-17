@@ -14,7 +14,7 @@ def levels(blocks):
 
 
 def test_without_bookmarks_all_caps_is_level_1_and_the_rest_level_2():
-    blocks = [heading("UCAPAN KHUSUS YANG MEMIKAT HATI"), heading("Satu Kata yang Menarik")]
+    blocks = [heading("SAPAAN RAMAH DI PAGI HARI"), heading("Sebuah Salam yang Hangat")]
     out, findings = assign_heading_levels(blocks, [])
     assert levels(out) == [1, 2]
     assert findings == []
@@ -140,7 +140,7 @@ def test_unmatched_heading_gets_deepest_plus_2_capped():
 
 
 def test_non_heading_blocks_pass_through_and_input_is_not_mutated():
-    para = Block("paragraph", "UCAPAN KHUSUS", level=0, page=1)
+    para = Block("paragraph", "SAPAAN RAMAH", level=0, page=1)
     head = heading("Alpha", page=1)
     blocks = [para, head]
     out, _ = assign_heading_levels(blocks, [Bookmark("Alpha", 0, 1)])

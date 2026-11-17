@@ -23,10 +23,10 @@ def test_normalize_leaves_the_rest_alone():
 @pytest.mark.parametrize(
     "raw,clean",
     [
-        ("Fungsi iPositif f Rayuan", "Fungsi Positif Rayuan"),
-        ('Kalimat t Horor: "Apakah a aku berubah?"', 'Kalimat Horor: "Apakah aku berubah?"'),
-        ("1. Respons s yang Membuat Tersentuh", "1. Respons yang Membuat Tersentuh"),
-        ("2. Kalimat at yang Semakin Sering Diucapkan", "2. Kalimat yang Semakin Sering Diucapkan"),
+        ("Seni iMendengar r Aktif", "Seni Mendengar Aktif"),
+        ('Pesan n Singkat: "Bagaimana a kabarmu?"', 'Pesan Singkat: "Bagaimana kabarmu?"'),
+        ("1. Sapaan n yang Membuat Nyaman", "1. Sapaan yang Membuat Nyaman"),
+        ("2. Ucapan an yang Makin Sering Dipakai", "2. Ucapan yang Makin Sering Dipakai"),
     ],
 )
 def test_heading_artifacts(raw, clean):
@@ -51,11 +51,11 @@ def test_heading_artifacts_leave_numbering_alone():
 
 def test_dehyphenate_uses_book_vocabulary():
     blocks = [
-        Block("paragraph", "Karena saya gendut, seper– tinya saya juga."),
+        Block("paragraph", "Hari ini hujan lebat, seper– tinya saya juga."),
         Block("paragraph", "sepertinya iya, user- created"),
     ]
     out, n = dehyphenate(blocks)
-    assert out[0].text == "Karena saya gendut, sepertinya saya juga."
+    assert out[0].text == "Hari ini hujan lebat, sepertinya saya juga."
     assert "user-created" in out[1].text
     assert n == 1
 

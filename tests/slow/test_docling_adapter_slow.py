@@ -30,7 +30,7 @@ def test_code_bbox_matches_the_cropbox_convention(fixtures_dir, models):
     # The `code` label is checked by acceptance criterion 3, on the real Forensic and Malware
     # pages: heron does not label a short synthetic listing without a background as code. So take
     # the block that holds the listing, whatever its kind.
-    listing = next(b for b in blocks if "push esi" in b.text)
+    listing = next(b for b in blocks if "test eax" in b.text)
     # This guards the coordinate space. A wrong one shows up as an offset of 54 and 63 pt (the
     # CropBox offset) or a flipped y, not as a few points. It does not check the layout model's
     # exact box, which can come out a little looser than the text it surrounds.

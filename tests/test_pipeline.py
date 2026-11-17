@@ -326,15 +326,15 @@ def test_heading_clean_up_uses_the_language_found_in_the_book(tmp_path, fixtures
     fake_blocks.blocks = [
         Block("paragraph", "Buku ini ditulis untuk dia dan dengan cara yang itu.", page=1),
         Block("heading", "Pergi ke Kelas", page=1, ocr=True),
-        Block("heading", "Fungsi iPositif f Rayuan", page=3, ocr=True),
-        Block("heading", "Fungsi iPositif f Rayuan", page=3),
+        Block("heading", "Seni iMendengar r Aktif", page=3, ocr=True),
+        Block("heading", "Seni iMendengar r Aktif", page=3),
     ]
     r = convert(fixtures_dir["blank"], tmp_path)
     text = (r.book_dir / "book.md").read_text()
     assert load_source(r.book_dir).meta["language"] == "id"
     assert "Pergi ke Kelas" in text  # "ke" is a word of the language, not an OCR artifact
-    assert text.count("Fungsi Positif Rayuan") == 1  # the OCR heading is cleaned
-    assert text.count("Fungsi iPositif f Rayuan") == 1  # the heading from a text layer is not
+    assert text.count("Seni Mendengar Aktif") == 1  # the OCR heading is cleaned
+    assert text.count("Seni iMendengar r Aktif") == 1  # the heading from a text layer is not
 
 
 @pytest.mark.parametrize(("device", "landscape"), [("x4", False), ("x3", False), ("x4", True)])

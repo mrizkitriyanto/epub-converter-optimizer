@@ -22,10 +22,10 @@ PAGE = "#set page(width: 612pt, height: 792pt, margin: 0pt)\n"
 SERIF = '#set text(font: "Libertinus Serif", size: 11pt)\n'
 MONO = '#show raw: set text(font: "DejaVu Sans Mono", size: 10pt)\n'
 CODE_LINES = [
-    "100014A0 WlxLoggedOutSAS",
-    "    push esi",
-    "    push edi",
-    "    call Call_msgina_dll_function",
+    "2000F3B8 PrintReportRows",
+    "    test eax",
+    "    jnz exit",
+    "    call Report_flush_all_buffers",
 ]
 
 
