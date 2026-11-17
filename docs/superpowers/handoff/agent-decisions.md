@@ -175,3 +175,15 @@ Entry format:
 - Why: Q-8's reason covers all of it: the repo is public, and book text belongs only in the owner's local samples.
 - Cost if wrong: a small test-only change, and fixtures that no longer mirror a real book line for line. The ground-truth files keep the real text locally.
 - Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
+
+### Q-17: M1 cannot finish until the owner installs the Visual C++ runtime (Q-14). Start M2 meanwhile?
+- Date, milestone, task: 2026-11-17, M1 end / M2 start.
+- State: everything in M1 that runs without the runtime is done and reviewed (R-54, the wrap-up, T19's Windows harness, the CI fixes, the book-text cleanup). Blocked: `eco setup`, T19's AC1 investigation and full acceptance run, the M1 final review and its fix wave.
+- Answer:
+  - Yes. Create `m2-web-gui` from the current `m1-core-cli` tip in a separate git worktree under `.claude/worktrees/` (git-ignored), with its own `.venv`, and run M2 there with the same method.
+  - One implementer at a time across both checkouts. While the M1 acceptance run measures time and RAM, no M2 agent runs.
+  - When the runtime is installed, pause M2 dispatches and finish M1 in the main checkout: T19, the final review, the fix wave, the report and the push.
+  - Then merge the final `m1-core-cli` into `m2-web-gui` with a merge commit (no rebase, no force-push). M2's final review and its push wait until that merge is done.
+- Why: the owner asked to continue through M4 without waiting. M2's tests need neither the runtime nor the models: they use the Markdown and EPUB paths and a fake worker. M2 builds on M1's public API (`convert_file`, `Options`, events, `load_source`), which the open M1 work is unlikely to change.
+- Cost if wrong: a merge of late M1 changes into M2, maybe with conflicts. M2 checks that need a real PDF conversion wait for the runtime too.
+- Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
