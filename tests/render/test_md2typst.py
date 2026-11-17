@@ -238,7 +238,7 @@ def test_images_become_figures_and_ship_with_the_source(tmp_path, small_book):
     files = to_typst(src, device="x4", settings=RenderSettings(), view="crosspoint")
     main = files["main.typ"].decode()
     assert (
-        '#figure(image("images/p0001-img-1.png", width: 100%, fit: "contain"), '
+        '#figure(image("images/p0001-img-1.png", width: 80pt, height: 60pt, fit: "contain"), '
         "caption: [A picture]);" in main
     )
     shipped = files["images/p0001-img-1.png"]
@@ -344,7 +344,7 @@ def test_wide_table_uses_its_image_twin_on_xteink_only(tmp_path, small_book):
     xteink = to_typst(src, device="x4", settings=RenderSettings(), view="crosspoint")
     main = xteink["main.typ"].decode()
     assert "#table(" not in main
-    assert 'image("images/p0002-table-1.png", width: 100%, fit: "contain")' in main
+    assert 'image("images/p0002-table-1.png", width: 240pt, height: 90pt, fit: "contain")' in main
     assert "images/p0002-table-1.png" in xteink
     general = to_typst(src, device="general", settings=RenderSettings(), view="crosspoint")
     assert "#table(\n  columns: 6," in general["main.typ"].decode()
@@ -403,4 +403,188 @@ def test_page_comments_are_dropped_and_other_html_is_text(tmp_path):
 def test_table_without_cells_is_left_out(tmp_path):
     main, files = convert(tmp_path, "<table><tr></tr></table>\n\nafter\n")
     assert "#table(" not in main and "after" in main
+    assert compiles(files) == 1
+
+
+def probed_text(files) -> str:
+    """The page text with each list, enum, term and heading replaced by a marker word."""
+    probe = (
+        "#show list.item: [LISTITEM]\n#show enum.item: [ENUMITEM]\n"
+        "#show terms.item: [TERMITEM]\n#show heading: [HEADING]\n"
+    )
+    return page_text({**files, "main.typ": probe.encode() + files["main.typ"]})
+
+
+def figure_extent(files) -> dict:
+    """Page and bottom edge of the first figure (image, gap and caption), from Typst itself."""
+    probe = (
+        "\n#context [#metadata((page: query(figure).first().location().position().page, "
+        "bottom: query(figure).first().location().position().y.pt()"
+        " + measure(width: 448pt, query(figure).first()).height.pt())) <probe>]\n"
+    )
+    probed = {**files, "main.typ": files["main.typ"] + probe.encode()}
+    return query(probed, "<probe>", "value")[0]
+
+
+# Fix round 1
+
+
+def test_level_one_heading_in_a_container_is_an_ordinary_heading(tmp_path):
+    main, files = convert(
+        tmp_path, "> # Quoted heading\n\n- # Heading in item\n\n# Top\n\ntext\n\n1. # Numbered\n"
+    )
+    assert main.count("page: here().page())) <chap>]") == 1  # only the top-level heading
+    assert "== Quoted heading" in main and "- == Heading in item" in main
+    assert "1. == Numbered" in main
+    assert compiles(files) == 2  # the top-level heading still starts its own page
+    text = page_text(files)
+    for words in ("Quoted heading", "Heading in item", "Numbered", "Top"):
+        assert words in text
+    marks = query(files, "<chap>", "value")
+    assert [m["title"] for m in marks] == ["Top"] and marks[0]["page"] == 2
+
+
+def test_tall_image_keeps_its_caption_on_the_page(tmp_path):
+    Image.new("L", (100, 1000), 120).save(tmp_path / "tall.png")
+    main, files = convert(tmp_path, "![A tall picture](tall.png)\n")
+    # The body is 448 x 746 (480 x 800 minus margins and the footer). The image leaves room for
+    # the caption and the gap, so it is scaled down instead of pushing the caption out.
+    assert 'image("tall.png", width: 6' in main and "height: 6" in main
+    assert compiles(files) == 1
+    extent = figure_extent(files)
+    assert extent["page"] == 1
+    assert extent["bottom"] <= 800 - 38  # the caption ends above the footer
+
+
+def test_long_caption_gets_more_room_than_a_short_one(tmp_path):
+    Image.new("L", (100, 1000), 120).save(tmp_path / "tall.png")
+    short, _ = convert(tmp_path, "![Short](tall.png)\n")
+    caption = " ".join(["word"] * 40)
+    long, files = convert(tmp_path, f"![{caption}](tall.png)\n")
+
+    def height(main):
+        return float(main.split('image("tall.png"')[1].split("height: ")[1].split("pt")[0])
+
+    assert height(long) < height(short)
+    assert compiles(files) == 1
+    extent = figure_extent(files)
+    assert extent["page"] == 1 and extent["bottom"] <= 800 - 38
+
+
+def test_small_image_keeps_its_natural_size(tmp_path):
+    Image.new("L", (40, 30), 120).save(tmp_path / "formula.png")
+    main, files = convert(tmp_path, "![](formula.png)\n")
+    assert 'image("formula.png", width: 40pt, height: 30pt, fit: "contain")' in main
+    assert compiles(files) == 1
+
+
+def test_wide_image_is_limited_to_the_body_width(tmp_path):
+    Image.new("L", (2000, 100), 120).save(tmp_path / "wide.png")
+    main, files = convert(tmp_path, "![](wide.png)\n")
+    assert 'image("wide.png", width: 448pt, height: 22.4pt, fit: "contain")' in main
+    main, files = convert(tmp_path, "![](wide.png)\n", device="x3")
+    assert "width: 496pt, height: 24.8pt" in main  # 528 - 2 * 16
+    assert compiles(files) == 1
+
+
+def test_image_sizing_follows_the_settings(tmp_path):
+    Image.new("L", (1000, 1000), 120).save(tmp_path / "big.png")
+    settings = RenderSettings(margin=40)
+    main, files = convert(tmp_path, "![](big.png)\n", settings=settings)
+    assert "width: 400pt, height: 400pt" in main  # 480 - 2 * 40
+    assert compiles(files) == 1
+
+
+def test_vector_image_is_capped_in_height_and_compiles(tmp_path):
+    (tmp_path / "v.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">'
+        '<rect width="20" height="20"/></svg>'
+    )
+    main, files = convert(tmp_path, "![v](v.svg)\n")
+    assert 'image("v.svg", width: 100%, height: ' in main
+    assert compiles(files) == 1
+
+
+def test_html_block_text_is_kept_next_to_an_image(tmp_path):
+    Image.new("L", (60, 40), 120).save(tmp_path / "logo.png")
+    main, files = convert(
+        tmp_path,
+        '<p align="center"><img src="logo.png"><br>Caption text that matters</p>\n',
+    )
+    assert 'image("logo.png"' in main
+    assert main.index('image("logo.png"') < main.index("Caption text that matters")
+    assert "Caption text that matters" in page_text(files)
+
+
+def test_html_block_text_is_kept_next_to_a_table_and_follows_the_line_start_rule(tmp_path):
+    main, files = convert(
+        tmp_path,
+        "<table><tr><td>a</td></tr></table>\n1. After the table\n",
+    )
+    assert "#table(" in main and "1\\. After the table" in main
+    assert compiles(files) == 1
+
+
+def test_break_followed_by_a_space_keeps_the_line_start_rule(tmp_path):
+    main, files = convert(tmp_path, "three<br> - four<br> 5. five<br> + six<br> = seven\n")
+    for escaped in ("\\- four", "\\+ six", "\\= seven", "5\\. five"):
+        assert escaped in main
+    text = probed_text(files)
+    assert not {"LISTITEM", "ENUMITEM", "TERMITEM", "HEADING"} & set(text.split())
+    assert "5. five" in text and "- four" in text
+
+
+def test_text_after_a_dropped_leading_image_follows_the_line_start_rule(tmp_path):
+    main, files = convert(
+        tmp_path,
+        "![gone](missing.png) 1. five\n\n![](missing.png)- dash\n\n![](missing.png)<br> 2. two\n",
+    )
+    assert "\n1\\. five" in main and "\n\\- dash" in main and "2\\. two" in main
+    text = probed_text(files)
+    assert not {"LISTITEM", "ENUMITEM"} & set(text.split())
+
+
+def write_bad_images(folder: Path) -> None:
+    (folder / "garbage.png").write_bytes(b"this is not a png")
+    good = BytesIO()
+    Image.effect_noise((200, 200), 80).save(good, "PNG")
+    (folder / "cut.png").write_bytes(good.getvalue()[: len(good.getvalue()) // 2])
+    (folder / "broken.svg").write_text("<svg><rect></svg")
+    (folder / "empty.jpg").write_bytes(b"")
+
+
+BAD_IMAGES = "![a](garbage.png)\n\n![b](cut.png)\n\n![c](broken.svg)\n\n![d](empty.jpg)\n\nafter\n"
+
+
+def test_damaged_images_are_left_out_without_a_profile(tmp_path):
+    write_bad_images(tmp_path)
+    main, files = convert(tmp_path, BAD_IMAGES)
+    assert "image(" not in main and len(files) == 1 and "after" in main
+    assert compiles(files) == 1
+
+
+def test_damaged_images_are_left_out_with_a_profile(tmp_path):
+    write_bad_images(tmp_path)
+    profile = image_profile(Options(device="x4", size="balanced"))
+    main, files = convert(tmp_path, BAD_IMAGES, profile=profile)
+    assert "image(" not in main and len(files) == 1 and "after" in main
+    assert compiles(files) == 1
+
+
+@pytest.mark.parametrize("use_profile", [False, True])
+def test_decompression_bomb_is_left_out(tmp_path, monkeypatch, use_profile):
+    Image.new("L", (60, 60), 120).save(tmp_path / "bomb.png")
+    Image.new("L", (30, 30), 120).save(tmp_path / "fine.png")
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)  # over twice this raises an error
+    profile = image_profile(Options(device="x4")) if use_profile else None
+    main, files = convert(tmp_path, "![](bomb.png)\n\n![](fine.png)\n", profile=profile)
+    assert 'image("bomb.png"' not in main and "fine.png" in main
+    assert compiles(files) == 1
+
+
+def test_unreadable_table_twin_falls_back_to_the_table(tmp_path):
+    (tmp_path / "t.png").write_bytes(b"garbage")
+    table = "<tr>" + "<td>x</td>" * 6 + "</tr>"
+    main, files = convert(tmp_path, f"<!-- table-image: t.png -->\n<table>{table}</table>\n")
+    assert "#table(\n  columns: 6," in main and "image(" not in main
     assert compiles(files) == 1
