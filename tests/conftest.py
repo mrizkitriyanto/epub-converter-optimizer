@@ -1,6 +1,7 @@
 import pytest
 from fixtures.make import build_all, make_epub, make_messy_epub
 from PIL import Image
+from pypdf import PdfReader, PdfWriter
 
 from eco.book import Block, Book
 from eco.bookfolder import write_book
@@ -57,3 +58,15 @@ def drm_epub(tmp_path):
         "OEBPS/content.opf": '<package xmlns="http://www.idpf.org/2007/opf" version="3.0"/>',
     }
     return make_epub(tmp_path / "drm.epub", files)
+
+
+@pytest.fixture
+def encrypted_pdf(fixtures_dir, tmp_path):
+    """The blank fixture behind a user password. RC4 because pypdf's AES needs `cryptography`,
+    and PDFium reports the same password error for either."""
+    writer = PdfWriter(clone_from=PdfReader(fixtures_dir["blank"]))
+    writer.encrypt("secret", algorithm="RC4-128")
+    path = tmp_path / "locked.pdf"
+    with path.open("wb") as f:
+        writer.write(f)
+    return path

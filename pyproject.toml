@@ -21,7 +21,12 @@ dependencies = [
 eco = "eco.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.8", "typst>=0.15"]
+dev = [
+    "pypdf>=7.1.0",
+    "pytest>=8",
+    "ruff>=0.8",
+    "typst>=0.15",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -34,3 +34,10 @@ All three are pending device verification by the owner.
   links that point into other parts.
 - A manifest item is dropped only when its file name appears nowhere in the book. When in doubt it
   stays.
+
+## 2026-11-17: pypdf as a dev dependency
+
+`pypdf` (BSD-3-Clause, 7.1.0, 419 KB wheel) is in the `dev` group only. Tests use it to build an
+encrypted PDF and a PDF with bookmarks and metadata at test time. The encrypted fixture uses RC4-128
+because pypdf's AES needs `cryptography`, which is not in the lock; PDFium reports the same password
+error for either.
