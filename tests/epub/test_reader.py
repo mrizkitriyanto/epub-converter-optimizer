@@ -1,3 +1,5 @@
+import struct
+import tracemalloc
 import zipfile
 
 import pytest
@@ -7,7 +9,7 @@ from eco.bookfolder import load_source
 from eco.cli import main
 from eco.epub import zipio
 from eco.epub.optimizer import DRMError, optimize_epub
-from eco.epub.reader import epub_to_book
+from eco.epub.reader import _safe_name, epub_to_book
 from eco.options import Options
 from eco.render.md2typst import RenderSettings
 from eco.render.pages import render_book
@@ -178,3 +180,72 @@ def test_cli_reports_an_oversized_epub_as_one_error_line(tmp_path, monkeypatch, 
     assert main(["convert", str(epub), "--data", str(tmp_path / "d")]) == 1
     err = capsys.readouterr().err
     assert err.strip().endswith("error: EPUB expands to more than 1 GiB: bomb.epub")
+
+
+def lying_epub(tmp_path):
+    """A zip whose directory says 10 bytes for a 100 MiB entry: the cap sees 10 bytes."""
+    path = tmp_path / "lie.epub"
+    chunk = bytes(1 << 20)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z, z.open("big.bin", "w") as f:
+        for _ in range(100):
+            f.write(chunk)
+    data = bytearray(path.read_bytes())
+    at = data.rindex(b"PK\x01\x02") + 24  # uncompressed size in the central directory
+    data[at : at + 4] = struct.pack("<I", 10)
+    path.write_bytes(data)
+    return path
+
+
+def test_lying_directory_does_not_expand_in_memory(tmp_path):
+    epub = lying_epub(tmp_path)
+    tracemalloc.start()
+    try:
+        with pytest.raises(ValueError, match="Not a readable EPUB: lie.epub"):
+            epub_to_book(epub, tmp_path / "out.book")
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 10 * 2**20
+
+
+@pytest.mark.parametrize("tag", ["div", "span"])
+def test_deep_nesting_is_an_unreadable_epub(tmp_path, tag):
+    depth = 3000
+    epub = tiny_epub(tmp_path, f"<{tag}>" * depth + "x" + f"</{tag}>" * depth)
+    with pytest.raises(ValueError, match="Not a readable EPUB: t.epub"):
+        epub_to_book(epub, tmp_path / "out.book")
+    with pytest.raises(ValueError, match="Not a readable EPUB: t.epub"):
+        optimize_epub(epub, tmp_path / "o.epub", Options())
+
+
+def test_deep_nesting_does_not_stop_a_batch(tmp_path, capsys):
+    deep = tiny_epub(tmp_path, "<div>" * 3000 + "x" + "</div>" * 3000, name="deep.epub")
+    good = tiny_epub(tmp_path, "<p>fine</p>", name="good.epub")
+    assert main(["convert", str(deep), str(good), "--data", str(tmp_path / "d")]) == 1
+    captured = capsys.readouterr()
+    errors = [line for line in captured.err.splitlines() if line.startswith("error:")]
+    assert errors == ["error: Not a readable EPUB: deep.epub"]
+    assert "1 converted, 1 failed: deep.epub" in captured.out
+    assert (tmp_path / "good.x4.epub").exists()
+
+
+@pytest.mark.parametrize("name", ["NUL", "nul.png", "Con.JPG", "aux.x", "COM1", "lpt9.png"])
+def test_windows_device_names_are_renamed(name):
+    safe = _safe_name(name)
+    assert safe.split(".")[0].lower() not in {"nul", "con", "aux", "com1", "lpt9"}
+    assert safe.endswith(name[len(name.split(".")[0]) :])
+
+
+def test_ordinary_names_stay():
+    assert _safe_name("photo 1.jpg") == "photo_1.jpg" and _safe_name("console.png") == "console.png"
+
+
+def test_device_named_image_is_copied_under_a_new_name(tmp_path):
+    epub = tiny_epub(
+        tmp_path,
+        '<img src="NUL.png" alt="x"/>',
+        extra={"OEBPS/NUL.png": image_bytes((20, 20), "PNG")},
+    )
+    folder, findings, text = read(tmp_path, epub)
+    assert text.count("![") == 1 and findings == []
+    assert [p.name for p in (folder / "images").iterdir()] == ["_NUL.png"]

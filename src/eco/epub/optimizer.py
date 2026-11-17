@@ -262,7 +262,10 @@ class _Package:
         self.obfuscated: set[str] = set()
         self.dropped = 0
         self._read(src)
-        self._load()
+        try:
+            self._load()
+        except RecursionError as exc:  # XML nested thousands of levels deep
+            raise self._unreadable() from exc
 
     def _note(self, kind: str, level: str, message: str) -> None:
         self.findings.append(Finding(0, kind, level, message))
@@ -281,7 +284,10 @@ class _Package:
                     if info.filename.startswith("/") or ".." in info.filename.split("/"):
                         unsafe += 1
                     else:
-                        self.files[info.filename] = z.read(info)
+                        # a bounded read: z.read(info) lets one decompress call run to 1 GiB when
+                        # the directory understates the size
+                        with z.open(info) as entry:
+                            self.files[info.filename] = entry.read(info.file_size)
         except (zipfile.BadZipFile, zlib.error, RuntimeError, NotImplementedError) as exc:
             raise self._unreadable() from exc
         if unsafe:

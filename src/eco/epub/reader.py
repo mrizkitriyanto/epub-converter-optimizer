@@ -23,6 +23,7 @@ _MAPPED = {*_HEADINGS, "p", "li", "pre", "table", "img", "body"}
 _BOLD, _ITALIC = {"strong", "b"}, {"em", "i"}
 _SPACE = re.compile(r"\s+")
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
+_DEVICE_NAME = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.IGNORECASE)
 
 
 def epub_to_book(epub: Path, folder: Path) -> list[Finding]:
@@ -32,9 +33,13 @@ def epub_to_book(epub: Path, folder: Path) -> list[Finding]:
     """
     package = _Package(epub, Options(device="general"))
     reader = _Reader(package, folder)
-    for path in _spine(package):
-        if path in package.docs and (body := package.docs[path].root.find("{*}body")) is not None:
-            reader.read_page(path, body)
+    try:
+        for path in _spine(package):
+            body = package.docs[path].root.find("{*}body") if path in package.docs else None
+            if body is not None:
+                reader.read_page(path, body)
+    except RecursionError as exc:  # XHTML nested hundreds of levels deep
+        raise ValueError(f"Not a readable EPUB: {epub.name}") from exc
     meta = package.opf.root.find("{*}metadata")
     book = Book(
         title=_meta(meta, "title") or epub.stem,
@@ -181,7 +186,7 @@ class _Reader:
         if target not in self.copied:
             images = self.folder / "images"
             images.mkdir(parents=True, exist_ok=True)
-            stem, ext = posixpath.splitext(_UNSAFE_NAME.sub("_", posixpath.basename(target)))
+            stem, ext = posixpath.splitext(_safe_name(posixpath.basename(target)))
             name, n = f"{stem}{ext}", 0
             while (images / name).exists():
                 n += 1
@@ -198,3 +203,10 @@ def _table_html(table: ET.Element) -> str:
         el.attrib = {key: value for key, value in el.attrib.items() if "}" not in key}
         el.tail = None if el is copy else el.tail
     return ET.tostring(copy, encoding="unicode", method="html")
+
+
+def _safe_name(basename: str) -> str:
+    """A file name that is safe on every OS: odd characters become `_`, and a Windows device name
+    (NUL, CON, COM1 ..., with or without an extension) gets a `_` in front."""
+    name = _UNSAFE_NAME.sub("_", basename)
+    return f"_{name}" if _DEVICE_NAME.match(name) else name
