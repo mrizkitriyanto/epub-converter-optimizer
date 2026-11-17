@@ -14,7 +14,6 @@ from urllib.parse import unquote
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.footnote import footnote_plugin
-from mdit_py_plugins.front_matter import front_matter_plugin
 from PIL import Image, ImageDraw, ImageFont
 
 from eco.bookfolder import BookSource
@@ -23,7 +22,7 @@ from eco.events import Finding
 from eco.options import CHAPTER_LIMIT_BYTES, DEVICES
 
 _MD = MarkdownIt("commonmark", {"html": True, "xhtmlOut": True}).enable("table")
-_MD.use(front_matter_plugin).use(footnote_plugin)
+_MD.use(footnote_plugin)
 
 _MEDIA = {
     ".xhtml": "application/xhtml+xml",
@@ -131,7 +130,8 @@ class _Builder:
                     chapters.append(_Chapter(f"ch{len(chapters):03d}", title, self.page))
                 elif first.tag == "h2":
                     chapters[-1].subs.append((title, f"h-{headings}", len(chapters[-1].blocks)))
-            chapters[-1].blocks.append(self._render(block, twin))
+            if markup := self._render(block, twin):  # a dropped image can leave nothing
+                chapters[-1].blocks.append(markup)
             twin = ""
         if not chapters[0].blocks and len(chapters) > 1:
             del chapters[0]

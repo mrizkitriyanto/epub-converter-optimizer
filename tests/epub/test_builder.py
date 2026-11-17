@@ -275,6 +275,25 @@ def test_control_characters_cannot_break_the_xml(tmp_path):
     assert "formfeed and  nul" in "".join(read_xml(z, "OEBPS/text/ch001.xhtml").itertext())
 
 
+def test_thematic_breaks_at_the_start_are_content_not_front_matter(tmp_path):
+    md = "---\ntitle: T\n---\n\n---\n\nPreface text\n\n---\n\n# A\n\nBody\n"
+    z, findings = build(tmp_path, md)
+    assert findings == []
+    front = xhtml(z)["OEBPS/text/front.xhtml"]
+    assert "<p>Preface text</p>" in front and front.count("<hr />") == 2
+    opf = read_xml(z, OPF)
+    hrefs = {i.get("id"): i.get("href") for i in opf.iterfind(".//opf:item", NS)}
+    for ref in opf.iterfind(".//opf:itemref", NS):
+        body = read_xml(z, f"OEBPS/{hrefs[ref.get('idref')]}").find("h:body", NS)
+        assert len(body), ref.get("idref")  # no blank page in the spine
+
+
+def test_a_block_that_renders_to_nothing_does_not_add_a_front_page(tmp_path):
+    z, findings = build(tmp_path, '<img src="gone.png" alt="x"/>\n\n# A\n\nBody\n')
+    assert [f.kind for f in findings] == ["missing_image"]
+    assert "OEBPS/text/front.xhtml" not in z.namelist()
+
+
 def test_empty_markdown_still_has_a_navigable_package(tmp_path):
     z, findings = build(tmp_path, "")
     assert findings == [] and "OEBPS/text/front.xhtml" in z.namelist()
