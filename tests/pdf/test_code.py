@@ -43,7 +43,7 @@ def test_fix_code_blocks_restores_text(fixtures_dir, tmp_path):
     assert not (tmp_path / "images").exists()
 
 
-def test_fix_code_blocks_keeps_matching_text(fixtures_dir, tmp_path):
+def test_fix_code_blocks_keeps_text_when_nothing_better(fixtures_dir, tmp_path):
     path, lines, bbox = fixtures_dir["code"]
     pages = {1: inspect_pdf(path)[0]}
     same = Block("code", text="\n".join(lines), page=1, bbox=bbox)
@@ -52,7 +52,7 @@ def test_fix_code_blocks_keeps_matching_text(fixtures_dir, tmp_path):
     fixed, findings = fix_code_blocks(path, [same, empty], pages, tmp_path)
 
     assert fixed == [same, empty]
-    assert findings == []
+    assert [(f.page, f.kind, f.level) for f in findings] == [(1, "code_not_restored", "warning")]
 
 
 def test_fix_code_blocks_crops_scanned_page(fixtures_dir, tmp_path):

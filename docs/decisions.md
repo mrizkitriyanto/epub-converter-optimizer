@@ -88,3 +88,9 @@ error for either.
   would come out as 5 spaces.
 - On a scanned page there is no text layer. The code block is cropped to
   `images/p{page:04d}-code-{n}.png` and becomes an image with the old text as alt text.
+
+## 2026-11-17: Code block with no text layer chars keeps Docling's text and warns
+
+- When `reextract_code` finds no chars on a page that is not scanned, `fix_code_blocks` keeps
+  Docling's text and records a `code_not_restored` warning (spec section 8.4, item 2). Same text
+  as before records nothing.

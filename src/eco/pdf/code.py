@@ -83,16 +83,27 @@ def fix_code_blocks(
             )
         else:
             text = reextract_code(pdf, info, block.bbox)
-            if text is None or text == block.text:
+            if text is None:
                 fixed.append(block)
-                continue
-            fixed.append(replace(block, text=text))
-            findings.append(
-                Finding(
-                    block.page,
-                    "code_restored",
-                    "info",
-                    "Code block rebuilt from the PDF text layer.",
+                findings.append(
+                    Finding(
+                        block.page,
+                        "code_not_restored",
+                        "warning",
+                        "Could not read this code block from the PDF text layer; "
+                        "kept the extracted text.",
+                    )
                 )
-            )
+            elif text == block.text:
+                fixed.append(block)
+            else:
+                fixed.append(replace(block, text=text))
+                findings.append(
+                    Finding(
+                        block.page,
+                        "code_restored",
+                        "info",
+                        "Code block rebuilt from the PDF text layer.",
+                    )
+                )
     return fixed, findings
