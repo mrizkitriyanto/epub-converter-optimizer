@@ -114,8 +114,8 @@ def test_bearer_token_opens_every_path(tmp_path):
     c = TestClient(create_app(tmp_path, token="s3cret"), headers={"Authorization": "bearer s3cret"})
     assert c.get("/").status_code == 200
     assert c.get("/static/app.css").status_code == 200
-    for path in ("/api/jobs", "/nope"):
-        assert c.get(path).status_code == 404  # past the guard: no such route (yet)
+    assert c.get("/api/jobs").status_code == 200  # past the guard: a route of the jobs API
+    assert c.get("/nope").status_code == 404  # past the guard: no such route
 
 
 def test_address_bar_token_becomes_a_strict_http_only_cookie(tmp_path):

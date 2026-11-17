@@ -69,6 +69,49 @@ def test_purge(tmp_path):
     assert store.list() == []
 
 
+def test_a_reserved_folder_is_no_job_until_it_is_adopted(tmp_path):
+    store = JobStore(tmp_path)
+    job = store.reserve()
+    assert job.parent == store.root
+    assert sorted(p.name for p in job.iterdir()) == ["input", "output"]
+    (job / "input" / "0-a.md").write_bytes(b"# A")
+    (job / "input" / "1-b.PDF").write_bytes(b"%PDF")
+    assert store.list() == []
+    with pytest.raises(KeyError):
+        store.get(job.name)
+    info = store.adopt(job, ["a.md", "b.PDF"], Options(device="x3"))
+    assert (info.id, info.status, info.position) == (job.name, "queued", 0)
+    assert [(f.name, Path(f.path), f.kind) for f in info.files] == [
+        ("a.md", job / "input" / "0-a.md", "md"),
+        ("b.PDF", job / "input" / "1-b.PDF", "pdf"),
+    ]
+    assert store.get(info.id).options["device"] == "x3"
+    assert [i.id for i in store.list()] == [info.id]
+    assert (job / "input" / "0-a.md").read_bytes() == b"# A"  # adopted as they are, not copied
+
+
+def test_a_reserved_folder_that_is_never_adopted_is_purged_by_its_age(tmp_path):
+    store = JobStore(tmp_path)
+    job = store.reserve()
+    assert store.purge() == 0
+    assert store.purge(now=time.time() + 8 * 86400) == 1
+    assert not job.exists()
+
+
+def test_adopt_that_fails_removes_the_folder(tmp_path, monkeypatch):
+    store = JobStore(tmp_path)
+    job = store.reserve()
+    (job / "input" / "0-a.md").write_bytes(b"# A")
+
+    def full(info):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "save", full)
+    with pytest.raises(OSError, match="disk full"):
+        store.adopt(job, ["a.md"], Options())
+    assert not job.exists()
+
+
 def test_purge_keeps_a_job_that_runs(tmp_path):
     store = JobStore(tmp_path)
     info = store.create([md()], Options())

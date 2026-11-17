@@ -62,6 +62,15 @@ def stubborn_work(job_dir, options, data_dir, q) -> None:
         time.sleep(0.1)
 
 
+def failing_work(job_dir, options, data_dir, q) -> None:
+    """Fails its only file with an error that holds the file's full path, as an OSError does."""
+    path = _inputs(Path(job_dir))[0]
+    q.put({"type": "file", "index": 0, "status": "started"})
+    error = f"[Errno 13] Permission denied: {str(path)!r}"
+    q.put({"type": "file", "index": 0, "status": "failed", "error": error})
+    q.put({"type": "end", "status": "failed"})
+
+
 def crashing_work(job_dir, options, data_dir, q) -> None:
     """Dies in its first file without an `end` event, as a native crash would."""
     q.put({"type": "file", "index": 0, "status": "started"})

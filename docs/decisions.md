@@ -447,3 +447,39 @@ error for either.
   reads headers as latin-1). `create_app` itself takes any token. There is no rate limit on 401;
   16 characters of that alphabet are what keeps an online guess from the LAN out of reach.
   A token that starts with `-` must be written `--token=-...` (argparse).
+
+## 2026-11-18: Jobs API: streamed uploads, one error shape, no paths of the server (M2-R15)
+
+- An upload is read with python-multipart's own parser (`_Upload`), and each file is written, as it
+  arrives, into a folder that `JobStore.reserve()` made. Starlette's form parser is not used: it
+  writes every file to a temporary file before the route runs, so a limit could only be checked
+  after the whole upload was on the disk. The limit (`--max-upload-mb`; 1 MB is 1 MiB) is for all
+  the files of a request together, and it is checked before each write, so the disk never holds a
+  byte over it. A `Content-Length` of more than the limit plus 1 MiB (what framing and the options
+  may take) is refused with 413 before the body is read. A body that goes over the limit, or over
+  that sum with other parts, while it arrives is refused at that moment, and the folder is
+  deleted. A folder without a job.json (the server died in the middle) is no job, and `purge`
+  deletes it by its age. If it turns out wrong: a client whose framing is over 1 MiB is refused;
+  raise `_OVERHEAD`.
+- The type check is by suffix and case does not matter. The 400 message names the file as it was
+  uploaded. The `options` field is JSON, before or after the files. An unknown key, a value of the
+  wrong kind, or a `font_size` that is not a whole number from 8 to 96 is 422 (`font_size` goes
+  into Typst source, and `Options` does not check it); a device or the like that does not exist
+  gives the message of `Options`. Nothing posted gives the defaults, and a blank title, author or
+  language is not set. The `options` of a job as the API shows it can be posted back as they are.
+- No path of the server leaves through the API. A job shows names, indexes, sizes, options,
+  positions and errors. A file's `outputs` (format to name) and `sizes` (format to bytes) are what
+  its `file` event shows too, so the page reads both the same way; the event has no `book_dir`.
+  In an error text the data folder is `<data>`. A path outside the data folder in an error text
+  is not cut out. If it turns out wrong: a path leaks that way, cut it in `_scrubber`.
+- Every error is `{"error": "<plain English>"}`: FastAPI's own 404, 405 and 422, and a 500 too.
+  Cancel answers 202 with the job, or 409 when the job has finished. A rebuild takes the options as
+  JSON (none means the defaults) and answers 201 with the new job. A download has
+  `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded name>`, with no ASCII
+  `filename=` beside it; `{n}` is a plain decimal index, `{fmt}` is only looked up in the job's
+  outputs, and the file must lie in the job's `output/` folder.
+- An event stream subscribes in its own generator and unsubscribes in `finally`, so a client that
+  goes, a job that never ends and a response that the server cancels leave no queue behind. It
+  looks at its queue every 50 ms: the queue is the runner thread's. Known limit: uvicorn waits for
+  an open stream before it stops, so Ctrl+C during a conversion with the page open needs a second
+  Ctrl+C. `timeout_graceful_shutdown` in `uvicorn.run` would end the streams after a delay.

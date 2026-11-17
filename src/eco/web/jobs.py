@@ -165,6 +165,25 @@ class JobStore:
 
         return self._new(options, fill)
 
+    def reserve(self) -> Path:
+        """An empty job folder for uploads that are written as they arrive; `adopt` then makes a
+        job of it. Until then the folder has no job.json: `get` and `list` do not see it, and
+        `purge` deletes it by its age, as it does the folder of a `create` that never finished."""
+        job = self.root / secrets.token_hex(8)
+        (job / "input").mkdir(parents=True)
+        (job / "output").mkdir()
+        return job
+
+    def adopt(self, job: Path, names: list[str], options: Options) -> JobInfo:
+        """A queued job from the files already written to `job/input` as `<n>-<name>`, one for
+        each name in `names` (made by `safe_name`, with a type in KINDS). The files stay where
+        they are. If this fails the folder is deleted."""
+
+        def fill(inputs: Path) -> list[JobFile]:
+            return [_file(name, inputs / f"{n}-{name}") for n, name in enumerate(names)]
+
+        return self._new(options, fill, job)
+
     def rebuild(self, job_id: str, options: Options) -> JobInfo:
         """A queued job with the inputs of `job_id` (hard links where the disk allows them) and
         new options. A PDF's extraction is cached, so it is not read again."""
@@ -184,10 +203,10 @@ class JobStore:
 
         return self._new(options, fill)
 
-    def _new(self, options: Options, fill: Callable[[Path], list[JobFile]]) -> JobInfo:
-        job = self.root / secrets.token_hex(8)
-        (job / "input").mkdir(parents=True)
-        (job / "output").mkdir()
+    def _new(
+        self, options: Options, fill: Callable[[Path], list[JobFile]], job: Path | None = None
+    ) -> JobInfo:
+        job = job or self.reserve()
         try:
             info = JobInfo(job.name, "queued", time.time(), asdict(options), fill(job / "input"), 0)
             self.save(info)
