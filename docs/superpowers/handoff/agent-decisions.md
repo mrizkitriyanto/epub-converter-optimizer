@@ -118,3 +118,38 @@ Entry format:
 ## Answers recorded on the new machine
 
 (append below)
+
+### Q-12: The owner put `samples/` next to the clone (`D:\Tools\epub-converter\samples`), not inside the repo root. Copy it, move it, or link it?
+- Date, milestone, task: 2026-11-17, M1 T19 (setup on the Windows laptop).
+- Answer: Link it. Create a directory junction `eco\samples` pointing to `D:\Tools\epub-converter\samples` (`New-Item -ItemType Junction`, no admin rights). Do not copy or move the owner's folder. Remove the link only with `rmdir eco\samples` (never `rm -rf`, which would follow it).
+- Why: the owner's folder stays the single copy, so the ground-truth files that Q-8 adds land in it. `/samples` in `.gitignore` covers the junction. R-11 did the same on the Mac with a symlink.
+- Cost if wrong: none. Remove the junction and copy the folder instead.
+- Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
+
+### Q-1 (applied on Windows): local EPUBCheck, measured sizes
+- Date, milestone, task: 2026-11-17, M1 T19 (acceptance AC7).
+- Answer: Done as Q-1 says, outside the repo in `C:\Users\RizkiT\tools`: Temurin JRE 21.0.13+9 for Windows x64 (`OpenJDK21U-jre_x64_windows_hotspot_21.0.13_9.zip`, 49,106,397 bytes, SHA-256 checked against Adoptium's published value; 146 MB unpacked) and EPUBCheck 5.4.0 (`epubcheck-5.4.0.zip`, 33,093,170 bytes; 35 MB unpacked). Total download 82.2 MB, 181 MB on disk; the zips were deleted after unpacking. The acceptance suite finds them through `ECO_JAVA` and `ECO_EPUBCHECK_JAR` (ruling R-56 in the M1 ledger).
+- Why: Q-1.
+- Cost if wrong: 181 MB of disk; delete the two folders.
+- Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
+
+### Q-13: This laptop has no Microsoft Visual C++ Redistributable, so PyTorch (`c10.dll`) and rtree (`spatialindex_c-64.dll`) cannot load. Install it system-wide, or work around it?
+- Date, milestone, task: 2026-11-17, M1 setup (the fast suite gave 389 passed, 6 failed, 4 errors; all 10 are this one cause).
+- Answer:
+  - Do not run Microsoft's installer: it is a system-level install that needs admin rights (same reason as Q-9).
+  - On this machine only, put the official runtime DLLs next to the uv-managed Python 3.12 (`C:\Users\RizkiT\AppData\Roaming\uv\python\cpython-3.12.16-windows-x86_64-none`), where Python already keeps its own `vcruntime140.dll`. Windows looks for a process's DLLs in that folder first. The DLLs come from the `msvc-runtime` 14.51.36231 wheel (PyPI, 2,052,033 bytes); each one must carry a valid Authenticode signature from Microsoft Corporation before it is copied. This changes nothing in the repo, and the wheel is never a project dependency (its licence is proprietary).
+  - Product side: a clean Windows machine can lack this runtime (spec §5 anti-goal "fragile install on Windows", §9 criterion 11). PyTorch already prints Microsoft's download link when its DLLs fail, so eco adds no code for it; the README (both languages) states the prerequisite and the link.
+- Why: without the runtime nothing PDF-related runs here: no `eco setup`, no slow tests, no acceptance. User-level and reversible beats an admin install the owner has not approved.
+- Cost if wrong: none for the code. To undo, delete the copied DLLs from that Python folder (listed in the M1 ledger). The owner may prefer to install the redistributable from https://aka.ms/vs/17/release/vc_redist.x64.exe, after which the copies can go.
+- Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
+
+### Q-14 (follows Q-13): the agent harness's safety check refused copying the runtime DLLs into the Python folder. What now?
+- Date, milestone, task: 2026-11-17, M1 setup.
+- Answer:
+  - Do not work around the refusal: no copies into site-packages, no PATH tricks to load the downloaded DLLs.
+  - The fix that remains is Microsoft's official installer, https://aka.ms/vs/17/release/vc_redist.x64.exe (Visual C++ Redistributable x64). It needs admin rights, so the owner runs it, or allows the copy described in Q-13. An agent does not start an elevated install on its own.
+  - Until then, the work that does not need PyTorch, onnxruntime or rtree goes ahead: R-54, the Windows part of the T19 harness, the README note on the prerequisite, the wrap-up docs commit, and a manual CI run of the already-pushed branch tip (Q-11). OpenCV, pypdfium2 and Pillow load without the runtime.
+  - Blocked until the runtime exists: `eco setup` (417 MB of models), the slow tests, the AC1 investigation, the acceptance run, and therefore the M1 final review and M2-M4.
+- Why: the refusal marks the copy as a change the owner must approve. Only the owner can approve an admin install.
+- Cost if wrong: M1 waits for one owner action.
+- Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
