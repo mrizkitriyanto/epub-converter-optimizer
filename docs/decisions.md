@@ -255,3 +255,17 @@ error for either.
   A file named on the command line is always converted.
 - Input and output paths and `--data` get `expanduser()`, so a quoted `"~/x"` never creates a
   folder named `~`.
+
+## 2026-11-17: OpenCV is pinned below 4.13
+
+- `rapidocr` pulls in `opencv-python-headless` with no cap, so the lock held 5.0.0. On Apple silicon
+  its resize goes through KleidiCV 26.03, and the 258-page *Bicara* OCR run segfaulted at page ~200
+  (exit 139) inside `kleidicv_resize_generic_stripe_u8`, called from RapidOCR's preprocessing in a
+  worker thread. The crash is not deterministic.
+- 4.12.0.88 on macOS arm64 has only the carotene HAL, no KleidiCV, and finished all 258 pages. KleidiCV
+  is ARM-only, so Windows and Linux x64 just move to the same version: one OpenCV for every OS, and CI
+  tests what the Mac runs. `tests/test_dependencies.py` fails if the pin is lost or a KleidiCV HAL
+  comes back.
+- 4.12 needs `numpy<2.3`, so the numpy constraint goes with it.
+- Cost: 4.12 lags 5.0 on fixes. Revisit when an upstream KleidiCV fix ships. The fallback is
+  `cv2.setNumThreads(1)` on 5.0, which passed once on the Mac.

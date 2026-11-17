@@ -40,7 +40,11 @@ build-backend = "hatchling.build"
 packages = ["src/eco"]
 
 [tool.uv]
-constraint-dependencies = ["setuptools>=84.1"]
+constraint-dependencies = [
+    "setuptools>=84.1",
+    "opencv-python-headless<4.13",
+    "numpy<2.3", # opencv-python-headless 4.12 needs it; without it uv takes 4.11 to keep numpy 2.5
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
