@@ -23,7 +23,10 @@ def test_code_bbox_matches_the_cropbox_convention(fixtures_dir, models):
     path, _, expected = fixtures_dir["code"]
     blocks = extract_blocks(path, models, first=1, last=1, ocr="auto", on_page=lambda n: None)
     code = next(b for b in blocks if b.kind == "code")
-    assert code.bbox == pytest.approx(expected, abs=3)
+    # This guards the coordinate space. A wrong one shows up as an offset of 54 and 63 pt (the
+    # CropBox offset) or a flipped y, not as a few points. It does not check the layout model's
+    # exact box, which can come out a little looser than the text it surrounds.
+    assert code.bbox == pytest.approx(expected, abs=10)
 
 
 @pytest.mark.slow

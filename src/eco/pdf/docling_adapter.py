@@ -36,9 +36,11 @@ _KIND = {
 
 def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
     """Map a docling_core DoclingDocument to blocks in reading order. Nothing in `doc` changes."""
+    # The HTML of a table already holds the footnotes it owns, so they are not blocks of their own.
+    table_footnotes = {ref.cref for table in doc.tables for ref in table.footnotes}
     blocks = []
     for item, _ in doc.iterate_items():  # body layer only, so page headers and footers are out
-        if item.label == "caption":
+        if item.label == "caption" or item.self_ref in table_footnotes:
             continue
         kind = _KIND.get(item.label, "paragraph")
         text = getattr(item, "text", "")  # pictures and tables have none
@@ -81,9 +83,10 @@ def extract_blocks(
 ) -> list[Block]:
     """Run Docling on pages `first` to `last` (1-based) and return their blocks.
 
-    `on_page` gets the number of each page Docling finishes, in the order they finish. `scanned`
-    holds the scanned pages: their blocks are marked as OCR. Raises ModelsMissing, before anything
-    else, when `eco setup` has not run.
+    `on_page` gets the number of each page Docling finishes without error, in the order they
+    finish. A page that failed is not reported, so the caller can see which pages are missing.
+    `scanned` holds the scanned pages: their blocks are marked as OCR. Raises ModelsMissing, before
+    anything else, when `eco setup` has not run.
     """
     if not models_ready(models):
         raise ModelsMissing()
@@ -109,7 +112,7 @@ def extract_blocks(
         )
 
         def report(event):
-            if isinstance(event, PageCompletedProgress):
+            if isinstance(event, PageCompletedProgress) and event.success:
                 on_page(event.page_no)
 
         result = converter.convert(pdf, page_range=(first, last), progress_callback=report)

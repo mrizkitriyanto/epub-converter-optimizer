@@ -62,6 +62,12 @@ def add_caption(doc, owner, text):
     owner.captions.append(caption.get_ref())
 
 
+def add_footnote(doc, owner, text):
+    """Docling's reading order adds a footnote as a child of its table, like a caption."""
+    footnote = doc.add_text(DocItemLabel.FOOTNOTE, text, parent=owner, prov=prov())
+    owner.footnotes.append(footnote.get_ref())
+
+
 def adds_text(label):
     return lambda doc, p: doc.add_text(label, TEXT, prov=p)
 
@@ -123,6 +129,30 @@ def test_caption_without_an_owner_is_skipped():
     doc = new_doc()
     doc.add_text(DocItemLabel.CAPTION, "Figure 9: nothing to attach to", prov=prov())
     assert _to_blocks(doc, frozenset()) == []
+
+
+def test_footnote_that_a_table_owns_appears_once():
+    doc = new_doc()
+    table = doc.add_table(data=table_data(), prov=prov())
+    add_footnote(doc, table, "* a table note")
+    doc.add_text(DocItemLabel.FOOTNOTE, "1 A free note.", prov=prov())
+    blocks = _to_blocks(doc, frozenset())
+    assert [(b.kind, b.text) for b in blocks] == [("table", ""), ("footnote", "1 A free note.")]
+    # The table's own HTML carries the footnote it owns.
+    assert "".join(b.text + b.html for b in blocks).count("* a table note") == 1
+
+
+def test_footnote_that_a_picture_owns_stays_a_block():
+    # docling-core yields only a picture's captions, so a footnote that is a child of a picture
+    # never reaches us. One beside the picture does, and only tables swallow their footnotes.
+    doc = new_doc()
+    picture = doc.add_picture(prov=prov())
+    footnote = doc.add_text(DocItemLabel.FOOTNOTE, "A figure note.", prov=prov())
+    picture.footnotes.append(footnote.get_ref())
+    assert [(b.kind, b.text) for b in _to_blocks(doc, frozenset())] == [
+        ("picture", ""),
+        ("footnote", "A figure note."),
+    ]
 
 
 def test_empty_text_is_skipped_except_for_formulas_pictures_and_tables():
@@ -215,11 +245,15 @@ PIPELINE_OPTIONS = {
 }
 
 
-@pytest.mark.parametrize("ocr", ["auto", "force", "off"])
-def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypatch, ocr):
-    # Docling takes seconds to import, so only this test loads it, and Docling is never run.
+def run_with_fake_convert(tmp_path, monkeypatch, pages_done, ocr="auto", scanned=frozenset()):
+    """Call extract_blocks with Docling's `convert` replaced, so Docling never runs.
+
+    The stand-in reports one event that is not about a page, then a PageCompletedProgress for each
+    (page_no, success) in `pages_done`, and returns a document with one text on page 1. Returns the
+    blocks, the page numbers that reached `on_page`, and what the stand-in was given.
+    """
+    # Docling takes seconds to import, so only the tests that call this load it.
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import RapidOcrOptions
     from docling.datamodel.progress import (
         ConversionPhase,
         PageCompletedProgress,
@@ -243,23 +277,49 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
         progress = kwargs["progress_callback"]
         base = {"document_index": 1, "document_name": "book"}
         progress(PhaseStartedProgress(phase=ConversionPhase.BUILD, **base))
-        for page_no, completed in ((2, 1), (1, 2)):  # pages finish out of order
+        for completed, (page_no, success) in enumerate(pages_done, 1):
             progress(
                 PageCompletedProgress(
-                    page_no=page_no, success=True, completed_pages=completed, total_pages=2, **base
+                    page_no=page_no,
+                    success=success,
+                    completed_pages=completed,
+                    total_pages=len(pages_done),
+                    **base,
                 )
             )
         return SimpleNamespace(document=doc)
 
     monkeypatch.setattr("docling.document_converter.DocumentConverter.convert", fake_convert)
-    pdf, pages = tmp_path / "book.pdf", []
+    pages = []
     blocks = extract_blocks(
-        pdf, tmp_path, first=1, last=2, ocr=ocr, on_page=pages.append, scanned=frozenset({1})
+        tmp_path / "book.pdf",
+        tmp_path,
+        first=1,
+        last=len(pages_done),
+        ocr=ocr,
+        on_page=pages.append,
+        scanned=scanned,
+    )
+    return blocks, pages, seen
+
+
+def test_only_pages_that_finished_are_reported(tmp_path, monkeypatch):
+    _, pages, _ = run_with_fake_convert(tmp_path, monkeypatch, [(3, True), (2, False), (1, True)])
+    assert pages == [3, 1]
+
+
+@pytest.mark.parametrize("ocr", ["auto", "force", "off"])
+def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypatch, ocr):
+    from docling.datamodel.pipeline_options import RapidOcrOptions
+
+    pages_done = [(2, True), (1, True)]  # pages finish out of order
+    blocks, pages, seen = run_with_fake_convert(
+        tmp_path, monkeypatch, pages_done, ocr=ocr, scanned=frozenset({1})
     )
 
     assert pages == [2, 1]
     assert blocks == [Block("paragraph", TEXT, page=1, bbox=BLOCK_BOX, ocr=True)]
-    assert seen["source"] == pdf and seen["kwargs"]["page_range"] == (1, 2)
+    assert seen["source"] == tmp_path / "book.pdf" and seen["kwargs"]["page_range"] == (1, 2)
     assert seen["offline"] == ("1", "1")
     assert "HF_HUB_OFFLINE" not in os.environ and "TRANSFORMERS_OFFLINE" not in os.environ
     options = seen["options"]

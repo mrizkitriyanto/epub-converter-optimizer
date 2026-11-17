@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+
+import platformdirs
 import pytest
 from fixtures.make import build_all, make_epub, make_messy_epub
 from PIL import Image
@@ -6,7 +10,6 @@ from pypdf import PdfReader, PdfWriter
 from eco.book import Block, Book
 from eco.bookfolder import write_book
 from eco.models import models_dir, models_ready
-from eco.options import resolve_data_dir
 
 
 @pytest.fixture(scope="session")
@@ -16,8 +19,12 @@ def fixtures_dir(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def models():
-    """The folder `eco setup` filled. The slow tests skip when it has not run."""
-    d = models_dir(resolve_data_dir(None))
+    """The folder `eco setup` filled. The slow tests skip when it has not run.
+
+    The path is built the way `resolve_data_dir(None)` builds it, but not created: that function
+    would make an empty data folder on every run, even a run that skips.
+    """
+    d = models_dir(Path(os.environ.get("ECO_DATA") or platformdirs.user_data_dir("eco")))
     if not models_ready(d):
         pytest.skip("AI models are not installed. Run: eco setup")
     return d

@@ -131,15 +131,19 @@ error for either.
 
 ## 2026-11-17: Docling adapter: what the mapping keeps, and how tables come out
 
-- Items with no text are dropped, except formulas, pictures and tables. Docling leaves a formula's
-  `text` empty and puts the text-layer text in `orig`, so a test on `text` alone would drop every
-  formula before `materialize_regions` can crop it.
+- Items with no text are dropped, except formulas, pictures and tables (R-46). Docling leaves a
+  formula's `text` empty and puts the text-layer text in `orig`, so a test on `text` alone would
+  drop every formula before `materialize_regions` can crop it.
 - A `document_index` item (a contents page) is a table item with no text, so it maps to a table.
   A caption that no table or picture owns is dropped, as the plan says.
 - docling-core 2.107.1 ignores `add_caption` in `TableItem.export_to_html(doc)`. The call stays as
-  the plan has it, so the table HTML holds the caption as `<caption>`. That is how a table caption
-  reaches the book, because `write_book` renders `Block.caption` only for images. A footnote that
-  belongs to a table is also in that HTML and comes out again as a `footnote` block, so it appears
-  twice.
-- Docling catches and logs any exception a progress callback raises (`ProgressReporter._emit`), so
-  `on_page` cannot stop a conversion by raising.
+  the plan has it, so the table HTML holds the caption as `<caption>` and its footnotes after
+  `</table>`. That is how a table caption reaches the book, because `write_book` renders
+  `Block.caption` only for images. A footnote that a table owns (it is in the table's `footnotes`)
+  is therefore not a block of its own (R-48), or its text would appear twice. Only tables do
+  this: free footnotes and footnotes owned by code stay `footnote` blocks. docling-core does not
+  yield a footnote that is a child of a picture at all, so those are lost.
+- `on_page` is called only for pages Docling finished without error (R-47). Task 17 compares the
+  pages it asked for with the pages reported and warns about each missing one (`page_failed`).
+  Docling catches and logs any exception a progress callback raises (`ProgressReporter._emit`),
+  so `on_page` cannot stop a conversion by raising; Task 17 checks `cancel` between chunks.
