@@ -17,20 +17,20 @@ _LINE_START_MARK = re.compile(r"^[-+=~]")
 
 
 class RemovedByAntivirus(Exception):
-    """Windows refused to write book.md, as it does when a virus scanner removes the file: the text
-    of a book about malware can hold code that a scanner takes for malware. Raised from that
-    error."""
+    """Windows refused to write or read book.md, as it does when a virus scanner has found a threat
+    in the file, before and while it moves the file away: the text of a book about malware can hold
+    code that a scanner takes for malware. Raised from that error."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, action: str = "write"):
         super().__init__(
-            f"Could not write {path}. Antivirus software may have removed it, because the text of "
-            "this book can look like malware. You can exclude eco's data folder, which holds this "
-            "file, from scanning."
+            f"Could not {action} {path}. Antivirus software may have removed it, because the text "
+            "of this book can look like malware. You can exclude eco's data folder, which holds "
+            "this file, from scanning."
         )
 
 
 def _blocked_by_antivirus(e: OSError) -> bool:
-    """True on Windows for the error a write gets when a virus scanner blocks the file:
+    """True on Windows for the error a write or read gets when a virus scanner blocks the file:
     ERROR_VIRUS_INFECTED (225), which Python reports as errno 22, "Invalid argument"."""
     return sys.platform == "win32" and (e.errno == 22 or getattr(e, "winerror", None) == 225)
 
@@ -94,12 +94,23 @@ def read_report(folder: Path) -> list[Finding]:
     return [Finding(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
 
 
+def read_book_md(folder: Path) -> str:
+    """The text of the book.md of a book folder. A virus scanner can hold or remove the file after
+    eco wrote it, which Windows reports as "Invalid argument"."""
+    path = folder / "book.md"
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except OSError as e:
+        if _blocked_by_antivirus(e):
+            raise RemovedByAntivirus(path, "read") from e
+        raise
+
+
 def load_source(path: Path) -> BookSource:
     if path.is_dir():
-        md_path, base_dir = path / "book.md", path
+        text, base_dir = read_book_md(path), path
     else:
-        md_path, base_dir = path, path.parent
-    text = md_path.read_text(encoding="utf-8-sig")
+        text, base_dir = path.read_text(encoding="utf-8-sig"), path.parent
     meta: dict[str, str] = {}
     if match := _FRONT_MATTER.match(text):
         meta = _parse_front_matter(match.group(1) or "")

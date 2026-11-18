@@ -82,6 +82,25 @@ def test_a_book_md_that_antivirus_removed_is_one_plain_line(
     assert "Traceback" not in err
 
 
+def test_a_book_md_that_antivirus_holds_when_read_is_one_plain_line(
+    tmp_path, capsys, monkeypatch, fixtures_dir, fake_blocks
+):
+    monkeypatch.setattr(sys, "platform", "win32")
+    read_text = Path.read_text
+
+    def held(self, *args, **kwargs):
+        if self.name == "book.md":
+            raise OSError(22, "Invalid argument", str(self))
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", held)
+    assert convert(tmp_path, fixtures_dir["blank"], "-o", tmp_path / "o") == 1
+    err = capsys.readouterr().err
+    [line] = [line for line in err.splitlines() if line.startswith("error: ")]
+    assert line.startswith("error: Could not read ") and "book.md. Antivirus software may" in line
+    assert "Traceback" not in err
+
+
 def test_drm_epub(tmp_path, capsys, drm_epub):
     assert convert(tmp_path, drm_epub) == 1
     assert "error: EPUB is DRM-protected: drm.epub" in capsys.readouterr().err
@@ -178,6 +197,25 @@ def test_extract_retitles_a_renamed_pdf_without_title(tmp_path, fake_blocks, fix
         assert main(["extract", str(pdf), "-o", str(tmp_path / "o"), *data]) == 0
     md = (tmp_path / "o" / "second.book" / "book.md").read_text()
     assert md.splitlines()[1] == 'title: "second"'
+
+
+def test_extract_says_plainly_when_antivirus_holds_the_cached_book_md(
+    tmp_path, capsys, monkeypatch, fake_blocks, fixtures_dir
+):
+    monkeypatch.setattr(sys, "platform", "win32")
+    read_text = Path.read_text
+
+    def held(self, *args, **kwargs):
+        if self.name == "book.md" and (tmp_path / "d") in self.parents:
+            raise OSError(22, "Invalid argument", str(self))
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", held)
+    args = ["extract", str(fixtures_dir["blank"]), "-o", str(tmp_path / "o")]
+    assert main([*args, "--data", str(tmp_path / "d")]) == 1
+    err = capsys.readouterr().err
+    assert err.splitlines()[-1].startswith(f"error: Could not read {tmp_path / 'd'}")
+    assert "book.md. Antivirus software may" in err and "Traceback" not in err
 
 
 def test_extract_error_is_one_line(tmp_path, capsys):

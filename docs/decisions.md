@@ -467,17 +467,24 @@ error for either.
   file that was gone. An `image_kept` warning names it, and the `bad_xml` finding says the page's
   links are not updated. If it turns out wrong: the X4 limits are not applied to such an image.
 
-## 2026-11-18: A book.md that antivirus software removed is one plain error (R-74)
+## 2026-11-18: A book.md that antivirus software removed is one plain error (R-74, R-78)
 
-- When writing `book.md` fails on Windows with errno 22 or WinError 225 (ERROR_VIRUS_INFECTED,
-  which Python reports as errno 22, "Invalid argument"), eco raises `RemovedByAntivirus`, chained
-  from the original error. Its message names the file, says that antivirus software may have
-  removed it because the text of the book can look like malware, and says that eco's data folder,
-  which holds the file, can be excluded from scanning. It never suggests turning protection off.
-- Why: Windows Defender quarantined the Malware book's `book.md` (`Exploit:Win32/Pdfjsc.Q`, a
-  malicious-PDF-JavaScript signature that the book's own example code matches) after a 7306 s
-  conversion, and "Invalid argument" sent the reader to the wrong place. Whether to exclude a
-  folder is the owner's decision (agent decisions Q-24).
+- When writing or reading `book.md` fails on Windows with errno 22 or WinError 225
+  (ERROR_VIRUS_INFECTED, which Python reports as errno 22, "Invalid argument"), eco raises
+  `RemovedByAntivirus`, chained from the original error. Its message says "Could not write" or
+  "Could not read" and names the file, says that antivirus software may have removed it because
+  the text of the book can look like malware, and says that eco's data folder, which holds the
+  file, can be excluded from scanning. It never suggests turning protection off.
+- The read is the case that happened (R-78, corrected the same day): Windows Defender let eco
+  write the Malware book's `book.md` (`report.json`, written after it, exists), detected
+  `Exploit:Win32/Pdfjsc.Q` (a malicious-PDF-JavaScript signature that the book's own example code
+  matches) three seconds later, and the next read, in `load_source`, failed with "Invalid
+  argument" after a 7306 s conversion. Both `load_source` and `eco extract` read `book.md` through
+  the guard; `eco extract` reads the cached file before it copies the folder.
+- A cached book folder that holds `report.json` but no `book.md` is incomplete: `extract_pdf`
+  removes it and extracts again, instead of failing with "No such file" on every later run.
+- Why: "Invalid argument" sent the reader to the wrong place. Whether to exclude a folder is the
+  owner's decision (agent decisions Q-24).
 - The acceptance harness puts the `error:` line of a failed conversion in the first line of its
   failure message. If it turns out wrong: errno 22 alone can have another cause, and the message
   only says "may".

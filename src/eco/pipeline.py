@@ -211,8 +211,9 @@ def extract_pdf(
     """Extract a PDF into a book folder of the cache and return the folder.
 
     The folder is named after the PDF's SHA-256, the extractor version and `options.ocr`. One that
-    holds a report.json is complete: it is reused, and only its findings are reported again. The
-    stages are `read`, `layout` and `fix`. Raises PdfOpenError for a PDF that cannot be read,
+    holds a report.json and a book.md is complete: it is reused, and only its findings are reported
+    again. One without book.md, which a virus scanner can remove, is extracted again. The stages
+    are `read`, `layout` and `fix`. Raises PdfOpenError for a PDF that cannot be read,
     ModelsMissing when `eco setup` has not run, Cancelled when `cancel()` says so and
     RemovedByAntivirus when Windows refuses to write book.md.
     """
@@ -221,11 +222,12 @@ def extract_pdf(
     except OSError as error:  # the same message inspect_pdf gives for a file it cannot open
         raise PdfOpenError(f"Not a readable PDF: {pdf.name}") from error
     folder = data_dir / "cache" / f"{digest[:16]}-x{EXTRACTOR_VERSION}-{options.ocr}.book"
-    if (folder / "report.json").is_file():
+    if (folder / "report.json").is_file() and (folder / "book.md").is_file():
         for finding in read_report(folder):
             on_event(FindingEvent(finding))
         return folder
-    shutil.rmtree(folder, ignore_errors=True)  # a run that was cancelled or crashed left it
+    shutil.rmtree(folder, ignore_errors=True)  # a run that was cancelled or crashed left it, or
+    # a virus scanner removed its book.md
 
     findings: list[Finding] = []
     infos = _read(pdf, options.ocr != "off", on_event, findings)
@@ -295,7 +297,8 @@ def convert_file(
     reflow` is the same as `auto`.
 
     Raises ValueError for an input of another kind, and what `extract_pdf` and the optimizer raise:
-    PdfOpenError, ModelsMissing, Cancelled, RemovedByAntivirus, DRMError.
+    PdfOpenError, ModelsMissing, Cancelled, RemovedByAntivirus (book.md cannot be written or
+    read), DRMError.
     """
     start = time.monotonic()
     kind = "book" if path.is_dir() else path.suffix.lower().lstrip(".")

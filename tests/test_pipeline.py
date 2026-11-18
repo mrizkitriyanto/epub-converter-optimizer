@@ -424,3 +424,15 @@ def test_unsupported_input(tmp_path):
     note.write_text("x")
     with pytest.raises(ValueError, match="Unsupported input: notes.txt"):
         convert(note, tmp_path)
+
+
+def test_a_cached_folder_whose_book_md_is_gone_is_extracted_again(
+    tmp_path, fixtures_dir, fake_blocks
+):
+    """A virus scanner can remove book.md after report.json marked the folder complete."""
+    pdf, data = fixtures_dir["blank"], tmp_path / "d"
+    folder = extract(pdf, data)
+    (folder / "book.md").unlink()
+    assert extract(pdf, data) == folder
+    assert (folder / "book.md").is_file()
+    assert len(fake_blocks.calls) == 4  # two chunks each time

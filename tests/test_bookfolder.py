@@ -217,3 +217,47 @@ def test_other_write_errors_pass_unchanged(tmp_path, monkeypatch, platform, erro
     with pytest.raises(OSError) as caught:
         write_book(Book(title="T"), tmp_path / "x.book", [])
     assert caught.value is error
+
+
+def failing_read(monkeypatch, error):
+    """book.md is there but cannot be read: the read raises `error`, as when a virus scanner holds
+    it after detecting a threat, before it moves the file away."""
+    read_text = Path.read_text
+
+    def fake(self, *args, **kwargs):
+        if self.name == "book.md":
+            raise error
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake)
+
+
+@pytest.mark.parametrize("error", [blocked(), blocked(winerror=225, errno=13)])
+def test_a_book_md_that_antivirus_holds_gives_one_plain_error_when_read(
+    tmp_path, monkeypatch, error
+):
+    folder = tmp_path / "x.book"
+    write_book(Book(title="T"), folder, [])
+    monkeypatch.setattr(sys, "platform", "win32")
+    failing_read(monkeypatch, error)
+    with pytest.raises(RemovedByAntivirus) as caught:
+        load_source(folder)
+    message = str(caught.value)
+    assert message.startswith(f"Could not read {folder / 'book.md'}. Antivirus software may")
+    assert "look like malware" in message and "exclude eco's data folder" in message
+    assert not any(word in message.lower() for word in ("disable", "turn off", "switch off"))
+    assert caught.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    "platform, error",
+    [("win32", blocked(errno=13)), ("linux", blocked()), ("darwin", blocked(winerror=225))],
+)
+def test_other_read_errors_pass_unchanged(tmp_path, monkeypatch, platform, error):
+    folder = tmp_path / "x.book"
+    write_book(Book(title="T"), folder, [])
+    monkeypatch.setattr(sys, "platform", platform)
+    failing_read(monkeypatch, error)
+    with pytest.raises(OSError) as caught:
+        load_source(folder)
+    assert caught.value is error
