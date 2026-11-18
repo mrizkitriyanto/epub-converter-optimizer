@@ -1,4 +1,5 @@
 import io
+import json
 import multiprocessing
 import os
 import signal
@@ -19,6 +20,7 @@ from fakes import (
 )
 
 from eco.options import Options
+from eco.style import PageStyle
 from eco.web import jobs
 from eco.web.jobs import STOPPED, JobStore, Runner, safe_name, server_lock
 
@@ -290,6 +292,21 @@ def test_job_survives_a_new_store(tmp_path):
         info.files,
     )
     assert again.options == {**info.options, "formats": ["epub"]}
+
+
+def test_a_job_of_m2_loads_with_its_font_size_in_the_style(tmp_path):
+    """M2 wrote `font_size` into the options. The upgraded server reads it as `style.font_size`."""
+    store = JobStore(tmp_path)
+    info = store.create([md()], Options())
+    path = tmp_path / "jobs" / info.id / "job.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["options"]["style"]
+    data["options"]["font_size"] = 96  # M2 took 8 to 96
+    path.write_text(json.dumps(data), encoding="utf-8")
+    again = store.get(info.id)
+    assert again.options["style"] == PageStyle(font_size=64).to_json()
+    assert "font_size" not in again.options
+    assert [j.id for j in store.list()] == [info.id]
 
 
 @pytest.mark.parametrize("job_id", ["0123456789abcdef", "..", "../jobs", "0123456789ABCDEF"])

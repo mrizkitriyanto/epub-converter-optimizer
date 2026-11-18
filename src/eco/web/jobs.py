@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from eco.events import PageEvent, StageEvent
-from eco.options import Options
+from eco.options import Options, options_from_dict, upgrade_options
 
 if os.name == "nt":
     import msvcrt
@@ -261,6 +261,7 @@ class JobStore:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except FileNotFoundError:
                 raise KeyError(job_id) from None
+        data["options"] = upgrade_options(data["options"])
         return JobInfo(**{**data, "files": [JobFile(**f) for f in data["files"]]})
 
     def list(self, limit: int = 20) -> list[JobInfo]:
@@ -396,7 +397,7 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
     files = json.loads((job / "job.json").read_text(encoding="utf-8"))["files"]
     (job / "tmp").mkdir(exist_ok=True)
     tempfile.tempdir = str(job / "tmp")  # what a killed worker leaves there, the runner deletes
-    opts = Options(**{**options, "formats": tuple(options["formats"])})
+    opts = options_from_dict(options)
     written: list[Path] = []
     for i, file in enumerate(files):
         q.put({"type": "file", "index": i, "status": "started"})

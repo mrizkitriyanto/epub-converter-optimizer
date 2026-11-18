@@ -27,6 +27,7 @@ from pypdf import PdfReader, PdfWriter
 from eco.options import Options, image_profile
 from eco.render.md2typst import RenderSettings
 from eco.render.pages import Rendered
+from eco.style import PageStyle
 from eco.web.app import create_app
 from eco.web.preview import PreviewError
 
@@ -324,7 +325,7 @@ def test_the_cache_of_a_file_is_under_its_own_number(c, app):
 
 
 def test_the_main_preview_renders_with_the_jobs_own_options(c, app, monkeypatch):
-    options = Options(device="x3", size="small", firmware="stock", font_size=48)
+    options = Options(device="x3", size="small", firmware="stock", style=PageStyle(font_size=48))
     job = make_job(app, ("book.md", TWO), options=options)
     seen = counting(monkeypatch, "eco.web.preview.render_book")
     assert c.get(url(job, "pages?view=stock")).status_code == 200
@@ -337,8 +338,8 @@ def test_the_main_preview_renders_with_the_jobs_own_options(c, app, monkeypatch)
 
 
 def test_a_bigger_font_makes_more_pages(c, app):
-    big = make_job(app, ("a.md", LONG), options=Options(font_size=48))
-    small = make_job(app, ("a.md", LONG), options=Options(font_size=24))
+    big = make_job(app, ("a.md", LONG), options=Options(style=PageStyle(font_size=48)))
+    small = make_job(app, ("a.md", LONG), options=Options(style=PageStyle(font_size=24)))
     pages = {"big": big, "small": small}
     count = {name: c.get(url(job, "pages")).json()["device_pages"] for name, job in pages.items()}
     assert count["big"] > count["small"]
@@ -896,9 +897,9 @@ def test_live_takes_exactly_one_of_page_and_chapter(c, app, small_book, three_pa
 @pytest.mark.parametrize(
     "query, status, message",
     [
-        ("chapter=0&font_size=7", 422, "font_size must be a whole number from 8 to 96"),
-        ("chapter=0&font_size=97", 422, "font_size must be a whole number from 8 to 96"),
-        ("chapter=0&font_size=-5", 422, "font_size must be a whole number from 8 to 96"),
+        ("chapter=0&font_size=15", 422, "font_size must be a whole number from 16 to 64"),
+        ("chapter=0&font_size=65", 422, "font_size must be a whole number from 16 to 64"),
+        ("chapter=0&font_size=-5", 422, "font_size must be a whole number from 16 to 64"),
         ("chapter=0&size=huge", 400, "Unknown size: huge"),
         ("chapter=0&view=xtc", 400, "Unknown view: xtc"),
         ("chapter=0&view=kindle", 400, "Unknown view: kindle"),
@@ -919,7 +920,7 @@ def test_live_numbers_that_are_not_numbers_are_422(c, app, query):
 
 
 def test_live_renders_with_the_requested_values_and_the_jobs_device(c, app, monkeypatch):
-    options = Options(device="x3", size="best", font_size=32)
+    options = Options(device="x3", size="best", style=PageStyle(font_size=32))
     job = make_job(app, ("book.md", TWO), options=options)
     rendered = counting(monkeypatch, "eco.web.preview.render_chapter")
     r = c.get(url(job, "live.png?chapter=1&view=crossink&font_size=40&size=small"))
@@ -931,7 +932,7 @@ def test_live_renders_with_the_requested_values_and_the_jobs_device(c, app, monk
 
 
 def test_live_defaults_to_the_font_size_and_size_of_the_job(c, app, monkeypatch):
-    options = Options(size="best", font_size=44)
+    options = Options(size="best", style=PageStyle(font_size=44))
     job = make_job(app, ("book.md", TWO), options=options)
     rendered = counting(monkeypatch, "eco.web.preview.render_chapter")
     c.get(url(job, "live.png?chapter=0"))
@@ -960,13 +961,13 @@ def test_the_live_cache_holds_32_answers(c, app, monkeypatch):
         r = c.get(url(job, f"live.png?chapter=0&font_size={font_size}"))
         assert r.content == small_png(font_size)  # each key has its own answer
 
-    for font_size in range(8, 41):  # 33 different answers
+    for font_size in range(16, 49):  # 33 different answers
         live(font_size)
     assert len(sizes) == 33
-    live(40)  # the newest is there
-    live(9)  # the second oldest is there: only one has gone
+    live(48)  # the newest is there
+    live(17)  # the second oldest is there: only one has gone
     assert len(sizes) == 33
-    live(8)  # the oldest has gone
+    live(16)  # the oldest has gone
     assert len(sizes) == 34
 
 

@@ -26,6 +26,7 @@ from fakes import endless_work, epub_title, failing_work, fake_work, sse, wait_f
 from fastapi.testclient import TestClient
 
 from eco.options import Options
+from eco.style import PageStyle
 from eco.web import app as web_app
 from eco.web import jobs
 from eco.web.app import _Upload, create_app
@@ -519,11 +520,12 @@ def test_options_are_kept_in_the_job(tmp_path):
         "title": "A Title",
         "author": "An Author",
         "lang": "id",
-        "font_size": 40,
+        "style": {"font_size": 40, "font": "Bitter", "font_weight": 700, "bar_position": "off"},
     }
+    kept = {**options, "style": {**PageStyle().to_json(), **options["style"]}}  # the rest: defaults
     job = post(c, ("a.md", b"# A"), options=options).json()
-    assert job["options"] == options
-    assert c.get(f"/api/jobs/{job['id']}").json()["options"] == options  # and after a reload
+    assert job["options"] == kept
+    assert c.get(f"/api/jobs/{job['id']}").json()["options"] == kept  # and after a reload
 
 
 def test_options_that_the_api_showed_are_taken_back_by_rebuild(tmp_path):
@@ -532,6 +534,20 @@ def test_options_that_the_api_showed_are_taken_back_by_rebuild(tmp_path):
     r = c.post(f"/api/jobs/{job['id']}/rebuild", json={**job["options"], "size": "best"})
     assert r.status_code == 201
     assert r.json()["options"] == {**job["options"], "size": "best"}
+
+
+def test_a_job_of_m2_is_shown_and_rebuilt_with_its_font_size_in_the_style(tmp_path):
+    c = client(tmp_path)
+    job = post(c, ("a.md", b"# A")).json()
+    path = tmp_path / "jobs" / job["id"] / "job.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["options"]["style"]
+    data["options"]["font_size"] = 40
+    path.write_text(json.dumps(data), encoding="utf-8")
+    shown = c.get(f"/api/jobs/{job['id']}").json()["options"]
+    assert shown["style"] == PageStyle(font_size=40).to_json() and "font_size" not in shown
+    r = c.post(f"/api/jobs/{job['id']}/rebuild", json=shown)
+    assert r.status_code == 201 and r.json()["options"] == shown
 
 
 def test_missing_options_mean_the_defaults(tmp_path):
@@ -572,20 +588,35 @@ def test_the_field_may_be_called_files_too(tmp_path):
     assert r.status_code == 201 and len(r.json()["files"]) == 1
 
 
-FONT_SIZE = "font_size must be a whole number from 8 to 96"
+FONT_SIZE = "font_size must be a whole number from 16 to 64"
 BAD_OPTIONS = [
     ({"device": "x5"}, "unknown device: 'x5'"),
     ({"firmware": "kindle"}, "unknown firmware: 'kindle'"),
-    ({"formats": ["xtc"]}, "unknown format: 'xtc'"),
+    ({"formats": ["mobi"]}, "unknown format: 'mobi'"),
     ({"size": "huge"}, "unknown size: 'huge'"),
     ({"mode": "wide"}, "unknown mode: 'wide'"),
     ({"ocr": "maybe"}, "unknown ocr: 'maybe'"),
-    ({"font_size": 4}, FONT_SIZE),
-    ({"font_size": 97}, FONT_SIZE),
-    ({"font_size": "40"}, FONT_SIZE),
-    ({"font_size": 40.5}, FONT_SIZE),
-    ({"font_size": True}, FONT_SIZE),  # goes into Typst source: only a plain number may
-    ({"font_size": '12pt); #read("x"'}, FONT_SIZE),
+    ({"font_size": 40}, "Unknown option: font_size"),  # M2's key: the size lives in `style` now
+    ({"style": {"font_size": 15}}, FONT_SIZE),
+    ({"style": {"font_size": 65}}, FONT_SIZE),
+    ({"style": {"font_size": 8}}, FONT_SIZE),  # M2 allowed it: one range everywhere now
+    ({"style": {"font_size": "40"}}, FONT_SIZE),
+    ({"style": {"font_size": 40.5}}, FONT_SIZE),
+    ({"style": {"font_size": True}}, FONT_SIZE),  # goes into Typst source: only a plain number may
+    ({"style": {"font_size": '12pt); #read("x"'}}, FONT_SIZE),
+    ({"style": {"colour": "red"}}, "Unknown style field: colour"),
+    (
+        {"style": {"lang": '"); #read("x")'}},
+        "lang must be auto or a two or three letter language code",
+    ),
+    (
+        {"style": {"font": "Comic Sans"}},
+        "font must be a bundled font, Libertinus Serif or an uploaded font",
+    ),
+    ({"style": {"align": "right"}}, "align must be one of: justify, left"),
+    ({"style": {"dither": "yes"}}, "dither must be true or false"),
+    ({"style": [1]}, "style must be an object"),
+    ({"style": None}, "style must be an object"),
     ({"formats": "epub"}, "Invalid value for formats"),
     ({"formats": []}, "Invalid value for formats"),
     ({"formats": [1]}, "Invalid value for formats"),
@@ -1158,7 +1189,7 @@ def test_rebuild_without_options_uses_the_defaults(tmp_path):
     "body, message",
     [
         (b'{"device": "x5"}', "unknown device: 'x5'"),
-        (b'{"font_size": 200}', FONT_SIZE),
+        (b'{"style": {"font_size": 200}}', FONT_SIZE),
         (b'{"formats": ["pdf"]}', "unknown format: 'pdf'"),
         (b"not json", "The options are not valid JSON"),
         (b"[1]", "The options must be a JSON object"),

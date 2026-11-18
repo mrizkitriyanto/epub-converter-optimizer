@@ -19,7 +19,6 @@ STRINGS = {
     "error_options_long": "The options are too long",
     "error_option_unknown": "Unknown option: {name}",
     "error_option_value": "Invalid value for {name}",
-    "error_font_size": "font_size must be a whole number from {low} to {high}",
     "error_job": "No such job",
     "error_file": "No such file in this job",
     "error_output": "No such output file",

@@ -22,6 +22,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from eco import cli
 from eco.cli import main
 from eco.options import DEVICES, FIRMWARES, MODES, OCR_MODES, SIZES, Options
+from eco.style import RANGES
 from eco.web import app as web_app
 from eco.web import jobs, preview
 from eco.web.app import CSP, _Guard, create_app
@@ -537,12 +538,19 @@ def test_the_page_takes_the_files_and_the_job_ids_that_the_server_makes(tmp_path
 
 def test_the_font_size_limits_of_the_page_are_the_servers(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
-    low, high = web_app.FONT_SIZES.start, web_app.FONT_SIZES.stop - 1
+    low, high = RANGES["font_size"]  # the one range: the server takes it from PageStyle
     fields = re.findall(
         r'<input id="(?:font-size|live-font)" type="[a-z]+" min="(\d+)" max="(\d+)"', html
     )
     assert fields == [(str(low), str(high))] * 2
     assert re.search(rf"Math\.min\({high}, Math\.max\({low}, ", js)  # the clamp in the script
+
+
+def test_the_page_keeps_the_font_size_in_the_style_of_the_options(tmp_path):
+    js = source("app.js")
+    assert "options.font_size" not in js  # M2's key
+    assert "style: { font_size: wholeFontSize($('font-size').value) }" in js  # an upload
+    assert "style: { ...state.job.options.style, font_size: review.live.font }" in js  # a rebuild
 
 
 def test_every_api_address_in_the_script_is_a_route(tmp_path):

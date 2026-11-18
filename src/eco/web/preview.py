@@ -44,7 +44,7 @@ from pypdfium2 import PdfiumError
 from eco.bookfolder import BookSource, load_source
 from eco.epub.optimizer import DRMError
 from eco.epub.reader import epub_to_book
-from eco.options import SIZES, Options, image_profile
+from eco.options import SIZES, Options, image_profile, options_from_dict
 from eco.pdf.pages import PdfOpenError, inspect_pdf, page_count, render_page_fit
 from eco.pipeline import page_book
 from eco.render.md2typst import RenderSettings
@@ -111,7 +111,7 @@ class _Answers:
 
 
 def _job_options(info: JobInfo) -> Options:
-    return Options(**{**info.options, "formats": tuple(info.options["formats"])})
+    return options_from_dict(info.options)
 
 
 def _check_choice(fmt: str, view: str) -> None:
@@ -235,14 +235,14 @@ class Previews:
         """The folder of the device pages, rendered now when it holds none, and its page map and
         chapters (the chapters' pages from 0)."""
         options = _job_options(info)
-        folder = self._folder(info, n, f"{fmt}-{view}-{options.font_size}")
+        folder = self._folder(info, n, f"{fmt}-{view}-{options.style.font_size}")
         with self._hold(folder):
             found = read_map(folder)
             if found is None:
                 render_book(
                     self._source(info, n),
                     device=options.device,
-                    settings=RenderSettings(font_size=options.font_size),
+                    settings=RenderSettings(font_size=options.style.font_size),
                     view=view,
                     cache_dir=folder,
                     image_profile=image_profile(options),
@@ -271,7 +271,7 @@ class Previews:
         `chapter` of the book. Answers are kept by every one of their parameters."""
         _check_choice(fmt, view)
         options = _job_options(info)
-        font_size = options.font_size if font_size is None else font_size
+        font_size = options.style.font_size if font_size is None else font_size
         size = options.size if size is None else size
         if size not in SIZES:
             raise PreviewError(400, STRINGS["error_size"].format(size=size))

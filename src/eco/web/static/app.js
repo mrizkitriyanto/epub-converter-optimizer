@@ -649,7 +649,7 @@
 
   function wholeFontSize(value) {
     const number = Math.round(parseFloat(value));
-    return Number.isNaN(number) ? DEFAULT_FONT_SIZE : Math.min(96, Math.max(8, number));
+    return Number.isNaN(number) ? DEFAULT_FONT_SIZE : Math.min(64, Math.max(16, number));
   }
 
   function readOptions() {
@@ -665,7 +665,7 @@
       title: text($('book-title')),
       author: text($('book-author')),
       lang: text($('book-lang')),
-      font_size: wholeFontSize($('font-size').value),
+      style: { font_size: wholeFontSize($('font-size').value) },
     };
   }
 
@@ -1020,7 +1020,7 @@
       selected: null, // the finding that was clicked
       panelOpen: false,
       applying: false,
-      live: { font: job.options.font_size, size: job.options.size },
+      live: { font: job.options.style.font_size, size: job.options.size },
       controller: new AbortController(), // for the requests of the panes of this file
       liveTimer: null,
       liveAbort: null,
@@ -1346,7 +1346,7 @@
   function liveDirty() {
     const { live } = state.review;
     const options = state.job.options;
-    return live.font !== options.font_size || live.size !== options.size;
+    return live.font !== options.style.font_size || live.size !== options.size;
   }
 
   function liveQuery() {
@@ -1387,9 +1387,9 @@
     const review = state.review;
     const options = state.job.options;
     review.panelOpen = true;
-    review.live = { font: options.font_size, size: options.size };
-    $('live-font').value = String(options.font_size);
-    $('live-font-value').value = String(options.font_size);
+    review.live = { font: options.style.font_size, size: options.size };
+    $('live-font').value = String(options.style.font_size);
+    $('live-font-value').value = String(options.style.font_size);
     $('live-size').value = options.size;
     $('settings-panel').hidden = false;
     $('review-grid').classList.add('with-panel');
@@ -1444,7 +1444,11 @@
     $('apply').disabled = true;
     setText($('apply'), t('applying'));
     $('panel-error').hidden = true;
-    const options = { ...state.job.options, font_size: review.live.font, size: review.live.size };
+    const options = {
+      ...state.job.options,
+      style: { ...state.job.options.style, font_size: review.live.font },
+      size: review.live.size,
+    };
     const ok = await rebuild(options, (message) => {
       setText($('panel-error'), message);
       $('panel-error').hidden = false;

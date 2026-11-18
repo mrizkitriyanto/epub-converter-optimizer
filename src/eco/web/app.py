@@ -110,6 +110,7 @@ from starlette.requests import ClientDisconnect
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from eco.options import Options
+from eco.style import PageStyle
 from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, input_path, safe_name, server_lock
 from eco.web.models_setup import ModelSetup
 from eco.web.preview import PreviewError, Previews, describe_pdf
@@ -133,8 +134,6 @@ _OVERHEAD = MB
 MAX_FILES = 200  # in one request
 _MAX_OPTIONS = 1 << 16
 _FILE_FIELDS = ("files[]", "files")
-# `font_size` goes into Typst source (the previews), so only a plain number may reach it.
-FONT_SIZES = range(8, 97)
 _OPTION_NAMES = {f.name for f in fields(Options)}
 _INDEX = re.compile(r"0|[1-9][0-9]{0,5}")  # a file's number in a URL: no sign, no leading zero
 _MEDIA = {"epub": "application/epub+zip"}
@@ -294,8 +293,6 @@ def _valid(name: str, value) -> bool:
         return isinstance(value, list) and bool(value) and all(isinstance(v, str) for v in value)
     if name == "landscape":
         return isinstance(value, bool)
-    if name == "font_size":
-        return type(value) is int and value in FONT_SIZES
     if name in ("title", "author", "lang"):
         return value is None or isinstance(value, str)
     return isinstance(value, str)  # device, firmware, size, mode and ocr
@@ -316,14 +313,13 @@ def _options(raw: bytes) -> Options:
     for name, value in given.items():
         if name not in _OPTION_NAMES:
             raise HTTPException(422, STRINGS["error_option_unknown"].format(name=name))
-        if not _valid(name, value):
-            if name == "font_size":
-                message = STRINGS["error_font_size"].format(
-                    low=FONT_SIZES.start, high=FONT_SIZES.stop - 1
-                )
-            else:
-                message = STRINGS["error_option_value"].format(name=name)
-            raise HTTPException(422, message)
+        if name == "style":  # it goes into Typst source (the previews): `PageStyle` checks it all
+            try:
+                given[name] = PageStyle.from_json(value)
+            except ValueError as e:
+                raise HTTPException(422, str(e)) from None
+        elif not _valid(name, value):
+            raise HTTPException(422, STRINGS["error_option_value"].format(name=name))
     if "formats" in given:
         given["formats"] = tuple(given["formats"])
     for name in ("title", "author", "lang"):
@@ -884,11 +880,11 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         info, index = file_of(job_id, n)
         if (page is None) == (chapter is None):
             raise HTTPException(422, STRINGS["error_live_target"])
-        if font_size is not None and font_size not in FONT_SIZES:  # it goes into Typst source
-            raise HTTPException(
-                422,
-                STRINGS["error_font_size"].format(low=FONT_SIZES.start, high=FONT_SIZES.stop - 1),
-            )
+        if font_size is not None:  # it goes into Typst source
+            try:
+                PageStyle(font_size=font_size)
+            except ValueError as e:
+                raise HTTPException(422, str(e)) from None
         shown = previews.live(
             info, index, fmt, view, font_size=font_size, size=size, page=page, chapter=chapter
         )
