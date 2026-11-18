@@ -8,6 +8,7 @@ import gc
 import io
 import json
 import pkgutil
+import shutil
 import struct
 import threading
 import time
@@ -27,6 +28,7 @@ from eco.options import Options, image_profile
 from eco.render.md2typst import RenderSettings
 from eco.render.pages import Rendered
 from eco.web.app import create_app
+from eco.web.preview import PreviewError
 
 LOCAL = "http://127.0.0.1:8000"  # a browser on this computer, server on the default port
 NO_PAGE = {"error": "No such page"}
@@ -519,6 +521,76 @@ def test_a_file_that_is_not_in_the_job_is_404(c, app, tail, n):
 def test_a_job_that_does_not_exist_is_404(c, tail):
     r = c.get(f"/api/jobs/0123456789abcdef/files/0/{tail}")
     assert (r.status_code, r.json()) == (404, {"error": "No such job"})
+
+
+# A job deleted (ruling M2-R45) or purged while its preview is asked for
+
+
+GONE = {"error": "No such job"}
+
+
+@pytest.fixture
+def previewed(app, three_pages, three_pictures, tmp_path):
+    """Jobs of each kind of book, by name: the job and the way its preview is asked for."""
+    epub = tiny_epub(tmp_path, "<h1>Alpha</h1><p>Hello.</p>")
+    return {
+        "source": (make_job(app, ("scan.pdf", three_pages)), "source/1.png"),
+        "markdown": (make_job(app, ("book.md", TWO)), "pages"),
+        "epub": (make_job(app, ("t.epub", epub)), "pages"),
+        "pages-mode": (
+            make_job(app, ("scan.pdf", three_pictures), options=Options(mode="pages")),
+            "live.png?chapter=0",
+        ),
+    }
+
+
+@pytest.mark.parametrize("kind", ["source", "markdown", "epub", "pages-mode"])
+def test_a_preview_that_comes_after_its_job_went_does_not_make_the_job_again(app, previewed, kind):
+    job, tail = previewed[kind]
+    folder = app.state.store.job_dir(job.id)
+    shutil.rmtree(folder)  # the route had found the job; then it was deleted
+    previews = app.state.previews
+    with pytest.raises(PreviewError) as caught:
+        if tail.startswith("source"):
+            previews.source_page(job, 0, 1)
+        elif tail == "pages":
+            previews.pages(job, 0, "epub", "crosspoint")
+        else:
+            previews.live(
+                job, 0, "epub", "crosspoint", font_size=None, size=None, page=None, chapter=0
+            )
+    assert (caught.value.status, caught.value.message) == (404, GONE["error"])
+    assert not folder.exists()
+    others = {j.id for j, _ in previewed.values()} - {job.id}
+    assert {p.name for p in app.state.store.root.iterdir()} == others
+
+
+@pytest.mark.parametrize(
+    "kind, target",
+    [
+        ("markdown", "eco.web.preview.render_book"),  # the job goes while its pages are rendered
+        ("epub", "eco.web.preview.epub_to_book"),  # while its book is read
+        ("pages-mode", "eco.web.preview.page_book"),  # while its page images are made
+        ("source", "eco.web.preview.render_page_fit"),  # while a PDF page is drawn
+    ],
+)
+def test_a_job_that_goes_while_its_preview_is_made_is_404_and_stays_gone(
+    c, app, previewed, monkeypatch, kind, target
+):
+    job, tail = previewed[kind]
+    folder = app.state.store.job_dir(job.id)
+    real = pkgutil.resolve_name(target)
+
+    def deleted_first(*args, **kwargs):
+        shutil.rmtree(folder)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(target, deleted_first)
+    r = c.get(url(job, tail))
+    assert (r.status_code, r.json()) == (404, GONE)
+    assert not folder.exists()
+    others = {j.id for j, _ in previewed.values()} - {job.id}
+    assert {p.name for p in app.state.store.root.iterdir()} == others  # no folder of the build
 
 
 # Pages-mode PDFs: their book is built on first use

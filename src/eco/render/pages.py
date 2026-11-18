@@ -55,6 +55,9 @@ def render_book(
     cache_dir: Path | None = None,
     image_profile: ImageProfile | None = None,
 ) -> Rendered:
+    """Render the whole book. With `cache_dir`, whose parent folder must exist, the pages are kept
+    there and read from there the next time. Nothing is ever made above `cache_dir`: a cache whose
+    folder is deleted meanwhile is FileNotFoundError, not a folder made again."""
     if cache_dir is not None and (cached := _read_cache(cache_dir)) is not None:
         return cached
     files = to_typst(src, device=device, settings=settings, view=view, image_profile=image_profile)
@@ -131,7 +134,8 @@ def _compile(files: dict[str, bytes | Path], folder: Path | None = None) -> _Com
 def _compile_in(files: dict[str, bytes | Path], folder: Path) -> _Compiled:
     for name, data in files.items():
         target = folder / name
-        target.parent.mkdir(parents=True, exist_ok=True)
+        for below in reversed(Path(name).parents[:-1]):  # never `folder`: it may have been deleted
+            (folder / below).mkdir(exist_ok=True)
         if isinstance(data, Path):
             shutil.copyfile(data, target)
         else:
@@ -205,7 +209,7 @@ def _read_cache(folder: Path) -> Rendered | None:
 
 
 def _clear_cache(folder: Path) -> None:
-    folder.mkdir(parents=True, exist_ok=True)
+    folder.mkdir(exist_ok=True)  # not its parents: a cache inside a deleted folder is not made
     (folder / _MAP).unlink(missing_ok=True)
     for path in folder.iterdir():
         if _PAGE_FILE.fullmatch(path.name):

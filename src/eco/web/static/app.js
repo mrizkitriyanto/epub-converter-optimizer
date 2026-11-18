@@ -1033,8 +1033,9 @@
     review.controller.abort();
   }
 
-  // The settings panel and its buttons, and Try again, are the same elements for every job. A review
-  // that begins starts them over, so the panel, "Applying…" and a disabled Try again do not carry on.
+  // The settings panel and its buttons, Try again and Delete are the same elements for every job. A
+  // review that begins starts them over, so the panel, "Applying…", "Deleting…" and a disabled Try
+  // again do not carry on.
   function resetReviewDom() {
     hidePanel();
     $('panel-error').hidden = true;
@@ -1042,6 +1043,9 @@
     setText($('apply'), t('apply'));
     $('apply').disabled = true;
     $('try-again').disabled = false;
+    $('delete-job').disabled = false;
+    setText($('delete-job'), t('delete_job'));
+    $('delete-error').hidden = true;
   }
 
   function showReview() {
@@ -1460,6 +1464,34 @@
     if (!ok) $('try-again').disabled = false;
   }
 
+  // The job and all its files leave the server, after the user says yes. Then the page starts over
+  // on Select files, which reads Recent conversions again. A job that is gone already (deleted in
+  // another tab) counts as deleted.
+  async function deleteJob() {
+    if (!window.confirm(t('delete_confirm'))) return;
+    const mine = state.sequence;
+    const id = state.job.id;
+    const button = $('delete-job');
+    button.disabled = true;
+    setText(button, t('deleting'));
+    $('delete-error').hidden = true;
+    try {
+      await request(URLS.job(id), { method: 'DELETE' });
+    } catch (error) {
+      if (mine !== state.sequence) return;
+      if (error.status !== 404) {
+        button.disabled = false;
+        setText(button, t('delete_job'));
+        setText($('delete-error'), error.message);
+        $('delete-error').hidden = false;
+        return;
+      }
+    }
+    if (mine !== state.sequence) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    route().catch(pageFailed);
+  }
+
   function onFileSwitch() {
     const review = state.review;
     if (review.panelOpen) closePanel(false, false); // the panes are reloaded for the other file
@@ -1468,11 +1500,14 @@
     loadFilePreview();
   }
 
+  // A live preview that waits for its timer or is on its way reads review.pages, which is emptied here.
   function onViewChange() {
     const review = state.review;
     review.view = $('view-as').value;
     if (!review.pages) return;
     const anchor = anchorHere();
+    clearTimeout(review.liveTimer);
+    if (review.liveAbort) review.liveAbort.abort();
     review.pages = null;
     loadPages(anchor);
   }
@@ -1528,6 +1563,7 @@
     $('models-download').addEventListener('click', showSetup);
     $('cancel').addEventListener('click', cancelJob);
     $('try-again').addEventListener('click', tryAgain);
+    $('delete-job').addEventListener('click', deleteJob);
     $('change-settings').addEventListener('click', () => {
       if (state.review.panelOpen) closePanel(true, true);
       else openPanel();

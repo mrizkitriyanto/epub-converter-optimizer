@@ -204,6 +204,18 @@ def test_cache_with_a_damaged_map_is_not_reused(tmp_path, small_book, counted):
     assert counted == [1, 1]
 
 
+def test_a_cache_whose_folder_is_gone_is_not_made_again(tmp_path, small_book):
+    # the web GUI keeps a cache inside a job's folder, which may be deleted during a render
+    gone = tmp_path / "job"
+    with pytest.raises(FileNotFoundError):
+        render(load_source(small_book), cache_dir=gone / "preview")
+    assert not gone.exists()
+    files = {"images/a.png": b"png", "main.typ": b"x"}  # the cache folder went after it was made
+    with pytest.raises(FileNotFoundError):
+        pages_module._compile(files, gone / "preview")
+    assert not gone.exists()
+
+
 def test_rerender_drops_pages_left_by_a_longer_book(tmp_path, small_book):
     cache = tmp_path / "cache"
     (cache).mkdir()

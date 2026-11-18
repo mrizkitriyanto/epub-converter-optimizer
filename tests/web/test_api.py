@@ -689,6 +689,7 @@ ROUTES = [
     ("POST", "{id}/cancel"),
     ("POST", "{id}/rebuild"),
     ("GET", "{id}/files/0/download/epub"),
+    ("DELETE", "{id}"),
 ]
 
 
@@ -1018,6 +1019,98 @@ def test_cancel_a_job_that_has_finished_is_409(tmp_path):
     assert (r.status_code, r.json()) == (409, {"error": "This job has already finished"})
 
 
+# Delete (ruling M2-R45)
+
+
+@pytest.mark.parametrize("status", ["done", "failed", "cancelled"])
+def test_delete_a_job_that_has_ended(tmp_path, status):
+    app = create_app(tmp_path, token=None)
+    c = TestClient(app, base_url=LOCAL)
+    job, kept = done_job(app.state.store), done_job(app.state.store, "b.md")
+    if status != "done":
+        info = app.state.store.get(job.id)
+        info.status = status
+        app.state.store.save(info)
+    r = c.delete(f"/api/jobs/{job.id}")
+    assert (r.status_code, r.content) == (204, b"")
+    assert not (tmp_path / "jobs" / job.id).exists()  # uploads, outputs and previews with it
+    assert c.get(f"/api/jobs/{job.id}").status_code == 404
+    assert [j["id"] for j in c.get("/api/jobs").json()] == [kept.id]
+    assert c.get(f"/api/jobs/{kept.id}/files/0/download/epub").content == b"an EPUB"
+    again = c.delete(f"/api/jobs/{job.id}")
+    assert (again.status_code, again.json()) == (404, {"error": "No such job"})
+
+
+ACTIVE = {"error": "This conversion has not finished. Cancel it before you delete it."}
+
+
+def test_delete_a_queued_job_is_409_and_keeps_it(tmp_path):
+    c = client(tmp_path)  # no runner: the job stays queued
+    job = post(c, ("a.md", b"# A")).json()
+    r = c.delete(f"/api/jobs/{job['id']}")
+    assert (r.status_code, r.json()) == (409, ACTIVE)
+    assert c.get(f"/api/jobs/{job['id']}").json()["status"] == "queued"
+    assert stored(tmp_path, job["id"]) == ["0/a.md"]
+
+
+def test_delete_a_running_job_is_409_and_keeps_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "_work", endless_work)
+    app = create_app(tmp_path, token=None)
+    with TestClient(app, base_url=LOCAL) as c:
+        a = post(c, ("a.md", b"# A")).json()
+        wait_for(lambda: app.state.store.events(a["id"]), 20)
+        r = c.delete(f"/api/jobs/{a['id']}")
+        assert (r.status_code, r.json()) == (409, ACTIVE)
+        assert c.get(f"/api/jobs/{a['id']}").json()["status"] == "running"
+
+
+def test_delete_from_another_site_is_refused_and_keeps_the_job(tmp_path):
+    app = create_app(tmp_path, token=None)
+    job = done_job(app.state.store)
+    c = TestClient(app, base_url=LOCAL)
+    r = c.delete(f"/api/jobs/{job.id}", headers={"Origin": "http://evil.example"})
+    assert r.status_code == 403
+    assert c.get(f"/api/jobs/{job.id}").status_code == 200
+
+
+def test_a_folder_that_will_not_go_leaves_the_api_at_once_and_goes_at_the_next_start(
+    tmp_path, monkeypatch
+):
+    app = create_app(tmp_path, token=None)
+    job = done_job(app.state.store)
+    folder = tmp_path / "jobs" / job.id
+    monkeypatch.setattr(jobs, "_RETRY_WAITS", (0, 0))
+    tries = []
+    monkeypatch.setattr(
+        jobs.shutil, "rmtree", lambda path, ignore_errors=False: tries.append(Path(path))
+    )  # as Windows does while another program holds a file in the folder
+    c = TestClient(app, base_url=LOCAL)
+    assert c.delete(f"/api/jobs/{job.id}").status_code == 204
+    assert tries == [folder] * 3  # tried again a few times, then left
+    assert c.get(f"/api/jobs/{job.id}").status_code == 404
+    assert c.get("/api/jobs").json() == []
+    assert folder.exists() and not (folder / "job.json").exists()
+    monkeypatch.undo()
+    with TestClient(create_app(tmp_path, token=None), base_url=LOCAL):
+        assert not folder.exists()  # an orphan, which the start purges
+
+
+def test_a_folder_that_goes_on_a_later_try_is_gone(tmp_path, monkeypatch):
+    app = create_app(tmp_path, token=None)
+    job = done_job(app.state.store)
+    monkeypatch.setattr(jobs, "_RETRY_WAITS", (0, 0))
+    real, tries = shutil.rmtree, []
+
+    def busy_once(path, ignore_errors=False):
+        tries.append(path)
+        if len(tries) > 1:
+            real(path, ignore_errors=ignore_errors)
+
+    monkeypatch.setattr(jobs.shutil, "rmtree", busy_once)
+    assert TestClient(app, base_url=LOCAL).delete(f"/api/jobs/{job.id}").status_code == 204
+    assert len(tries) == 2 and not (tmp_path / "jobs" / job.id).exists()
+
+
 # Rebuild
 
 
@@ -1301,6 +1394,7 @@ def test_the_api_needs_the_token_and_works_with_it(tmp_path):
         ("POST", f"{base}/cancel"),
         ("POST", f"{base}/rebuild"),
         ("GET", f"{base}/files/0/download/epub"),
+        ("DELETE", base),
     ]
     for method, path in calls:
         r = c.request(method, path)

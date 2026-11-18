@@ -24,6 +24,7 @@ STRINGS = {
     "error_file": "No such file in this job",
     "error_output": "No such output file",
     "error_finished": "This job has already finished",
+    "error_not_ended": "This conversion has not finished. Cancel it before you delete it.",
     "error_server": "Something went wrong on the server",
     # The preview API (eco.web.preview) answers its errors the same way.
     "error_view": "Unknown view: {view}",
@@ -220,6 +221,12 @@ STRINGS = {
     "warnings_other": "{n} warnings",
     "download_epub": "Download EPUB",
     "change_settings": "Change settings",
+    "delete_job": "Delete conversion",
+    "deleting": "Deleting…",
+    "delete_confirm": (
+        "Delete this conversion? The uploaded files, the EPUB files and the previews are "
+        "removed, and this cannot be undone."
+    ),
     "findings_title": "Findings ({n})",
     "findings_empty": "No findings for this file.",
     "findings_hint": "Click a finding to show its page in both previews.",

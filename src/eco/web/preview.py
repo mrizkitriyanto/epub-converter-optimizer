@@ -184,18 +184,18 @@ class Previews:
         file = info.files[n]
         if file.kind != "pdf":
             raise PreviewError(404, STRINGS["error_no_source"])
-        folder = self._folder(info, n, "source")
-        target = folder / f"{page}.png"
-        if target.is_file():  # written whole, by a rename: never half a file
-            return target.read_bytes()
-        with self._hold(folder):
-            if not target.is_file():
-                png = _draw(file, page)
-                folder.mkdir(parents=True, exist_ok=True)
-                partial = target.with_name(f"{target.name}.tmp")
-                partial.write_bytes(png)
-                os.replace(partial, target)
-            return target.read_bytes()
+        with self._job_kept(info):
+            folder = self._folder(info, n, "source")
+            target = folder / f"{page}.png"
+            if target.is_file():  # written whole, by a rename: never half a file
+                return target.read_bytes()
+            with self._hold(folder):
+                if not target.is_file():
+                    png = _draw(file, page)
+                    partial = target.with_name(f"{target.name}.tmp")
+                    partial.write_bytes(png)
+                    os.replace(partial, target)
+                return target.read_bytes()
 
     # Device pages of the whole book
 
@@ -204,9 +204,11 @@ class Previews:
         _check_choice(fmt, view)
         file = info.files[n]
         _check_converted(file, fmt)
-        _, page_map, chapters = self._cache(info, n, fmt, view)
+        with self._job_kept(info):
+            _, page_map, chapters = self._cache(info, n, fmt, view)
+            source_pages = _pdf_pages(file) if file.kind == "pdf" else 0
         return {
-            "source_pages": _pdf_pages(file) if file.kind == "pdf" else 0,
+            "source_pages": source_pages,
             "device_pages": len(page_map),
             "page_map": page_map,
             "chapters": [[title, page + 1] for title, page in chapters],
@@ -216,10 +218,11 @@ class Previews:
         """The PNG of one device page. Only that page is read from the cache."""
         _check_choice(fmt, view)
         _check_converted(info.files[n], fmt)
-        folder, page_map, _ = self._cache(info, n, fmt, view)
-        if not 1 <= page <= len(page_map):
-            raise PreviewError(404, STRINGS["error_page"])
-        return page_file(folder, page - 1).read_bytes()
+        with self._job_kept(info):
+            folder, page_map, _ = self._cache(info, n, fmt, view)
+            if not 1 <= page <= len(page_map):
+                raise PreviewError(404, STRINGS["error_page"])
+            return page_file(folder, page - 1).read_bytes()
 
     def _cache(
         self, info: JobInfo, n: int, fmt: str, view: str
@@ -274,20 +277,21 @@ class Previews:
         key = (info.id, n, fmt, view, font_size, size, page, chapter)
         if (answer := self._answers.get(key)) is not None:
             return answer
-        if page is not None and not 1 <= page <= _pdf_pages(file):
-            raise PreviewError(404, STRINGS["error_page"])
-        try:
-            excerpt, index = render_chapter(
-                self._source(info, n),
-                device=options.device,
-                settings=RenderSettings(font_size=font_size),
-                view=view,
-                source_page=page,
-                chapter=chapter,
-                image_profile=image_profile(replace(options, size=size)),
-            )
-        except ChapterNotFound:
-            raise PreviewError(404, STRINGS["error_chapter"]) from None
+        with self._job_kept(info):
+            if page is not None and not 1 <= page <= _pdf_pages(file):
+                raise PreviewError(404, STRINGS["error_page"])
+            try:
+                excerpt, index = render_chapter(
+                    self._source(info, n),
+                    device=options.device,
+                    settings=RenderSettings(font_size=font_size),
+                    view=view,
+                    source_page=page,
+                    chapter=chapter,
+                    image_profile=image_profile(replace(options, size=size)),
+                )
+            except ChapterNotFound:
+                raise PreviewError(404, STRINGS["error_chapter"]) from None
         answer = Live(excerpt.pages[index], index, len(excerpt.pages))  # not the whole excerpt
         self._answers.put(key, answer)
         return answer
@@ -302,10 +306,11 @@ class Previews:
         _check_converted(file)
         if file.kind == "pdf" and not file.book_dir:
             raise PreviewError(404, STRINGS["error_no_text"])
-        try:
-            book = self._book(info, n)
-        except _NoBook:
-            raise PreviewError(404, STRINGS["error_no_text"]) from None
+        with self._job_kept(info):
+            try:
+                book = self._book(info, n)
+            except _NoBook:
+                raise PreviewError(404, STRINGS["error_no_text"]) from None
         return book if book.is_file() else book / BOOK
 
     # The book
@@ -334,13 +339,26 @@ class Previews:
         folder = self._folder(info, n, "book")
         with self._hold(folder):
             if not (folder / "report.json").is_file():  # written last: a folder without it is
-                shutil.rmtree(folder, ignore_errors=True)  # what a build that failed left
-                try:
-                    self._build(file, options, folder)
-                except (DRMError, ValueError, PdfOpenError):
-                    shutil.rmtree(folder, ignore_errors=True)
-                    raise _NoBook from None
+                self._build_in_place(file, options, folder)  # what a build that failed left
         return folder
+
+    def _build_in_place(self, file: JobFile, options: Options, folder: Path) -> None:
+        """Build the book of `file` and put it in `folder`, in place of what is there.
+
+        M1's builders make the folders they write into with all their parents, so a job deleted
+        during a build would be made again. They build in a folder of their own in the jobs
+        folder (one without a job.json, so a server killed meanwhile leaves what the next start
+        purges), and the book is moved into the job by a rename, which fails if the job is gone."""
+        built = self._store.reserve()
+        try:
+            try:
+                self._build(file, options, built / "book")
+            except (DRMError, ValueError, PdfOpenError):
+                raise _NoBook from None
+            shutil.rmtree(folder, ignore_errors=True)
+            os.replace(built / "book", folder)
+        finally:
+            shutil.rmtree(built, ignore_errors=True)
 
     @staticmethod
     def _build(file: JobFile, options: Options, folder: Path) -> None:
@@ -353,7 +371,29 @@ class Previews:
     # Folders
 
     def _folder(self, info: JobInfo, n: int, name: str) -> Path:
-        return self._store.job_dir(info.id) / "preview" / str(n) / name
+        """The cache folder `<job>/preview/<n>/<name>`, made now if need be. It is made one level
+        at a time inside the job's folder, never with the job's folder itself: a request that
+        comes in while its job is deleted or purged must not make the job's folder again. 404
+        when the job is gone."""
+        try:
+            folder = self._store.job_dir(info.id)
+            for part in ("preview", str(n), name):
+                folder /= part
+                folder.mkdir(exist_ok=True)
+        except (KeyError, FileNotFoundError):
+            raise PreviewError(404, STRINGS["error_job"]) from None
+        return folder
+
+    @contextmanager
+    def _job_kept(self, info: JobInfo) -> Iterator[None]:
+        """Whatever goes wrong in the block is 404 `No such job` when the job has gone meanwhile:
+        deleted by its user, or purged."""
+        try:
+            yield
+        except Exception:
+            if not (self._store.root / info.id / "job.json").is_file():
+                raise PreviewError(404, STRINGS["error_job"]) from None
+            raise
 
     @contextmanager
     def _hold(self, folder: Path) -> Iterator[None]:

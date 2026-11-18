@@ -25,6 +25,8 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
     POST /api/jobs/{id}/cancel                    202, or 409 when the job has finished
     POST /api/jobs/{id}/rebuild                   JSON options; 201, a new job from the same files
     GET  /api/jobs/{id}/files/{n}/download/{fmt}  an output, as an attachment
+    DELETE /api/jobs/{id}                         204, the job and all its files are gone; 409
+                                                  while it is queued or running
 
 The rows of Select files show each PDF's pages, how many are scanned and an estimate. The page asks
 for them one PDF at a time (`eco.web.preview.describe_pdf` does the work). The PDF goes in the field
@@ -790,6 +792,16 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         options = _options(raw)
         info = await run_in_threadpool(queue_job, lambda: store.rebuild(job_id, options))
         return _public(info, scrub)
+
+    @app.delete("/api/jobs/{job_id}", status_code=204)
+    def delete_job(job_id: str):
+        try:
+            store.delete(job_id)
+        except KeyError:
+            raise HTTPException(404, STRINGS["error_job"]) from None
+        except ValueError:
+            raise HTTPException(409, STRINGS["error_not_ended"]) from None
+        return Response(status_code=204)
 
     @app.get("/api/jobs/{job_id}/files/{n}/download/{fmt}")
     def download(job_id: str, n: str, fmt: str):

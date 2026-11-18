@@ -2,7 +2,8 @@
 
 A job is the folder `<data>/jobs/<id>/`:
 
-    job.json      the JobInfo, written whole (a new file, then a rename)
+    job.json      the JobInfo, written whole (a new file, then a rename); it goes first when the
+                  job is deleted, so a folder without one is no job
     events.jsonl  every event of the run, one JSON object per line, for a browser that reloads
     input/        the uploads, each in a folder of its own: `<n>/<name>`, see `input_path`
     output/       the finished files, named by `output_path` after the upload's name
@@ -51,6 +52,10 @@ _BAD_CHARS = re.compile(r'[<>:"/\\|?*]')
 _DEVICE_NAME = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.IGNORECASE)
 _MAX_NAME = 120
 _LOOK = 0.1  # seconds between looks at the cancel and stop flags while a worker runs
+# On Windows another program (an antivirus, the search indexer, a thread that still reads a file)
+# may hold a file for a moment, and a rename or a removal then fails: these are the waits, in
+# seconds, before each new try.
+_RETRY_WAITS = (0.05, 0.1, 0.2, 0.4, 0.8) if os.name == "nt" else ()
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +118,15 @@ def _file(name: str, path: Path) -> JobFile:
 def _status(info: JobInfo) -> str:
     """How a job ends when it was not cancelled: done if any file converted."""
     return "done" if any(f.outputs for f in info.files) else "failed"
+
+
+def _remove(folder: Path) -> None:
+    """Delete `folder`, trying again after each of _RETRY_WAITS. What still does not go stays."""
+    for wait in (*_RETRY_WAITS, None):
+        shutil.rmtree(folder, ignore_errors=True)
+        if wait is None or not folder.exists():
+            return
+        time.sleep(wait)
 
 
 @contextmanager
@@ -258,6 +272,18 @@ class JobStore:
         with self._lock:
             tmp.write_text(json.dumps(asdict(info), ensure_ascii=False, indent=1), "utf-8")
             os.replace(tmp, path)
+
+    def delete(self, job_id: str) -> None:
+        """Delete a job that has ended (done, failed or cancelled), on the user's word. Its
+        job.json goes first, under the lock, so the job is gone from `get`, `list` and every route
+        at once; then its folder. A folder that does not go (Windows: a file in it is held) stays
+        without a job.json, and the next start purges it. KeyError when there is no such job,
+        ValueError while it is queued or running: those are the runner's."""
+        with self._lock:
+            if self.get(job_id).status in ("queued", "running"):
+                raise ValueError(f"Job {job_id} has not ended")
+            (self.root / job_id / "job.json").unlink()
+        _remove(self.root / job_id)
 
     def events(self, job_id: str) -> list[dict]:
         """The events of the job so far. A line that a crash cut short is skipped."""

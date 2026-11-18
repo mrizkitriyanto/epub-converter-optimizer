@@ -864,6 +864,64 @@ def test_the_focus_leaves_the_models_note_before_the_note_is_hidden(tmp_path):
     assert '<h2 id="files-title" tabindex="-1">' in local(tmp_path).get("/").text  # it can take it
 
 
+# The M2 fix wave: ruling M2-R45 (delete a conversion from Review) and the live timer on "View
+# as". Still no browser: these read the page, the texts and the functions that carry each rule.
+
+
+def test_the_texts_of_ruling_m2_r45():
+    assert STRINGS["delete_job"] == "Delete conversion"
+    assert STRINGS["deleting"] == "Deleting…"
+    assert STRINGS["delete_confirm"] == (
+        "Delete this conversion? The uploaded files, the EPUB files and the previews are "
+        "removed, and this cannot be undone."
+    )
+    assert STRINGS["error_not_ended"] == (
+        "This conversion has not finished. Cancel it before you delete it."
+    )
+
+
+def test_review_has_a_secondary_delete_button_and_a_line_for_its_failure(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    actions = re.search(r'<div class="review-actions">(.*?)</div>', review, re.DOTALL).group(1)
+    button = f'<button id="delete-job" type="button" class="secondary">{STRINGS["delete_job"]}'
+    assert f"{button}</button>" in actions  # with the other actions, and not a primary one
+    assert '<p id="delete-error" class="error-text" role="alert" hidden></p>' in review
+
+
+def test_delete_asks_first_and_then_goes_to_select_files_which_reads_the_recent_ones_again():
+    js = source("app.js")
+    assert "$('delete-job').addEventListener('click', deleteJob);" in function_body(js, "bind")
+    body = function_body(js, "deleteJob")
+    asked = body.index("if (!window.confirm(t('delete_confirm'))) return;")
+    assert asked < body.index("request(URLS.job(id), { method: 'DELETE' })")
+    # the job leaves the address, so Back does not lead to it, and the route shows the start
+    gone = "history.replaceState(null, '', location.pathname + location.search);"
+    assert body.index(gone) < body.index("route().catch(pageFailed);")
+    assert "loadRecent();" in function_body(js, "showSelect")  # which reads the list again
+    assert "if (mine !== state.sequence) return;" in body  # the user went elsewhere meanwhile
+
+
+def test_a_failed_delete_shows_the_servers_text_and_a_job_already_gone_counts_as_deleted():
+    js = source("app.js")
+    body = function_body(js, "deleteJob")
+    assert "if (error.status !== 404) {" in body
+    assert "setText($('delete-error'), error.message);" in body
+    assert "$('delete-error').hidden = false;" in body
+    assert "setText(button, t('deleting'));" in body and "setText(button, t('delete_job'));" in body
+    reset = function_body(js, "resetReviewDom")  # one button for every job
+    for part in ("$('delete-job').disabled = false", "setText($('delete-job'), t('delete_job'))"):
+        assert part in reset
+    assert "$('delete-error').hidden = true" in reset
+
+
+def test_a_change_of_view_stops_a_live_preview_that_waits_or_is_on_its_way():
+    # the timer's request reads review.pages, which a change of view empties
+    body = function_body(source("app.js"), "onViewChange")
+    emptied = body.index("review.pages = null")
+    assert body.index("clearTimeout(review.liveTimer);") < emptied
+    assert body.index("if (review.liveAbort) review.liveAbort.abort();") < emptied
+
+
 # Lifespan
 
 
