@@ -67,7 +67,7 @@ src/eco/pdf/code.py          reextract_code(), fix_code_blocks()
 src/eco/pdf/regions.py       materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
-tests/conftest.py  tests/fixtures/make.py  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
+tests/conftest.py  tests/fixtures/{make.py,links.py}  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
 ```
 
 Some of these modules do not exist yet. Milestone M1 adds them task by task. The core knows nothing

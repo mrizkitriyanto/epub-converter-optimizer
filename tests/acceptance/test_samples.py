@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from fixtures.links import link_dir
 from metrics import (
     code_blocks,
     epub_text,
@@ -32,7 +33,6 @@ from metrics import (
     ground_truth_blocks,
     hardware,
     headings,
-    link_dir,
     pages,
     run_timed,
     sample,

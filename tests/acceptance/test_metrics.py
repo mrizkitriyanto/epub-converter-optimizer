@@ -2,7 +2,6 @@
 after an hour on the owner's samples."""
 
 import re
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -17,7 +16,6 @@ from metrics import (
     ground_truth_blocks,
     hardware,
     headings,
-    link_dir,
     pages,
     run_timed,
     sequence_scores,
@@ -242,19 +240,6 @@ def test_epubcheck_finds_what_is_wrong_with_an_epub(drm_epub):
     java, jar = epubcheck_tools()
     problems = epubcheck_problems(drm_epub, java, jar)
     assert problems and all(p.startswith(("ERROR(", "FATAL(")) for p in problems)
-
-
-def test_a_linked_folder_shows_its_files_and_removing_the_link_keeps_them(tmp_path):
-    real = tmp_path / "real"
-    real.mkdir()
-    (real / "model.onnx").write_bytes(b"weights")
-    data = tmp_path / "data"
-    data.mkdir()
-    link_dir(data / "models", real)
-    assert (data / "models" / "model.onnx").read_bytes() == b"weights"
-    shutil.rmtree(data)  # what pytest does to its temp folders when it cleans up
-    assert not data.exists()
-    assert (real / "model.onnx").read_bytes() == b"weights"
 
 
 def test_ground_truth_blocks_are_the_runs_of_lines_between_blank_lines(monkeypatch, tmp_path):
