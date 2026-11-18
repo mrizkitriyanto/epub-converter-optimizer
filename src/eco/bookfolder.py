@@ -67,12 +67,14 @@ def write_book(book: Book, folder: Path, findings: list[Finding]) -> Path:
         if block.page > 0 and block.page != page:
             page = block.page
             chunks.append(("page", f"<!-- page: {page} -->"))
-        chunks.append((block.kind, _render(block)))
+        # a numbered item is a chunk of its own kind, so it is joined only to numbered items
+        kind = "numbered_item" if block.kind == "list_item" and block.number else block.kind
+        chunks.append((kind, _render(block)))
     chunks.extend(("footnote", _footnote(text)) for _, text in footnotes)
 
     out = chunks[0][1]
     for (prev, _), (kind, text) in pairwise(chunks):
-        out += ("\n" if prev == kind == "list_item" else "\n\n") + text
+        out += ("\n" if prev == kind in ("list_item", "numbered_item") else "\n\n") + text
     path = folder / "book.md"
     try:
         path.write_text(out + "\n", encoding="utf-8")
@@ -158,7 +160,8 @@ def _render(block: Block) -> str:
     if block.kind == "heading":
         return "#" * min(max(block.level, 1), 6) + " " + _md(" ".join(block.text.split()))
     if block.kind == "list_item":
-        return "- " + _md(block.text).replace("\n", "\n  ")
+        start = f"{block.number}. " if block.number else "- "
+        return start + _md(block.text).replace("\n", "\n" + " " * len(start))
     if block.kind == "code":
         return _fenced(block.text)
     return _md(block.text)  # paragraph, plus kinds the format does not list

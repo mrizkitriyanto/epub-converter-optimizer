@@ -502,3 +502,18 @@ error for either.
 - The acceptance harness puts the `error:` line of a failed conversion in the first line of its
   failure message. If it turns out wrong: errno 22 alone can have another cause, and the message
   only says "may".
+
+## 2026-11-19: Numbered list items keep their numbers (R-67)
+
+- Docling keeps a list item's marker apart from its text (`ListItem.marker`, with `enumerated`).
+  When the marker is a plain number ("3." or "3)"), the block keeps that number (`Block.number`),
+  book.md writes the item as a Markdown ordered-list item with it ("3. text"), and the EPUB shows
+  an `<ol>` that keeps its start number. Any other numbering marker ("A.", "(i)") stays as text at
+  the start of the item, which is then an item of a bullet list. A bullet is dropped as before.
+- Why: every item used to be written with "- ", which lost 102 numbers in Threat Hunting (the
+  review questions and answers) and the numbered steps of Malware without a finding (spec section
+  5).
+- A numbered item and a bullet item next to each other are separated by a blank line in book.md,
+  so each starts its own list; an ordered list that does not start at 1 cannot continue a
+  paragraph in Markdown. Items of one `<ol>` are numbered from its start, one by one, so a list
+  whose own numbers skip one shows them in sequence. If it turns out wrong: write "- " again.

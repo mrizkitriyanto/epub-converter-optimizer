@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from eco.bookfolder import load_source
+from eco.book import Block, Book
+from eco.bookfolder import load_source, write_book
 from eco.epub.builder import _Builder, build_epub
 from eco.epub.zipio import write_epub_zip
 from eco.options import CHAPTER_LIMIT_BYTES
@@ -564,3 +565,33 @@ def test_the_page_of_a_chapter_with_replaced_characters_is_not_left_for_later_fi
     builder._chapters()
     assert [(f.kind, f.page) for f in builder.findings] == [("xml_char_replaced", 3)]
     assert builder.page == 9  # where the text ended, as before the findings
+
+
+def test_numbered_list_items_become_ordered_lists_that_keep_their_start(tmp_path):
+    blocks = [
+        Block("heading", "H", level=1, page=1),
+        Block("list_item", "first", number=3, page=1),
+        Block("list_item", "second\nline", number=4, page=1),
+        Block("list_item", "A. a lettered item", page=1),
+        Block("list_item", "fifth", number=5, page=1),
+    ]
+    folder = tmp_path / "n.book"
+    write_book(Book(title="T", blocks=blocks), folder, [])
+    markdown = load_source(folder).markdown
+    assert "3. first\n4. second\n   line\n\n- A. a lettered item\n\n5. fifth" in markdown
+    z, _ = build_book(tmp_path, folder, "general")
+    body = read_xml(z, "OEBPS/text/ch001.xhtml")
+    lists = [
+        (
+            el.tag.split("}")[1],
+            el.get("start"),
+            [" ".join("".join(li.itertext()).split()) for li in el],
+        )
+        for el in body.iter()
+        if el.tag in (tag("ol"), tag("ul"))
+    ]
+    assert lists == [
+        ("ol", "3", ["first", "second line"]),
+        ("ul", None, ["A. a lettered item"]),
+        ("ol", "5", ["fifth"]),
+    ]

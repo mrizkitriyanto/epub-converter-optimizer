@@ -99,6 +99,25 @@ def adds_list_item(doc, p):
 
 
 @pytest.mark.parametrize(
+    "enumerated, marker, text, number",
+    [
+        (True, "3.", TEXT, 3),
+        (True, "12)", TEXT, 12),
+        (True, "A.", f"A. {TEXT}", 0),  # not a plain number: the marker stays as text
+        (True, "(i)", f"(i) {TEXT}", 0),
+        (False, "\u2022", TEXT, 0),  # a bullet
+        (False, None, TEXT, 0),
+    ],
+)
+def test_a_numbered_list_item_keeps_its_number(enumerated, marker, text, number):
+    doc = new_doc()
+    group = doc.add_group(label=GroupLabel.LIST)
+    doc.add_list_item(TEXT, enumerated=enumerated, marker=marker, parent=group, prov=prov())
+    [block] = _to_blocks(doc, frozenset())
+    assert (block.kind, block.text, block.number) == ("list_item", text, number)
+
+
+@pytest.mark.parametrize(
     "add,kind,level",
     [
         pytest.param(lambda d, p: d.add_title(TEXT, prov=p), "heading", 1, id="title"),

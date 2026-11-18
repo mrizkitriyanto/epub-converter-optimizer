@@ -35,6 +35,7 @@ _KIND = {
 }
 
 
+_NUMBER_MARKER = re.compile(r"(\d+)[.)]")
 _LINE_END_HYPHEN = re.compile(r"\w[-–—]$")
 # RapidOCR's line classifier turned some upright lines of a scanned book upside down, and Docling's
 # check of the whole region reads a badly read one again at 90, 180 and 270 degrees instead. Its
@@ -108,9 +109,15 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
         if not text.strip() and kind not in ("formula", "picture", "table"):
             continue
         page, bbox = _position(doc, item)
-        level = 0
+        level = number = 0
         if kind == "heading":
             level = 1 if item.label == "title" else item.level
+        elif kind == "list_item" and item.enumerated and item.marker:
+            # "3." or "3)" is the item's number; "A.", "(i)" and the like stay at the start
+            if found := _NUMBER_MARKER.fullmatch(item.marker.strip()):
+                number = int(found[1])
+            else:
+                text = f"{item.marker.strip()} {text}"
         blocks.append(
             Block(
                 kind,
@@ -121,6 +128,7 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
                 html=item.export_to_html(doc, add_caption=False) if kind == "table" else "",
                 caption=item.caption_text(doc) if kind in ("table", "picture") else "",
                 ocr=page in scanned,
+                number=number,
             )
         )
         if kind == "picture":
