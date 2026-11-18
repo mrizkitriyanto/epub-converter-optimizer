@@ -808,6 +808,21 @@ def test_an_image_that_a_document_left_unparsed_refers_to_keeps_its_name_and_byt
     assert kept.level == "warning" and "OEBPS/img/shared.png" in kept.message
 
 
+def test_an_image_whose_name_is_only_part_of_a_name_in_an_unparsed_page_is_converted(tmp_path):
+    photo = image_bytes((200, 100), "PNG", mode="RGBA", seed=4)  # X4 makes it a JPEG
+    pages = {
+        "ok": '<p><img src="../img/1.png" alt="a"/><img src="../img/img-071.png" alt="b"/></p>',
+        "broken": '<p>unclosed <img src="../img/img-071.png" alt="b"/>',
+    }
+    files = {"img/1.png": photo, "img/img-071.png": photo}
+    z, rep = run(tmp_path, package(tmp_path, pages, files), X4)
+    assert "OEBPS/img/1.jpg" in z.namelist()  # "1.png" is inside "img-071.png", no reference
+    assert z.read("OEBPS/img/img-071.png") == photo
+    assert [f.message for f in rep.findings if f.kind == "image_kept"] == [
+        "OEBPS/img/img-071.png is left unchanged: a page that is not well-formed refers to it"
+    ]
+
+
 def test_the_doctype_and_the_xml_declaration_are_kept_or_normalised(tmp_path):
     xhtml11 = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

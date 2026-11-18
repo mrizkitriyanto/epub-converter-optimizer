@@ -453,7 +453,8 @@ error for either.
   and its line came back as overlapping pieces: "1. Respons yang Membuat Tersentuh" read
   "1.1 Respons s yang Membuat Tersentuh". At its own size, 216 dpi, the crop reads whole, and the
   other 13 crops of pages 83, 84 and 87 read the same words. A full-page crop was never scaled up,
-  so `--ocr force` does not change.
+  so this setting does not change `--ocr force`; the other two, no line classifier and the check
+  of the whole region, apply to `--ocr force` as well.
 - If it turns out wrong: drop the three settings in `docling_adapter._OCR`.
 
 ## 2026-11-18: EPUB: text that XML cannot hold becomes U+FFFD, with a finding (R-73)
@@ -467,9 +468,11 @@ error for either.
   Replaced before the Markdown is parsed, the code block stays a code block. Forensic's EPUB,
   rebuilt from run 1's book folder, passes EPUBCheck 5.4.0 with no message.
 - An EPUB that eco only optimizes can hold a page that does not parse. That page is left as it
-  is, and now so is every image its text names: renaming one to `.jpg` left the page pointing at a
-  file that was gone. An `image_kept` warning names it, and the `bad_xml` finding says the page's
-  links are not updated. If it turns out wrong: the X4 limits are not applied to such an image.
+  is, and now so is every image it refers to (the whole file name, after a quote or "/" and before
+  a quote, so `1.png` is not found in `img-071.png`): renaming one to `.jpg` left the page
+  pointing at a file that was gone. An `image_kept` warning names it, and the `bad_xml` finding
+  says the page's links are not updated. If it turns out wrong: the X4 limits are not applied to
+  such an image.
 
 ## 2026-11-18: A book.md that antivirus software removed is one plain error (R-74, R-78)
 

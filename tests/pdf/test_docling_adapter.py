@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 from importlib.metadata import version
-from types import SimpleNamespace
+from types import CodeType, SimpleNamespace
 
 import pytest
 from docling_core.types.doc import (
@@ -480,12 +480,29 @@ def built_pipeline(tmp_path, monkeypatch):
     return pipeline
 
 
+def names_used(code: CodeType) -> set[str]:
+    """The attribute and global names a function's code uses, with those of the functions defined
+    inside it."""
+    names = set(code.co_names)
+    for const in code.co_consts:
+        if isinstance(const, CodeType):
+            names |= names_used(const)
+    return names
+
+
 def test_docling_runs_the_page_assembly_and_reading_order_that_the_pipeline_class_sets():
-    """A rename in Docling would leave eco's models unused, so the names are pinned."""
+    """A rename or a moved call in Docling would leave eco's overrides unused, so the names and the
+    calls are pinned."""
+    from docling.models.stages.page_assemble.page_assemble_model import PageAssembleModel
+    from docling.models.stages.reading_order.readingorder_model import ReadingOrderModel
     from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 
     assert "assemble_model" in StandardPdfPipeline._create_run_ctx.__code__.co_names
     assert "reading_order_model" in StandardPdfPipeline._assemble_document.__code__.co_names
+    assert "sanitize_text" in PageAssembleModel.__call__.__code__.co_names
+    # the call sits in materialize_siblings, a function defined inside this method
+    caller = ReadingOrderModel._readingorder_elements_to_docling_doc.__code__
+    assert "_merge_elements" in names_used(caller)
 
 
 def test_line_end_hyphens_go_through_docling_to_dehyphenate(tmp_path, monkeypatch):

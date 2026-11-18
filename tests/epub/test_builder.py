@@ -13,7 +13,7 @@ import pytest
 from PIL import Image
 
 from eco.bookfolder import load_source
-from eco.epub.builder import build_epub
+from eco.epub.builder import _Builder, build_epub
 from eco.epub.zipio import write_epub_zip
 from eco.options import CHAPTER_LIMIT_BYTES
 
@@ -553,3 +553,14 @@ def test_epubcheck_export(tmp_path, small_book):
     for name, markdown, device in (("rich", RICH, "general"), ("split", long_markdown(), "x4")):
         (tmp_path / f"{name}.md").write_text(markdown, encoding="utf-8")
         build_epub(load_source(tmp_path / f"{name}.md"), out / f"{name}.epub", device=device)
+
+
+def test_the_page_of_a_chapter_with_replaced_characters_is_not_left_for_later_findings(tmp_path):
+    md = tmp_path / "x.md"
+    md.write_text(
+        "<!-- page: 3 -->\n\n# A\n\nbad \ufffe\n\n# B\n\n<!-- page: 9 -->\n\nok\n", encoding="utf-8"
+    )
+    builder = _Builder(load_source(md), "general")
+    builder._chapters()
+    assert [(f.kind, f.page) for f in builder.findings] == [("xml_char_replaced", 3)]
+    assert builder.page == 9  # where the text ended, as before the findings

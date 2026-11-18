@@ -156,10 +156,12 @@ class _Builder:
             if markup := self._render(block, twin):  # a dropped image can leave nothing
                 chapters[-1].blocks.append(markup)
             twin = ""
+        page = self.page
         for ch in chapters:
             if ch.replaced:
                 self.page = ch.page
                 self._note_replaced(ch.replaced, f"chapter {ch.title!r}")
+        self.page = page  # later findings must not take the page of the last chapter noted
         if not chapters[0].blocks and len(chapters) > 1:
             del chapters[0]
         return chapters

@@ -521,7 +521,9 @@ class _Package:
             if path not in self.files or not _is_raster(path, item.get("media-type", "")):
                 continue
             name = posixpath.basename(path)
-            if any(name in text or quote(name) in text for text in self.unparsed):
+            names = "|".join(re.escape(n) for n in {name, quote(name)})
+            reference = re.compile(rf"""(?<=["'/])(?:{names})(?=["'])""")  # a whole name in a link
+            if any(reference.search(text) for text in self.unparsed):
                 message = f"{path} is left unchanged: a page that is not well-formed refers to it"
                 self._note("image_kept", "warning", message)
                 continue
