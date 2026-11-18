@@ -21,7 +21,7 @@ from docling_core.types.doc import (
 
 from eco.book import Block
 from eco.models import MARKER, ModelsMissing
-from eco.pdf.docling_adapter import _to_blocks, extract_blocks
+from eco.pdf.docling_adapter import _join_kept_hyphens, _to_blocks, extract_blocks
 
 TEXT = "Some text."
 # The same box twice: as Docling stores it (bottom-left origin, so top > bottom) and as a Block
@@ -361,6 +361,7 @@ def run_with_fake_convert(tmp_path, monkeypatch, pages_done, ocr="auto", scanned
             source=source,
             kwargs=kwargs,
             options=self.format_to_options[InputFormat.PDF].pipeline_options,
+            pipeline_cls=self.format_to_options[InputFormat.PDF].pipeline_cls,
             offline=(os.environ.get("HF_HUB_OFFLINE"), os.environ.get("TRANSFORMERS_OFFLINE")),
         )
         progress = kwargs["progress_callback"]
@@ -420,6 +421,51 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
     assert options.do_table_structure is True
     assert not (options.do_code_enrichment or options.do_formula_enrichment)
     assert not (options.generate_page_images or options.generate_picture_images)
+
+
+@pytest.mark.parametrize(
+    "lines, joined",
+    [
+        (["the end-of-", "season sale"], ["the end-of-season sale"]),
+        (["see example.org/a-", "b today"], ["see example.org/a-b today"]),
+        (["at /srv/data-", "set now"], ["at /srv/data-set now"]),
+        (["a 512-", "byte page"], ["a 512-byte page"]),
+        (["Figure 4-", "2 shows"], ["Figure 4-2 shows"]),
+        (["model x-", "9 runs"], ["model x-9 runs"]),
+    ],
+)
+def test_a_hyphen_that_belongs_to_the_text_is_kept_at_a_line_end(lines, joined):
+    assert _join_kept_hyphens(lines) == joined
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ["a hyphen-", "ated word"],  # a split word: Docling joins it
+        ["a dash -", "then more"],  # a dash after a space: Docling keeps it
+        ["the end-of-", "(season)"],  # not followed by a word
+        ["first line", "second-", "line"],
+        ["no hyphen here", "2 apples"],
+        ["one line only-"],
+    ],
+)
+def test_other_line_ends_are_left_to_docling(lines):
+    assert _join_kept_hyphens(lines) == lines
+
+
+def test_the_pipeline_assembles_text_with_the_kept_hyphens(tmp_path, monkeypatch):
+    """The pipeline class handed to Docling builds a page assembly that keeps those hyphens and
+    still joins a split word. Its models are not loaded: only the assembly is built."""
+    from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+
+    _, _, seen = run_with_fake_convert(tmp_path, monkeypatch, [(1, True)])
+    pipeline_cls = seen["pipeline_cls"]
+    assert issubclass(pipeline_cls, StandardPdfPipeline)
+    monkeypatch.setattr(StandardPdfPipeline, "_init_models", lambda self: None)
+    pipeline = object.__new__(pipeline_cls)
+    pipeline._init_models()
+    lines = ["an up-to-", "date and hyphen-", "ated 8-", "bit word"]
+    assert pipeline.assemble_model.sanitize_text(lines) == "an up-to-date and hyphenated 8-bit word"
 
 
 def test_import_does_not_load_docling():

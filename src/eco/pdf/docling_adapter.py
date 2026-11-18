@@ -1,6 +1,7 @@
 """Docling adapter: runs Docling's PDF pipeline offline and maps its document to blocks.
 Docling is imported inside `extract_blocks`, never at module level."""
 
+import re
 from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
@@ -32,6 +33,30 @@ _KIND = {
     "document_index": "table",  # Docling's label for a contents page. The item is a table.
     "footnote": "footnote",
 }
+
+
+# A hyphen that ends a line after a word that already holds a hyphen, slash or dot (a compound,
+# a URL, a file name), or that has a digit on either side of it. Hyphenation splits none of these.
+_KEPT_HYPHEN = re.compile(r"(?:[-/.]\S*\w|\d)-$")
+_SPLIT = re.compile(r"\w-$")  # what Docling takes for a split word, when a word follows
+
+
+def _join_kept_hyphens(lines: list[str]) -> list[str]:
+    """Join each line that ends in a hyphen of the text itself to the line after it.
+
+    Docling joins the lines of a block and drops every hyphen that ends a line between two words,
+    taking it for a word split by hyphenation, so `end-of-` and `season` become `end-ofseason`.
+    Joined here first, the hyphen stays. Any other line end is left to Docling.
+    """
+    out: list[str] = []
+    for line in lines:
+        before = out[-1] if out else ""
+        kept = _KEPT_HYPHEN.search(before) or (_SPLIT.search(before) and line[:1].isdigit())
+        if kept and line[:1].isalnum():
+            out[-1] += line
+        else:
+            out.append(line)
+    return out
 
 
 def _position(doc, item):
@@ -101,6 +126,27 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
     return blocks
 
 
+def _pipeline_class():
+    """Docling's PDF pipeline with a page assembly that applies `_join_kept_hyphens` first.
+    Docling is loaded by then: extract_blocks calls this inside offline_env."""
+    from docling.models.stages.page_assemble.page_assemble_model import (
+        PageAssembleModel,
+        PageAssembleOptions,
+    )
+    from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+
+    class Assemble(PageAssembleModel):
+        def sanitize_text(self, lines):
+            return super().sanitize_text(_join_kept_hyphens(lines))
+
+    class Pipeline(StandardPdfPipeline):
+        def _init_models(self):
+            super()._init_models()
+            self.assemble_model = Assemble(options=PageAssembleOptions())
+
+    return Pipeline
+
+
 def extract_blocks(
     pdf: Path,
     models: Path,
@@ -137,9 +183,8 @@ def extract_blocks(
             generate_page_images=False,
             generate_picture_images=False,
         )
-        converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
-        )
+        pdf_format = PdfFormatOption(pipeline_options=options, pipeline_cls=_pipeline_class())
+        converter = DocumentConverter(format_options={InputFormat.PDF: pdf_format})
 
         def report(event):
             if isinstance(event, PageCompletedProgress) and event.success:

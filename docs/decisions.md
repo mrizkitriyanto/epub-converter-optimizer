@@ -386,3 +386,21 @@ error for either.
   chapters of the Threat Hunting sample opened with their title twice. The number is kept, so
   "Chapter 3" never matches "12". If it turns out wrong: compare the titles as they are again.
 - `EXTRACTOR_VERSION` is 2, so a book folder cached before these fixes is extracted again.
+
+## 2026-11-18: Docling adapter: a hyphen of the text at a line end stays (AC1)
+
+- Docling joins the lines of a block and drops every hyphen that ends a line between two word
+  characters, taking it for a word split by hyphenation. eco first joins a line to the next one,
+  keeping the hyphen, when the word before the hyphen already holds a hyphen, slash or dot (a
+  compound, a URL, a file name) or when a digit stands on either side of it. Hyphenation splits
+  none of these. Before, `end-of-` and `season` became `end-ofseason`, URLs broke, and `ResNet-`
+  `34` became `ResNet34`. The rule fires 5 times in the Threat Hunting sample's text layer, 7 in
+  Forensic, 24 in Malware and 8 in ResNet, and in each case read by hand the hyphen belongs there.
+- Every other line-end hyphen is still Docling's to join, so most hyphenated words are rejoined
+  as before. Two cases stay wrong: a compound broken at its only hyphen (`well-` and `known`) and
+  an em dash at a line end, which Docling's parser reports as `-` (3 of the 9 glued words in
+  Threat Hunting). A scanned book whose typesetting splits a word that already holds a hyphen
+  (`masing-ma-` and `sing`) would now keep that hyphen.
+- It runs through `PdfFormatOption(pipeline_cls=...)`: a subclass of Docling's PDF pipeline whose
+  page assembly applies the rule before Docling's own join. If it turns out wrong: drop the
+  pipeline class.
