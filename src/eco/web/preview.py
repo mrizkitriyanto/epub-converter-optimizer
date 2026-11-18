@@ -18,7 +18,8 @@ excerpt, in memory.
 The routes run on a pool of threads. Renders and book builds are done one at a time for a folder:
 the render cache rewrites its map and compiles inside its folder, and on Windows a file that
 another thread holds cannot be removed. PDFium is used by one thread at a time in the whole
-process: it is not thread-safe, not even for two documents (see pypdfium2's documentation).
+process: it is not thread-safe, not even for two documents (see pypdfium2's documentation). The
+reading of an uploaded PDF for the rows of Select files (`describe_pdf`) takes the same lock.
 
 Every number of a page is 1-based, as the page shows it: the page of a PDF, the device page, and
 what `page_map` and `chapters` hold. A chapter is counted from 0, in the order of `chapters`.
@@ -42,7 +43,7 @@ from eco.bookfolder import BookSource, load_source
 from eco.epub.optimizer import DRMError
 from eco.epub.reader import epub_to_book
 from eco.options import SIZES, Options, image_profile
-from eco.pdf.pages import PdfOpenError, page_count, render_page_fit
+from eco.pdf.pages import PdfOpenError, inspect_pdf, page_count, render_page_fit
 from eco.pipeline import page_book
 from eco.render.md2typst import RenderSettings
 from eco.render.pages import ChapterNotFound, page_file, read_map, render_book, render_chapter
@@ -55,6 +56,12 @@ SOURCE_WIDTH = 600  # px
 SOURCE_MAX_HEIGHT = 10 * SOURCE_WIDTH  # a page that is taller is drawn smaller
 LIVE_ANSWERS = 32
 BOOK = "book.md"
+# Seconds of conversion per page. Select files multiplies them by a PDF's pages for the estimate in
+# its row. Provisional. `digital` and `scanned` come from the PDF engine spike on the owner's M3 Mac
+# (docs/research/2026-11-16-spike-pdf-engines.md, row "Waktu per 13 halaman": Docling took 8-10 s for
+# 13 digital pages and 27 s for 13 scanned ones, so 0.7 and 2.1 s a page). `pages`, for a PDF made
+# into page images, has not been measured. The acceptance run recalibrates all three.
+SECONDS_PER_PAGE = {"digital": 0.7, "scanned": 2.1, "pages": 0.2}
 
 _PDFIUM = threading.Lock()
 
@@ -138,6 +145,22 @@ def _draw(file: JobFile, page: int) -> bytes:
     out = BytesIO()
     image.save(out, "PNG")
     return out.getvalue()
+
+
+def describe_pdf(path: Path) -> dict:
+    """What a row of Select files shows of a PDF before it is converted: its pages, how many of
+    them are scanned (M1's rule, the one the `read` stage counts by) and the rates that turn them
+    into an estimate. 400, with M1's own message, for a PDF that cannot be opened."""
+    try:
+        with _PDFIUM:
+            infos = inspect_pdf(path)
+    except PdfOpenError as error:
+        raise PreviewError(400, str(error)) from None
+    return {
+        "pages": len(infos),
+        "scanned_pages": sum(info.is_scanned for info in infos),
+        "seconds_per_page": dict(SECONDS_PER_PAGE),
+    }
 
 
 class Previews:

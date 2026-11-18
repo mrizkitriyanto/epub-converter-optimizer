@@ -661,13 +661,74 @@ the texts are in `strings.py`.
 - While the models are missing, Select files shows one muted line, `Without the AI models, PDFs
   convert only with Layout set to Page images.`, and a secondary `Download models` button that goes
   back to the gate, where the sizes and the consent are. The line goes when a download that was started
-  finishes, also when the user left the gate while it ran.
+  finishes, also when the user left the gate while it ran. (M2-R41, below, gives the line two more
+  texts: a download is running, and a download failed.)
 - Markdown, EPUB and Page images PDFs convert as usual. A PDF in another layout mode starts, then ends
   `failed` with the message the server already gives (`AI models are not installed. Run: eco setup`).
-  There is no check at upload and no server change, so the page never has to guess which PDFs need
-  the models.
+  There is no check at upload and no server change. (M2-R43, below, adds a warning on the row of a
+  PDF, which the page works out from the Layout alone.)
 - The gate keeps what a download made of it (a running download, a failure, the log) while the user is
   on Select files. Showing the gate no longer resets its buttons: that let the first button start a
   second download, and it lost a failure that came while the gate was hidden.
 - This replaces the sentence of "The workspace page" that made Markdown and EPUB files wait for the
   models. If it turns out wrong: remove the one button, the one line and the one control.
+
+## 2026-11-18: File rows show pages, scan state and an estimate (M2-R41, M2-R43)
+
+Spec 8.13 item 1 asks each file of Select files to show its page count, whether it is digital or
+scanned, and an estimated time. The plan cut the rows to a name and a size. This adds the rest, through
+a new route.
+
+- `POST /api/inspect` takes one PDF in the field `file` and answers `{"pages", "scanned_pages",
+  "seconds_per_page": {"digital", "scanned", "pages"}}`. The upload is the job upload's: streamed to
+  disk by `_PdfUpload` (a subclass of `_Upload` that takes one `.pdf` in the field `file`), with the
+  same limit and 413 text, the refusal by `Content-Length` before the body is read, and the same name
+  rule. A file that is not a PDF is 400 `Only PDF files can be inspected`, a second file is 400 `Too
+  many files (limit 1)`, and a PDF that M1 cannot open (damaged, password-protected) is 400 with M1's
+  own message (`Not a readable PDF: <name>`, `PDF is password-protected: <name>`).
+- The PDF is stored in a reserved job folder (`JobStore.reserve()`), which is no job: it has no
+  job.json, so a server that is killed in the middle leaves what the orphan purge at the next start
+  removes. The folder is deleted before the answer, on success and on every error. `describe_pdf` in
+  `preview.py` reads it with M1's `inspect_pdf()` under the same `_PDFIUM` lock as the previews, since
+  PDFium is not thread-safe. `scanned_pages` counts `PageInfo.is_scanned`, the rule the `read` stage
+  of the pipeline uses. A generated PDF of 801 text pages took 1.6 s to read on this computer.
+- The rates are `SECONDS_PER_PAGE` in `preview.py`: digital 0.7, scanned 2.1 and page images 0.2
+  seconds a page. Provisional. The first two are the PDF engine spike on the owner's M3 Mac (Docling:
+  8 to 10 s for 13 digital pages and 27 s for 13 scanned ones); page images have not been measured.
+  The acceptance run recalibrates all three. The server owns them, so a new calibration changes no
+  file of the page.
+- The page works the estimate out from the answer and the current settings, the way the pipeline will
+  run: page images (Layout set to Page images) cost pages x the page-image rate; otherwise OCR off costs
+  pages x digital, `Every page` costs pages x scanned, and `Automatic` costs the digital pages at the
+  digital rate and the scanned ones at the scanned rate. It is worked out again when Device, Layout or
+  OCR changes. The pipeline chooses page images by the Layout alone, and the device only sets the
+  screen the images are cut to, so the device has no term yet; its listener is there so that one
+  needs no change of the page. Under 45 s the row says `under a minute`, else `about 6 min`.
+- The words. `<size> · <n> pages · Digital PDF · about 6 min`. A PDF with most of its pages scanned (more
+  than half) says `Scanned, uses OCR`, or `Scanned, no OCR` when OCR will not run (OCR off, or Layout set
+  to Page images); one with fewer says `Partly scanned (3 of 40 pages)`. Markdown and EPUB rows show
+  `<size> · Markdown` or `<size> · EPUB`: they have no pages and convert in seconds, so they are not
+  read.
+- One PDF at a time. The page sends the PDFs to the route in a queue and never beside the upload of the
+  job: Start stops a reading in progress, and the PDF is read again if the job's upload fails. Removing a
+  file aborts its request. A row that waits or is being read says `Reading…`. An answer, a new setting
+  and the end of a download change only the text of the rows, never the rows, so a Remove button that has
+  the keyboard focus keeps it. An error shows in the row as a muted warning with the server's text; the
+  file stays in the list, and Start stays enabled, since the conversion reports the same error.
+- Known cost: each PDF travels twice, once to be read and once with the job. On this computer both go
+  to the same disk, and the first copy is deleted at once. The later fix is to stage uploads: keep the
+  file from the first transfer and let the job point at it. That needs a store of staged uploads, the
+  rule for when an unused one expires, and a purge, so it is not done here.
+- M2-R43 (extends M2-R39). While `/api/setup` says the models are not ready and the Layout is not Page
+  images (the pipeline sends a PDF to page images only for that Layout), the row of a PDF shows a muted
+  `Needs the AI models. Download them, or set Layout to Page images.` in place of the estimate. It goes
+  back to the estimate when the models become ready or the Layout is Page images. Review is unchanged.
+  The page still has no server check: a PDF whose extraction is already in the cache would convert
+  without the models, and its row warns all the same.
+- The note of Select files (M2-R39) has three texts, by what became of the download this page started:
+  the models are missing (the default), a download is running, and a download did not finish. Before,
+  the failure went into the hidden gate and the note read the same in all three cases. The note is a
+  status region, so a screen reader hears the change. When the models become ready while the keyboard
+  focus is on `Download models`, the focus moves to the heading of Select files before the note goes.
+  A page that is reloaded in the middle of a download still shows the first text, since `/api/setup` has
+  no `running` key.

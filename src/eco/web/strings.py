@@ -37,6 +37,7 @@ STRINGS = {
     "error_no_preview": "No preview is available for this file",
     "error_no_text": "This file has no text to show",
     "error_pdf": "This PDF could not be read",
+    "error_inspect_type": "Only PDF files can be inspected",
     # The model setup API (eco.web.models_setup).
     "error_setup_running": "The AI models are already downloading",
     "error_setup_none": "No download has started",
@@ -94,9 +95,30 @@ STRINGS = {
         "Without the AI models, PDFs convert only with Layout set to Page images."
     ),
     "models_download": "Download models",
+    "models_downloading_note": (
+        "The AI models are downloading. Until they are ready, PDFs convert only with Layout set "
+        "to Page images."
+    ),
+    "models_failed_note": (
+        "The model download did not finish. Without the AI models, PDFs convert only with Layout "
+        "set to Page images."
+    ),
     "file_list_label": "Chosen files",
     "remove_file": "Remove",
     "remove_file_named": "Remove {name}",
+    # What a row of the file list says under the name. A PDF is read by the server first.
+    "file_reading": "Reading…",
+    "kind_markdown": "Markdown",
+    "kind_epub": "EPUB",
+    "pages_one": "1 page",
+    "pages_other": "{n} pages",
+    "kind_digital": "Digital PDF",
+    "kind_scanned": "Scanned, uses OCR",
+    "kind_scanned_no_ocr": "Scanned, no OCR",
+    "kind_partly": "Partly scanned ({scanned} of {pages} pages)",
+    "estimate_about": "about {time}",
+    "estimate_short": "under a minute",
+    "row_needs_models": "Needs the AI models. Download them, or set Layout to Page images.",
     "uploading": "Uploading…",
     "start_none": "Start conversion",
     "start_one": "Start conversion (1 file)",

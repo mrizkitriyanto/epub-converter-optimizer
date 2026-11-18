@@ -71,9 +71,9 @@ src/eco/pdf/structure.py     assign_heading_levels()
 src/eco/render/md2typst.py   to_typst(), RenderSettings, VIEWS
 src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered, ChapterNotFound
 src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild), Runner, JobInfo, JobFile, safe_name(), input_path(), server_lock(), RETENTION_DAYS, _work() (worker process)
-src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs and /api/setup routes, _Upload (a streamed upload), Server (uvicorn that tells the app to stop)
+src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs, /api/inspect (pages of one PDF for Select files) and /api/setup routes, _Upload and _PdfUpload (streamed uploads), Server (uvicorn that tells the app to stop)
 src/eco/web/models_setup.py  ModelSetup (the one background model download, its event log and readers), used by the /api/setup routes
-src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError
+src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError, describe_pdf() and SECONDS_PER_PAGE (the rows of Select files)
 src/eco/web/strings.py       STRINGS: every English text of the GUI
 src/eco/web/templates/index.html  src/eco/web/static/app.css  src/eco/web/static/app.js (the workspace: setup gate, select and settings, processing, review)
 tests/conftest.py  tests/fixtures/make.py  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}

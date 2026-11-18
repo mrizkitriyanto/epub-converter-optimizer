@@ -26,6 +26,14 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
     POST /api/jobs/{id}/rebuild                   JSON options; 201, a new job from the same files
     GET  /api/jobs/{id}/files/{n}/download/{fmt}  an output, as an attachment
 
+The rows of Select files show each PDF's pages, how many are scanned and an estimate. The page asks
+for them one PDF at a time (`eco.web.preview.describe_pdf` does the work). The PDF goes in the field
+`file`, is stored the way a job's upload is, in a reserved job folder that is deleted before the
+answer whatever it is, and has the same size limit:
+
+    POST /api/inspect                             multipart: `file`; {"pages", "scanned_pages",
+                                                  "seconds_per_page": {"digital", "scanned", "pages"}}
+
 The model setup (`eco.web.models_setup` does the work; its page is the first one when the models
 are missing). `ipv4` in the body of the POST is optional:
 
@@ -67,7 +75,7 @@ import re
 import shutil
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Collection
 from contextlib import aclosing, asynccontextmanager, suppress
 from dataclasses import fields
 from functools import partial
@@ -102,7 +110,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from eco.options import Options
 from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, input_path, safe_name, server_lock
 from eco.web.models_setup import ModelSetup
-from eco.web.preview import PreviewError, Previews
+from eco.web.preview import PreviewError, Previews, describe_pdf
 from eco.web.strings import STRINGS
 
 HERE = Path(__file__).parent
@@ -332,6 +340,12 @@ class _Upload:
     HTTPException, and the caller then calls `discard`.
     """
 
+    # What a body may hold. `_PdfUpload` takes less.
+    fields = _FILE_FIELDS  # the form fields that hold a file
+    kinds: Collection[str] = KINDS  # the suffixes of the files it takes
+    max_files = MAX_FILES
+    unsupported = "error_unsupported"  # the key of the text for a file of another type
+
     def __init__(self, store: JobStore, boundary: bytes, limit_mb: int):
         self.store = store
         self.limit = limit_mb * MB
@@ -373,13 +387,16 @@ class _Upload:
 
     def finish(self) -> JobInfo:
         """The queued job of what came. HTTP 400 for a body that was cut short or held no file."""
+        self._complete()
+        info = self.store.adopt(self.job, self.names, self.options)
+        self.adopted = True
+        return info
+
+    def _complete(self) -> None:
         if not self._ended:
             raise HTTPException(400, STRINGS["error_unreadable"])
         if not self.names:
             raise HTTPException(400, STRINGS["error_no_files"])
-        info = self.store.adopt(self.job, self.names, self.options)
-        self.adopted = True
-        return info
 
     def discard(self) -> None:
         """Close the file being written and delete the job folder, unless a job was made of it."""
@@ -401,18 +418,19 @@ class _Upload:
         _, params = parse_options_header(self._headers.get(b"content-disposition"))
         field = _text(params.get(b"name", b""))
         if b"filename" in params:
-            if field in _FILE_FIELDS:
+            if field in self.fields:
                 self._open(_text(params[b"filename"]))
         elif field == "options":
             self._field = bytearray()
         # any other part is read and dropped
 
     def _open(self, uploaded: str) -> None:
-        if len(self.names) >= MAX_FILES:  # now, as the headers end: no byte of this one is read
-            raise HTTPException(400, STRINGS["error_too_many"].format(limit=MAX_FILES))
+        # now, as the headers end: no byte of this one is read
+        if len(self.names) >= self.max_files:
+            raise HTTPException(400, STRINGS["error_too_many"].format(limit=self.max_files))
         name = safe_name(uploaded)
-        if Path(name).suffix.lower() not in KINDS:
-            raise HTTPException(400, STRINGS["error_unsupported"].format(name=uploaded))
+        if Path(name).suffix.lower() not in self.kinds:
+            raise HTTPException(400, STRINGS[self.unsupported].format(name=uploaded))
         self.job = self.job or self.store.reserve()
         path = input_path(self.job / "input", len(self.names), name)
         path.parent.mkdir()
@@ -440,6 +458,45 @@ class _Upload:
 
     def _end(self) -> None:
         self._ended = True
+
+
+class _PdfUpload(_Upload):
+    """The body of `POST /api/inspect`: one PDF in the field `file`. It is written the same way, into
+    a reserved job folder, which is no job (it has no job.json, so a server that is killed leaves
+    what the next start purges). The route calls `discard` when it has read the PDF."""
+
+    fields = ("file",)
+    kinds = (".pdf",)
+    max_files = 1  # a second one is "Too many files (limit 1)"
+    unsupported = "error_inspect_type"
+
+    def pdf_path(self) -> Path:
+        """Where the PDF that came is stored. HTTP 400 for a body cut short or with no file."""
+        self._complete()
+        return input_path(self.job / "input", 0, self.names[0])
+
+
+def _boundary(request: Request, limit_mb: int) -> bytes:
+    """The boundary of a multipart upload. HTTP 400 for a body that is no multipart form, and 413 for
+    one whose declared size is over the limit: that is refused before the body is read. A body
+    without a size (or a lying one) is refused by `_Upload` as soon as it goes over."""
+    content_type, params = parse_options_header(request.headers.get("content-type"))
+    boundary = params.get(b"boundary")
+    if content_type != b"multipart/form-data" or not boundary:
+        raise HTTPException(400, STRINGS["error_not_form"])
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit_mb * MB + _OVERHEAD:
+        raise HTTPException(413, _too_large(limit_mb))
+    return boundary
+
+
+async def _receive(upload: _Upload, request: Request) -> None:
+    """Give the body of the request to the upload as it arrives, piece by piece, on the thread pool
+    (it writes to the disk). ClientDisconnect, if the client goes, is the caller's."""
+    async with aclosing(request.stream()) as body:
+        async for chunk in body:
+            if chunk:
+                await run_in_threadpool(upload.feed, chunk)
 
 
 def _scrubber(root: Path) -> Callable[[str], str]:
@@ -670,21 +727,10 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
 
     @app.post("/api/jobs", status_code=201)
     async def create_job(request: Request):
-        content_type, params = parse_options_header(request.headers.get("content-type"))
-        boundary = params.get(b"boundary")
-        if content_type != b"multipart/form-data" or not boundary:
-            raise HTTPException(400, STRINGS["error_not_form"])
-        # a size that is too large is refused before the body is read; a body without a size
-        # (or a lying one) is refused by `_Upload` as soon as it goes over
-        declared = request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > app.state.max_upload_mb * MB + _OVERHEAD:
-            raise HTTPException(413, _too_large(app.state.max_upload_mb))
-        upload = _Upload(store, boundary, app.state.max_upload_mb)
+        limit = app.state.max_upload_mb
+        upload = _Upload(store, _boundary(request, limit), limit)
         try:
-            async with aclosing(request.stream()) as body:
-                async for chunk in body:
-                    if chunk:
-                        await run_in_threadpool(upload.feed, chunk)
+            await _receive(upload, request)
             info = await run_in_threadpool(queue_job, upload.finish)
         except ClientDisconnect:  # nobody is there to answer
             upload.discard()
@@ -693,6 +739,18 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
             upload.discard()
             raise
         return _public(info, scrub)
+
+    @app.post("/api/inspect")
+    async def inspect_upload(request: Request):
+        limit = app.state.max_upload_mb
+        upload = _PdfUpload(store, _boundary(request, limit), limit)
+        try:
+            await _receive(upload, request)
+            return await run_in_threadpool(describe_pdf, upload.pdf_path())  # under the PDFium lock
+        except ClientDisconnect:  # nobody is there to answer
+            return Response(status_code=400)
+        finally:  # on every way out, and before the answer goes
+            upload.discard()
 
     @app.get("/api/jobs")
     def list_jobs():

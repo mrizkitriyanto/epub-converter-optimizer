@@ -646,7 +646,8 @@ def test_select_files_has_the_note_about_the_models_and_a_secondary_button_to_th
     select = stage_markup(local(tmp_path).get("/").text, "select")
     note = re.search(r'<div id="models-note" class="[^"]*" hidden>(.*?)</div>', select, re.DOTALL)
     assert note, "the note is in the markup, hidden until the script shows it"
-    assert f'<p class="muted">{STRINGS["models_missing_note"]}</p>' in note.group(1)
+    text = f'<p id="models-text" class="muted" role="status">{STRINGS["models_missing_note"]}</p>'
+    assert text in note.group(1)  # the script changes it while a download runs or after it failed
     button = '<button id="models-download" type="button" class="secondary">'
     assert f"{button}{STRINGS['models_download']}</button>" in note.group(1)
     assert "primary" not in note.group(1)  # Start conversion stays the one primary button
@@ -681,7 +682,186 @@ def test_a_download_goes_on_when_the_user_leaves_the_gate_and_select_files_follo
     assert "setSetupButtons(false);" in function_body(js, "init")  # set once, when the page starts
     assert "setup" not in function_body(js, "stopWork")  # a change of stage leaves the stream alone
     ended = function_body(js, "setupEnded")
-    assert re.search(r"else if \(state\.stage === 'select'\) renderModelsNote\(\);", ended)
+    # Select files follows: the note goes, and the rows no longer warn about the models
+    select = r"else if \(state\.stage === 'select'\) \{\s*renderModelsNote\(\);\s*renderDetails\(\);\s*\}"
+    assert re.search(select, ended)
+
+
+# Task N2: the rows of Select files show pages, scan state and an estimate (M2-R41), and warn about
+# the models (M2-R43). Two small fixes of the models note ride along. Still no browser: these read
+# the page, the texts and the functions of the script that carry each rule.
+
+
+def test_the_texts_of_the_file_rows():
+    assert STRINGS["file_reading"] == "Reading…"
+    assert (STRINGS["kind_markdown"], STRINGS["kind_epub"]) == ("Markdown", "EPUB")
+    assert (STRINGS["pages_one"], STRINGS["pages_other"]) == ("1 page", "{n} pages")
+    assert STRINGS["kind_digital"] == "Digital PDF"
+    assert STRINGS["kind_scanned"] == "Scanned, uses OCR"
+    assert STRINGS["kind_scanned_no_ocr"] == "Scanned, no OCR"
+    assert STRINGS["kind_partly"] == "Partly scanned ({scanned} of {pages} pages)"
+    assert STRINGS["estimate_about"] == "about {time}"
+    assert STRINGS["estimate_short"] == "under a minute"
+
+
+def test_the_texts_have_no_em_dash_and_no_emoji():
+    assert {ch for text in STRINGS.values() for ch in text if ord(ch) > 126} <= {"…"}
+
+
+def test_the_warnings_about_the_models_use_the_names_the_page_gives_the_setting():
+    warning = STRINGS["row_needs_models"]
+    assert warning == "Needs the AI models. Download them, or set Layout to Page images."
+    texts = [warning, STRINGS["models_downloading_note"], STRINGS["models_failed_note"]]
+    assert [
+        t for t in texts if STRINGS["mode_label"] not in t or STRINGS["mode_pages"] not in t
+    ] == []
+    assert STRINGS["models_downloading_note"].startswith("The AI models are downloading.")
+    assert STRINGS["models_failed_note"].startswith("The model download did not finish.")
+
+
+def test_the_script_asks_the_inspect_route_and_reads_what_the_route_sends(tmp_path, fixtures_dir):
+    app = create_app(tmp_path, token=None)
+    routes = [r for r in app.routes if getattr(r, "path", None) == "/api/inspect"]
+    assert len(routes) == 1 and "POST" in routes[0].methods
+    js = source("app.js")
+    assert "inspect: '/api/inspect'," in js
+    pdf = fixtures_dir["blank"].read_bytes()
+    r = TestClient(app, base_url=LOCAL).post("/api/inspect", files={"file": ("a.pdf", pdf)})
+    answer = r.json()
+    # `scan` is what the page keeps of an answer, beside its own `status` and `message`
+    assert set(re.findall(r"\bscan\.(\w+)", js)) - {"status", "message"} == set(answer)
+    assert set(re.findall(r"\brate\.(\w+)", js)) == set(answer["seconds_per_page"])
+
+
+def test_the_pdfs_are_read_one_at_a_time_and_a_removed_file_is_cancelled():
+    js = source("app.js")
+    scan = function_body(js, "scanNext")
+    assert "if (state.scanning || state.uploading) return;" in scan  # one at a time, not with a job
+    assert "choice.scan && choice.scan.status === 'waiting'" in scan  # the first that waits
+    assert "form.append('file', entry.file, entry.file.name);" in scan  # the field of the route
+    assert "new AbortController()" in scan and "signal: entry.controller.signal" in scan
+    assert "method: 'POST', body: form" in scan and "URLS.inspect" in scan
+    # however a reading ends, the next one starts; one that was aborted is read again later
+    assert re.search(r"state\.scanning = null;\s*renderDetails\(\);\s*scanNext\(\);\s*\}", scan)
+    assert re.search(r"'AbortError' \? \{ status: 'waiting' \}", scan)
+    remove = function_body(js, "removeFile")
+    assert "state.files.splice(index, 1)" in remove and "removed.controller.abort()" in remove
+    assert "state.scanning.controller.abort()" in function_body(js, "pauseScanning")
+    assert re.search(r"\bscanning: null\b", js)
+
+
+def test_choosing_files_starts_the_reading_and_the_upload_of_the_job_pauses_it():
+    js = source("app.js")
+    add = function_body(js, "addFiles")
+    assert "state.files.push(newChoice(file))" in add and "scanNext();" in add
+    start = function_body(js, "startConversion")
+    assert re.search(r"state\.uploading = true;\s*pauseScanning\(\);", start)  # not two uploads
+    assert re.search(r"showDropErrors\(\[error\.message\]\);\s*scanNext\(\);", start)  # and on
+    assert "choice.file, choice.file.name" in start
+    # Start never waits for a reading, and a PDF that could not be read does not stop it
+    assert "$('start').disabled = count === 0 || state.uploading;" in function_body(
+        js, "renderFiles"
+    )
+
+
+def test_a_row_is_its_size_then_what_is_known_of_the_file():
+    row = function_body(source("app.js"), "rowText")
+    assert "const parts = [formatSize(choice.file.size)];" in row
+    assert "parts.push(t('kind_markdown'))" in row and "parts.push(t('kind_epub'))" in row
+    assert "parts.push(t('file_reading'))" in row  # a PDF that waits or is being read
+    assert "parts.push(tn('pages', choice.scan.pages), pdfKind(choice.scan, options));" in row
+    assert "note = choice.scan.message;" in row  # the server's own text, in the muted line
+    assert "parts.join(' · ')" in row
+
+
+def test_the_estimate_follows_what_the_pipeline_does_with_the_settings():
+    js = source("app.js")
+    body = function_body(js, "estimateSeconds")
+    steps = [
+        "if (options.mode === 'pages') return scan.pages * rate.pages;",
+        "if (options.ocr === 'off') return scan.pages * rate.digital;",
+        "if (options.ocr === 'force') return scan.pages * rate.scanned;",
+        "return (scan.pages - scan.scanned_pages) * rate.digital + scan.scanned_pages * rate.scanned;",
+    ]
+    places = [body.index(step) for step in steps]  # page images first, the automatic one last
+    assert places == sorted(places)
+    time = function_body(js, "approximateTime")
+    assert "if (seconds < 45) return t('estimate_short');" in time
+    assert "t('estimate_about', { time: formatMinutes(Math.round(seconds / 60)) })" in time
+
+
+def test_a_pdf_is_digital_scanned_or_partly_scanned_and_ocr_is_named_only_when_it_runs():
+    body = function_body(source("app.js"), "pdfKind")
+    assert "if (scan.scanned_pages === 0) return t('kind_digital');" in body
+    partly = "if (scan.scanned_pages * 2 <= scan.pages) {"  # most is more than half
+    assert (
+        partly in body
+        and "t('kind_partly', { scanned: scan.scanned_pages, pages: scan.pages })" in body
+    )
+    # no OCR runs on page images, nor when it is off
+    assert "options.mode !== 'pages' && options.ocr !== 'off'" in body
+    assert "t('kind_scanned')" in body and "t('kind_scanned_no_ocr')" in body
+
+
+def test_the_rows_are_worked_out_again_when_the_device_layout_or_ocr_changes():
+    js = source("app.js")
+    bind = function_body(js, "bind")
+    for setting in ("device", "mode", "ocr"):
+        assert f"$('{setting}').addEventListener('change', renderDetails);" in bind
+    details = function_body(js, "renderDetails")
+    assert "readOptions()" in details  # the settings as they are now
+    assert "replaceChildren" not in details  # only text changes, so a row with the focus keeps it
+    scan = function_body(js, "scanNext")
+    assert "renderDetails();" in scan and "renderFiles" not in scan  # an answer redraws no row
+    assert "renderDetails();" in function_body(js, "renderFiles")
+
+
+def test_a_pdf_row_warns_in_place_of_the_estimate_while_the_models_are_missing_and_needed():
+    js = source("app.js")
+    needs = function_body(js, "needsModels")
+    assert "return !state.setup.ready && options.mode !== 'pages';" in needs
+    row = function_body(js, "rowText")
+    instead = (
+        r"if \(needsModels\(options\)\) note = t\('row_needs_models'\);\s*"
+        r"else parts\.push\(approximateTime\(estimateSeconds\(choice\.scan, options\)\)\);"
+    )
+    assert re.search(instead, row)  # the estimate is added only in the other branch
+
+
+def test_the_file_rows_have_a_detail_line_a_note_and_the_style_for_them():
+    css, js = source("app.css"), source("app.js")
+    rows = function_body(js, "renderFiles")
+    assert all(name in rows for name in ("file-name", "file-detail", "file-note"))
+    assert "file-detail" in css and "file-note" in css
+    assert "file-size" not in css and "file-size" not in js  # the class that this replaced
+
+
+def test_select_files_shows_a_download_that_runs_and_one_that_failed():
+    js = source("app.js")
+    assert "download: 'idle'," in js  # a new page load has started no download
+    assert "state.download = 'running';" in function_body(js, "startDownload")
+    failed = function_body(js, "showSetupError")  # every way a download ends badly comes here
+    assert "state.download = 'failed';" in failed and "renderModelsNote();" in failed
+    assert "state.download = 'idle';" in function_body(js, "setupEnded")
+    note = function_body(js, "renderModelsNote")
+    assert "setText($('models-text'), MODELS_NOTE[state.download]());" in note
+    for name, key in (
+        ("idle", "models_missing_note"),
+        ("running", "models_downloading_note"),
+        ("failed", "models_failed_note"),
+    ):
+        assert f"{name}: () => t('{key}')," in js
+
+
+def test_the_focus_leaves_the_models_note_before_the_note_is_hidden(tmp_path):
+    focus = (
+        "if (state.setup.ready && $('models-note').contains(document.activeElement)) "
+        "$('files-title').focus();"
+    )
+    note = function_body(source("app.js"), "renderModelsNote")
+    assert focus in note
+    assert note.index(focus) < note.index("$('models-note').hidden = state.setup.ready")
+    assert '<h2 id="files-title" tabindex="-1">' in local(tmp_path).get("/").text  # it can take it
 
 
 # Lifespan

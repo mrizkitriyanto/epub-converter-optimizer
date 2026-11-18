@@ -93,6 +93,12 @@
     crosspoint: () => t('firmware_crosspoint_advice'),
     crossink: () => t('firmware_crossink_advice'),
   };
+  // The note of Select files while the models are missing: no download started, one runs, or one failed.
+  const MODELS_NOTE = {
+    idle: () => t('models_missing_note'),
+    running: () => t('models_downloading_note'),
+    failed: () => t('models_failed_note'),
+  };
   const MODE_HINT = {
     auto: () => t('mode_text_hint'),
     reflow: () => t('mode_text_hint'),
@@ -126,6 +132,7 @@
     setup: '/api/setup',
     setupDownload: '/api/setup/download',
     setupEvents: '/api/setup/events',
+    inspect: '/api/inspect',
     jobs: '/api/jobs',
     job: (id) => `/api/jobs/${id}`,
     events: (id) => `/api/jobs/${id}/events`,
@@ -187,7 +194,9 @@
     stage: null, // setup, select, processing or review
     setup: null, // GET /api/setup
     skipModels: false, // the user went on from the setup gate without the models; this page load only
-    files: [], // the files chosen, not uploaded yet
+    download: 'idle', // the model download this page started: idle, running or failed
+    files: [], // the files chosen, not uploaded yet: { file, kind, scan, controller }, see newChoice
+    scanning: null, // the chosen PDF that the server is reading now (POST /api/inspect), one at a time
     uploading: false,
     job: null, // GET /api/jobs/{id}
     run: null, // what the events of the job say, per file
@@ -369,6 +378,8 @@
     $('setup-error').replaceChildren(...lines);
     $('setup-error').hidden = false;
     setSetupButtons(true);
+    state.download = 'failed'; // the user may be on Select files, where the gate is out of sight
+    renderModelsNote();
   }
 
   async function startDownload(ipv4) {
@@ -377,6 +388,7 @@
     setText($('setup-download'), t('setup_working'));
     $('setup-error').hidden = true;
     $('setup-log').replaceChildren();
+    state.download = 'running';
     let response;
     try {
       response = await fetch(
@@ -427,9 +439,18 @@
       showSetupError(error.message);
       return;
     }
-    if (!state.setup.ready) showSetupError(t('setup_not_ready'));
-    else if (state.stage === 'setup') route();
-    else if (state.stage === 'select') renderModelsNote(); // the user went on without the models
+    if (!state.setup.ready) {
+      showSetupError(t('setup_not_ready'));
+      return;
+    }
+    state.download = 'idle';
+    // a user who went on without the models is on Select files: the note goes, and the rows stop warning
+    if (state.stage === 'setup') {
+      route();
+    } else if (state.stage === 'select') {
+      renderModelsNote();
+      renderDetails();
+    }
   }
 
   // ---------------------------------------------------- select and settings
@@ -443,9 +464,13 @@
     focusStage();
   }
 
-  // Markdown and EPUB files need no model, and neither does a PDF read as page images.
+  // Markdown and EPUB files need no model, and neither does a PDF read as page images. While the
+  // models are missing the note says so, and what became of a download that was started.
   function renderModelsNote() {
+    // the note goes when the models are ready, so the keyboard focus must not be on what goes
+    if (state.setup.ready && $('models-note').contains(document.activeElement)) $('files-title').focus();
     $('models-note').hidden = state.setup.ready;
+    setText($('models-text'), MODELS_NOTE[state.download]());
   }
 
   function showDropErrors(messages) {
@@ -458,33 +483,78 @@
   function addFiles(list) {
     const refused = [];
     for (const file of list) {
-      if (SUPPORTED_FILE.test(file.name)) state.files.push(file);
+      if (SUPPORTED_FILE.test(file.name)) state.files.push(newChoice(file));
       else refused.push(t('error_unsupported', { name: file.name }));
     }
     showDropErrors(refused);
     renderFiles();
+    scanNext();
+  }
+
+  // A file the user chose. A PDF is read by the server before it is converted (`scan`): how many pages
+  // it has and how many are scanned. A Markdown or EPUB file has no pages to count and converts in
+  // seconds, so it is not read. `scan.status` is waiting, reading, done or error.
+  function newChoice(file) {
+    const kind = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase();
+    return { file, kind, scan: kind === 'pdf' ? { status: 'waiting' } : null, controller: null };
   }
 
   function removeFile(index) {
-    state.files.splice(index, 1);
+    const [removed] = state.files.splice(index, 1);
+    if (removed.controller) removed.controller.abort(); // it is being read now: stop that
     renderFiles();
     const next = $('file-list').querySelector('button');
     (next || $('file-input')).focus();
   }
 
+  // The server reads the chosen PDFs one at a time, and not while the files are uploaded for the
+  // conversion: two uploads at once only slow each other down. When one reading ends, however it
+  // ends, the next starts.
+  async function scanNext() {
+    if (state.scanning || state.uploading) return;
+    const entry = state.files.find((choice) => choice.scan && choice.scan.status === 'waiting');
+    if (!entry) return;
+    state.scanning = entry;
+    entry.scan = { status: 'reading' };
+    entry.controller = new AbortController();
+    const form = new FormData();
+    form.append('file', entry.file, entry.file.name);
+    try {
+      const answer = await getJson(URLS.inspect, { method: 'POST', body: form, signal: entry.controller.signal });
+      entry.scan = { ...answer, status: 'done' };
+    } catch (error) {
+      // Aborted: the file was removed, or the upload of the job began. If it is still here it is read again.
+      entry.scan = error.name === 'AbortError' ? { status: 'waiting' } : { status: 'error', message: error.message };
+    }
+    entry.controller = null;
+    state.scanning = null;
+    renderDetails();
+    scanNext();
+  }
+
+  function pauseScanning() {
+    if (state.scanning) state.scanning.controller.abort();
+  }
+
   function renderFiles() {
     $('file-list').replaceChildren(
-      ...state.files.map((file, index) =>
+      ...state.files.map((choice, index) =>
         h(
           'li',
           { class: 'file-row' },
-          h('div', null, h('span', { class: 'file-name' }, file.name), h('span', { class: 'file-size' }, formatSize(file.size))),
+          h(
+            'div',
+            null,
+            h('span', { class: 'file-name' }, choice.file.name),
+            h('span', { class: 'block file-detail' }),
+            h('span', { class: 'block hint file-note' }),
+          ),
           h(
             'button',
             {
               type: 'button',
               class: 'link-button',
-              'aria-label': t('remove_file_named', { name: file.name }),
+              'aria-label': t('remove_file_named', { name: choice.file.name }),
               onclick: () => removeFile(index),
             },
             t('remove_file'),
@@ -501,7 +571,75 @@
     setText($('start-hint'), count === 0 ? t('start_hint') : '');
     $('file-input').disabled = state.uploading;
     $('drop-zone').classList.toggle('busy', state.uploading);
+    renderDetails();
     if (state.stage === 'select') renderStepper();
+  }
+
+  // The text under each file name. It changes only text, never the rows, so a row that has the
+  // keyboard focus keeps it when an answer comes in or a setting changes.
+  function renderDetails() {
+    const options = readOptions();
+    const rows = $('file-list').children;
+    state.files.forEach((choice, index) => {
+      const { detail, note } = rowText(choice, options);
+      const warning = rows[index].querySelector('.file-note');
+      setText(rows[index].querySelector('.file-detail'), detail);
+      setText(warning, note);
+      warning.hidden = note === '';
+    });
+  }
+
+  // The two lines under the name of a file. `detail` is its size and what is known of the file. `note`
+  // is a muted warning: why the PDF could not be read, or why its conversion would not work.
+  function rowText(choice, options) {
+    const parts = [formatSize(choice.file.size)];
+    let note = '';
+    if (choice.kind === 'md') {
+      parts.push(t('kind_markdown'));
+    } else if (choice.kind === 'epub') {
+      parts.push(t('kind_epub'));
+    } else if (choice.scan.status === 'error') {
+      note = choice.scan.message;
+    } else if (choice.scan.status !== 'done') {
+      parts.push(t('file_reading'));
+    } else {
+      parts.push(tn('pages', choice.scan.pages), pdfKind(choice.scan, options));
+      if (needsModels(options)) note = t('row_needs_models');
+      else parts.push(approximateTime(estimateSeconds(choice.scan, options)));
+    }
+    return { detail: parts.join(' · '), note };
+  }
+
+  // Digital, scanned (all the pages or most of them), or partly scanned. OCR is named only when it
+  // will run: a PDF made into page images has none, and neither has one with OCR off.
+  function pdfKind(scan, options) {
+    if (scan.scanned_pages === 0) return t('kind_digital');
+    if (scan.scanned_pages * 2 <= scan.pages) {
+      return t('kind_partly', { scanned: scan.scanned_pages, pages: scan.pages });
+    }
+    const ocr = options.mode !== 'pages' && options.ocr !== 'off';
+    return ocr ? t('kind_scanned') : t('kind_scanned_no_ocr');
+  }
+
+  // What the pipeline will do with the current settings: a PDF made into page images costs the
+  // page-image rate for every page. Otherwise OCR off reads every page as a digital one, "every
+  // page" as a scanned one, and the automatic setting each page as what it is.
+  function estimateSeconds(scan, options) {
+    const rate = scan.seconds_per_page;
+    if (options.mode === 'pages') return scan.pages * rate.pages;
+    if (options.ocr === 'off') return scan.pages * rate.digital;
+    if (options.ocr === 'force') return scan.pages * rate.scanned;
+    return (scan.pages - scan.scanned_pages) * rate.digital + scan.scanned_pages * rate.scanned;
+  }
+
+  function approximateTime(seconds) {
+    if (seconds < 45) return t('estimate_short');
+    return t('estimate_about', { time: formatMinutes(Math.round(seconds / 60)) });
+  }
+
+  // Everything but page images needs the models, and a PDF converted without them fails.
+  function needsModels(options) {
+    return !state.setup.ready && options.mode !== 'pages';
   }
 
   function syncSettingHints() {
@@ -535,9 +673,10 @@
     if (state.uploading || state.files.length === 0) return;
     const form = new FormData();
     form.append('options', JSON.stringify(readOptions())); // first: a bad option is refused before a file is written
-    for (const file of state.files) form.append('files[]', file, file.name);
+    for (const choice of state.files) form.append('files[]', choice.file, choice.file.name);
     showDropErrors([]);
     state.uploading = true;
+    pauseScanning(); // a reading in progress stops now, and starts again if this upload fails
     renderFiles();
     try {
       const job = await getJson(URLS.jobs, { method: 'POST', body: form });
@@ -548,6 +687,7 @@
       state.uploading = false;
       renderFiles();
       showDropErrors([error.message]);
+      scanNext();
     }
   }
 
@@ -1375,6 +1515,10 @@
     $('start').addEventListener('click', startConversion);
     $('firmware').addEventListener('change', syncSettingHints);
     $('mode').addEventListener('change', syncSettingHints);
+    // the estimate of a PDF follows the settings, and so does the warning about the models
+    $('device').addEventListener('change', renderDetails);
+    $('mode').addEventListener('change', renderDetails);
+    $('ocr').addEventListener('change', renderDetails);
     $('font-size').addEventListener('change', () => {
       $('font-size').value = String(wholeFontSize($('font-size').value));
     });

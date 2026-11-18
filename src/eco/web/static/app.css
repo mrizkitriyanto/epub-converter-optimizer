@@ -488,16 +488,25 @@ summary {
   margin-top: 8px;
 }
 
+.file-row > div {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+
 .file-name {
   display: block;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 
-.file-size,
+.file-detail,
 .recent-meta,
 .model-size {
   color: var(--muted);
+}
+
+.file-note {
+  margin-top: 2px;
 }
 
 .total {
