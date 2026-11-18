@@ -101,6 +101,31 @@ def test_a_book_md_that_antivirus_holds_when_read_is_one_plain_line(
     assert "Traceback" not in err
 
 
+def test_a_book_md_gone_right_after_the_extraction_is_one_plain_line(
+    tmp_path, capsys, monkeypatch, fixtures_dir, fake_blocks
+):
+    read_text = Path.read_text
+
+    def gone(self, *args, **kwargs):
+        if self.name == "book.md":
+            raise FileNotFoundError(2, "No such file or directory", str(self))
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", gone)
+    assert convert(tmp_path, fixtures_dir["blank"], "-o", tmp_path / "o") == 1
+    err = capsys.readouterr().err
+    [line] = [line for line in err.splitlines() if line.startswith("error: ")]
+    assert line.startswith("error: Could not find ") and "book.md. Antivirus software may" in line
+
+
+def test_a_book_folder_of_the_user_without_book_md_is_the_usual_one_line_error(tmp_path, capsys):
+    folder = tmp_path / "mine.book"
+    folder.mkdir()
+    assert convert(tmp_path, folder) == 1
+    err = capsys.readouterr().err
+    assert "error: " in err and "Antivirus" not in err
+
+
 def test_drm_epub(tmp_path, capsys, drm_epub):
     assert convert(tmp_path, drm_epub) == 1
     assert "error: EPUB is DRM-protected: drm.epub" in capsys.readouterr().err

@@ -298,7 +298,7 @@ def convert_file(
 
     Raises ValueError for an input of another kind, and what `extract_pdf` and the optimizer raise:
     PdfOpenError, ModelsMissing, Cancelled, RemovedByAntivirus (book.md cannot be written or
-    read), DRMError.
+    read, or is gone right after the extraction), DRMError.
     """
     start = time.monotonic()
     kind = "book" if path.is_dir() else path.suffix.lower().lstrip(".")
@@ -322,7 +322,7 @@ def convert_file(
                 findings += read_report(book_dir)  # extract_pdf has reported them already
             else:
                 source_path = path
-            source = load_source(source_path)
+            source = load_source(source_path, just_written=kind == "pdf")
             if kind == "pdf" and "title" not in pdf_metadata(path):
                 # the cache serves every file with these bytes, so the file name it saw first
                 # must not become the title of a copy that has another name

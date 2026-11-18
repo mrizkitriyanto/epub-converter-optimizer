@@ -18,14 +18,18 @@ _LINE_START_MARK = re.compile(r"^[-+=~]")
 
 class RemovedByAntivirus(Exception):
     """Windows refused to write or read book.md, as it does when a virus scanner has found a threat
-    in the file, before and while it moves the file away: the text of a book about malware can hold
-    code that a scanner takes for malware. Raised from that error."""
+    in the file, or book.md is gone right after eco wrote it: the text of a book about malware can
+    hold code that a scanner takes for malware. Raised from that error. `action` is "write", "read"
+    or "find"; eco writes book.md into its data folder, but it reads book folders of the user too."""
 
     def __init__(self, path: Path, action: str = "write"):
+        if action == "write":
+            folder = "eco's data folder, which holds this file,"
+        else:  # a book folder that eco reads can be the user's
+            folder = "the folder that holds this file"
         super().__init__(
             f"Could not {action} {path}. Antivirus software may have removed it, because the text "
-            "of this book can look like malware. You can exclude eco's data folder, which holds "
-            "this file, from scanning."
+            f"of this book can look like malware. You can exclude {folder} from scanning."
         )
 
 
@@ -94,21 +98,26 @@ def read_report(folder: Path) -> list[Finding]:
     return [Finding(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
 
 
-def read_book_md(folder: Path) -> str:
-    """The text of the book.md of a book folder. A virus scanner can hold or remove the file after
-    eco wrote it, which Windows reports as "Invalid argument"."""
+def read_book_md(folder: Path, just_written: bool = False) -> str:
+    """The text of the book.md of a book folder. A virus scanner can hold the file after eco wrote
+    it, which Windows reports as "Invalid argument", and then move it away: a book.md missing from
+    a folder eco has `just_written` is that too. In a folder of the user it is the usual error."""
     path = folder / "book.md"
     try:
         return path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError as e:
+        if just_written:
+            raise RemovedByAntivirus(path, "find") from e
+        raise
     except OSError as e:
         if _blocked_by_antivirus(e):
             raise RemovedByAntivirus(path, "read") from e
         raise
 
 
-def load_source(path: Path) -> BookSource:
+def load_source(path: Path, just_written: bool = False) -> BookSource:
     if path.is_dir():
-        text, base_dir = read_book_md(path), path
+        text, base_dir = read_book_md(path, just_written), path
     else:
         text, base_dir = path.read_text(encoding="utf-8-sig"), path.parent
     meta: dict[str, str] = {}

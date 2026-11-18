@@ -154,7 +154,7 @@ def _extract(args: argparse.Namespace) -> int:
     n = 0
     while (dest := out_dir / f"{pdf.stem}{f'-{n}' if n else ''}.book").exists():
         n += 1
-    markdown = read_book_md(folder)  # first, so a virus scanner that holds it is named plainly
+    markdown = read_book_md(folder, just_written=True)  # a virus scanner is named plainly
     shutil.copytree(folder, dest)
     if "title" not in pdf_metadata(pdf):
         # the cache holds the file name its first extraction saw; this file may be named otherwise

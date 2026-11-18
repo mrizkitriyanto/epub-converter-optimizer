@@ -480,8 +480,14 @@ error for either.
   (ERROR_VIRUS_INFECTED, which Python reports as errno 22, "Invalid argument"), eco raises
   `RemovedByAntivirus`, chained from the original error. Its message says "Could not write" or
   "Could not read" and names the file, says that antivirus software may have removed it because
-  the text of the book can look like malware, and says that eco's data folder, which holds the
-  file, can be excluded from scanning. It never suggests turning protection off.
+  the text of the book can look like malware, and says which folder can be excluded from scanning:
+  for a write "eco's data folder, which holds this file", for a read "the folder that holds this
+  file", since `load_source` also reads a book folder that the user passes in. It never suggests
+  turning protection off.
+- Once the scanner has moved the file away, a read gets "No such file" instead. Right after
+  `extract_pdf` wrote the folder (a conversion of a PDF, and `eco extract`), a missing `book.md`
+  gives the same plain error, "Could not find"; in a book folder that the user passes in, a
+  missing file stays the usual error.
 - The read is the case that happened (R-78, corrected the same day): Windows Defender let eco
   write the Malware book's `book.md` (`report.json`, written after it, exists), detected
   `Exploit:Win32/Pdfjsc.Q` (a malicious-PDF-JavaScript signature that the book's own example code

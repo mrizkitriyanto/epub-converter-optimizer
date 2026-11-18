@@ -244,7 +244,8 @@ def test_a_book_md_that_antivirus_holds_gives_one_plain_error_when_read(
         load_source(folder)
     message = str(caught.value)
     assert message.startswith(f"Could not read {folder / 'book.md'}. Antivirus software may")
-    assert "look like malware" in message and "exclude eco's data folder" in message
+    assert message.endswith("You can exclude the folder that holds this file from scanning.")
+    assert "look like malware" in message and "data folder" not in message
     assert not any(word in message.lower() for word in ("disable", "turn off", "switch off"))
     assert caught.value.__cause__ is error
 
@@ -261,3 +262,23 @@ def test_other_read_errors_pass_unchanged(tmp_path, monkeypatch, platform, error
     with pytest.raises(OSError) as caught:
         load_source(folder)
     assert caught.value is error
+
+
+def test_a_book_md_missing_right_after_eco_wrote_it_gives_one_plain_error(tmp_path):
+    folder = tmp_path / "x.book"
+    write_book(Book(title="T"), folder, [])
+    (folder / "book.md").unlink()  # what a virus scanner that moved it away leaves
+    with pytest.raises(RemovedByAntivirus) as caught:
+        load_source(folder, just_written=True)
+    message = str(caught.value)
+    assert message.startswith(f"Could not find {folder / 'book.md'}. Antivirus software may")
+    assert message.endswith("You can exclude the folder that holds this file from scanning.")
+    assert not any(word in message.lower() for word in ("disable", "turn off", "switch off"))
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+
+
+def test_a_book_folder_of_the_user_without_book_md_is_the_normal_error(tmp_path):
+    folder = tmp_path / "mine.book"
+    folder.mkdir()
+    with pytest.raises(FileNotFoundError):
+        load_source(folder)
