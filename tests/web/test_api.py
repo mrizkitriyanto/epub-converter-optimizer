@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import httpx
 import pytest
 import uvicorn
-from fakes import endless_work, epub_title, failing_work, fake_work, wait_for
+from fakes import endless_work, epub_title, failing_work, fake_work, sse, wait_for, wire
 from fastapi.testclient import TestClient
 
 from eco.options import Options
@@ -89,17 +89,6 @@ def tree_size(path: Path) -> int:
     return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
 
 
-def sse(text):
-    """The events of an event stream. Each message is one `data: <json>` line and a blank line."""
-    messages = text.split("\n\n")
-    assert messages.pop() == ""  # the stream ends with the blank line of its last message
-    events = []
-    for message in messages:
-        assert message.startswith("data: ") and "\n" not in message, message
-        events.append(json.loads(message.removeprefix("data: ")))
-    return events
-
-
 def strings(value):
     """Every string in a JSON value, keys included."""
     if isinstance(value, str):
@@ -151,70 +140,6 @@ def backdate(store: JobStore, job_id: str, seconds: float):
     info = store.get(job_id)
     info.created -= seconds
     store.save(info)
-
-
-def scope(method, path, headers):
-    return {
-        "type": "http",
-        "asgi": {"version": "3.0", "spec_version": "2.3"},  # what uvicorn says
-        "http_version": "1.1",
-        "method": method,
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "root_path": "",
-        "headers": [(k.lower().encode(), v.encode("latin-1")) for k, v in headers],
-        "client": ("127.0.0.1", 50000),
-        "server": ("127.0.0.1", 8000),
-    }
-
-
-@dataclass
-class Wired:
-    messages: list
-    pulled: int = 0  # how many pieces of the body the app took
-
-    @property
-    def status(self):
-        return self.messages[0]["status"]
-
-    @property
-    def body(self):
-        return b"".join(m.get("body", b"") for m in self.messages[1:])
-
-    def json(self):
-        return json.loads(self.body)
-
-
-async def wire(
-    app, method, path, *, headers=(), chunks=(b"",), complete=True, probe=None, gone=None
-):
-    """Call the app as a server does. The body comes piece by piece in `chunks`; `probe` runs
-    before each piece. After the last piece the client has gone, or with `complete=False` it
-    goes in the middle of the body. With `gone` (an Event) it stays until the event is set."""
-    wired = Wired([])
-    pending = list(chunks)
-
-    async def receive():
-        if pending:
-            wired.pulled += 1
-            if probe:
-                probe()
-            return {
-                "type": "http.request",
-                "body": pending.pop(0),
-                "more_body": bool(pending) or not complete,
-            }
-        if gone is not None:
-            await gone.wait()
-        return {"type": "http.disconnect"}
-
-    async def send(message):
-        wired.messages.append(message)
-
-    await app(scope(method, path, [("host", "127.0.0.1:8000"), *headers]), receive, send)
-    return wired
 
 
 @dataclass

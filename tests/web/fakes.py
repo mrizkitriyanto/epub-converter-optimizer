@@ -4,10 +4,12 @@ A worker runs in a spawned process, which imports its target by module and name.
 a module-level function of this importable module: a monkeypatch made in the test process alone
 would never reach the child."""
 
+import json
 import os
 import signal
 import time
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -105,3 +107,81 @@ def hold_server_lock(data_dir, held) -> None:
         held.set()
         while True:
             time.sleep(0.1)
+
+
+# Reading what an app answers
+
+
+def sse(text):
+    """The events of an event stream. Each message is one `data: <json>` line and a blank line."""
+    messages = text.split("\n\n")
+    assert messages.pop() == ""  # the stream ends with the blank line of its last message
+    events = []
+    for message in messages:
+        assert message.startswith("data: ") and "\n" not in message, message
+        events.append(json.loads(message.removeprefix("data: ")))
+    return events
+
+
+def scope(method, path, headers):
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},  # what uvicorn says
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(k.lower().encode(), v.encode("latin-1")) for k, v in headers],
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", 8000),
+    }
+
+
+@dataclass
+class Wired:
+    messages: list
+    pulled: int = 0  # how many pieces of the body the app took
+
+    @property
+    def status(self):
+        return self.messages[0]["status"]
+
+    @property
+    def body(self):
+        return b"".join(m.get("body", b"") for m in self.messages[1:])
+
+    def json(self):
+        return json.loads(self.body)
+
+
+async def wire(
+    app, method, path, *, headers=(), chunks=(b"",), complete=True, probe=None, gone=None
+):
+    """Call the app as a server does. The body comes piece by piece in `chunks`; `probe` runs
+    before each piece. After the last piece the client has gone, or with `complete=False` it
+    goes in the middle of the body. With `gone` (an Event) it stays until the event is set."""
+    wired = Wired([])
+    pending = list(chunks)
+
+    async def receive():
+        if pending:
+            wired.pulled += 1
+            if probe:
+                probe()
+            return {
+                "type": "http.request",
+                "body": pending.pop(0),
+                "more_body": bool(pending) or not complete,
+            }
+        if gone is not None:
+            await gone.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        wired.messages.append(message)
+
+    await app(scope(method, path, [("host", "127.0.0.1:8000"), *headers]), receive, send)
+    return wired

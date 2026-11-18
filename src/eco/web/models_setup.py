@@ -1,9 +1,9 @@
 """The AI model download of the setup page: one background run at a time, and its event log.
 
-`GET /api/setup` shows what is missing, `POST /api/setup/download` starts `eco.models.download_models`
-on a daemon thread (Ctrl+C must not wait for 417 MB; finished files are kept, so the next run
-resumes), and `GET /api/setup/events` streams what the run says. `ModelSetup` holds the state; the
-routes are in `eco.web.app`.
+`GET /api/setup` shows what is missing, `POST /api/setup/download` starts
+`eco.models.download_models` on a daemon thread (Ctrl+C must not wait for 417 MB; finished files
+are kept, so the next run resumes), and `GET /api/setup/events` streams what the run says.
+`ModelSetup` holds the state; the routes are in `eco.web.app`.
 
 The events are `{"type": "progress", "message": str}` and one last
 `{"type": "end", "status": "done" | "failed", "message": str}`. The progress lines are one line
@@ -115,7 +115,7 @@ class ModelSetup:
         try:
             download_models(self._dir, ipv4=ipv4)
             status, message = "done", STRINGS["setup_done"]
-        except Exception as e:  # noqa: BLE001  the page must hear that the run is over, whatever failed
+        except Exception as e:  # noqa: BLE001  the page must hear of the end, whatever failed
             message = self._scrub(str(e)) or message
         finally:
             log.removeHandler(handler)  # before `end`: nothing is said after it

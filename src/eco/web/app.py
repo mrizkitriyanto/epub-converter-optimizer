@@ -30,7 +30,7 @@ The model setup (`eco.web.models_setup` does the work; its page is the first one
 are missing). `ipv4` in the body of the POST is optional:
 
     GET  /api/setup                               ready, the models with their sizes, total_mb
-    POST /api/setup/download                      202, or 409 while a download runs; `{"ipv4": true}`
+    POST /api/setup/download                      202, or 409 while it runs; `{"ipv4": true}`
     GET  /api/setup/events                        server-sent events of the last run; 404 before one
 
 The previews of the review stage (`eco.web.preview` does the work, the routes only check what they
@@ -128,6 +128,11 @@ _OPTION_NAMES = {f.name for f in fields(Options)}
 _INDEX = re.compile(r"0|[1-9][0-9]{0,5}")  # a file's number in a URL: no sign, no leading zero
 _MEDIA = {"epub": "application/epub+zip"}
 _POLL = 0.05  # seconds between two looks of an event stream at its queue
+_SSE_HEADERS = {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",  # a proxy in front must not hold the events back
+}
 KEEPALIVE = 15.0  # seconds of silence after which an event stream sends a comment
 PURGE_EVERY = 3600.0  # seconds between two purges of the old jobs while the server runs
 
@@ -504,9 +509,10 @@ async def _events(
 ) -> AsyncIterator[str]:
     """The messages of an event stream: the events of a job (or of the model download) so far,
     then each new one, up to `end`, each as `show` makes it. `subscribe` gives the queue of
-    those events and `unsubscribe` takes it back. The stream also ends, with no `end` (the job has not ended), as soon as `stopping` is
-    set: the server is stopping, and it waits for its streams. After KEEPALIVE seconds with no
-    event it sends a comment, `: keepalive`, which a browser ignores and a proxy takes for traffic.
+    those events and `unsubscribe` takes it back. The stream also ends, with no `end` (the job
+    has not ended), as soon as `stopping` is set: the server is stopping, and it waits for its
+    streams. After KEEPALIVE seconds with no event it sends a comment, `: keepalive`, which a
+    browser ignores and a proxy takes for traffic.
 
     The subscription starts here, in the generator, and ends in its `finally`: when the stream
     ends, when the client goes (the response is cancelled), and when the server cancels the
@@ -702,11 +708,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
                 lambda event: _public_event(event, scrub),
                 app.state.stopping,
             ),
-            headers={
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",  # a proxy in front must not hold the events back
-            },
+            headers=_SSE_HEADERS,
         )
 
     @app.post("/api/jobs/{job_id}/cancel", status_code=202)
@@ -765,11 +767,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
             raise HTTPException(404, STRINGS["error_setup_none"])
         return StreamingResponse(
             _events(setup.subscribe, setup.unsubscribe, lambda event: event, app.state.stopping),
-            headers={
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-            },
+            headers=_SSE_HEADERS,
         )
 
     # These do file work and long renders, so they are plain `def`: they run on the thread pool.

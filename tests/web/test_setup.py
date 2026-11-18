@@ -1,7 +1,9 @@
 """The setup API: what is missing, the one download, and its event stream.
 
 `download_models` is always replaced: no test opens a connection or fetches a model. The
-`no_real_download` fixture makes a test that forgets to replace it fail instead of downloading.
+`no_real_download` fixture makes a test that forgets to replace it fail instead of downloading,
+and it waits at the end of every test for the download thread to finish (a test that holds a run
+open opens its gate first), so no run, and no logging handler of one, outlives its test.
 """
 
 import asyncio
@@ -12,9 +14,8 @@ from importlib.metadata import version
 from pathlib import Path
 
 import pytest
-from fakes import wait_for
+from fakes import sse, wait_for, wire
 from fastapi.testclient import TestClient
-from test_api import sse, wire
 
 from eco.models import MODELS, ModelInfo, models_dir
 from eco.web import app as web_app
@@ -33,6 +34,12 @@ def no_real_download(monkeypatch):
         raise AssertionError("a test started the real download")
 
     monkeypatch.setattr(models_setup, "download_models", refuse)
+    yield
+    # Torn down after the fixtures of the test, so after every gate was opened.
+    runs = [t for t in threading.enumerate() if t.name == "eco-model-download"]
+    for run in runs:
+        run.join(10)
+    assert not any(run.is_alive() for run in runs), "a download thread outlived its test"
 
 
 def fake_download(calls, *, gate=None, fail=None, retries=1):
