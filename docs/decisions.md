@@ -431,3 +431,18 @@ error for either.
   `PCM-CIA`, `forward-ing`, `pre-tend`, `hall-mark` and the like). If it turns out wrong: change the
   vocabulary test in `dehyphenate`.
 - `EXTRACTOR_VERSION` is 3.
+
+## 2026-11-18: OCR: no line classifier, and each crop read at its own size (R-71)
+
+- RapidOCR runs with `use_cls=False` and Docling's `detect_orientation=True`. On Bicara pages 83-84
+  the line classifier turned 4 of 42 upright lines upside down (scores 0.51-0.64), and their text
+  came out as garbage with no finding. Without it, the real pipeline read all of them right
+  (0.97-0.99) and every other line the same. Docling's check of a whole region reads a region
+  that reads badly again at 90, 180 and 270 degrees, which covers a page scanned upside down.
+- `Det.limit_side_len` is 32 instead of 736 (`limit_type: min`). RapidOCR scaled every crop up
+  until its short side was 736 px, so a one-line heading crop (93 px high) went up about 8 times
+  and its line came back as overlapping pieces: "1. Respons yang Membuat Tersentuh" read
+  "1.1 Respons s yang Membuat Tersentuh". At its own size, 216 dpi, the crop reads whole, and the
+  other 13 crops of pages 83, 84 and 87 read the same words. A full-page crop was never scaled up,
+  so `--ocr force` does not change.
+- If it turns out wrong: drop the three settings in `docling_adapter._OCR`.

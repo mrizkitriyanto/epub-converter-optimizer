@@ -419,6 +419,9 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
     assert options.do_ocr is (ocr != "off")
     assert isinstance(options.ocr_options, RapidOcrOptions)
     assert options.ocr_options.mode == ("full_page" if ocr == "force" else "default")
+    assert options.ocr_options.use_cls is False  # it turned upright lines upside down (R-71)
+    assert options.ocr_options.detect_orientation is True
+    assert options.ocr_options.rapidocr_params == {"Det.limit_side_len": 32}
     assert options.do_table_structure is True
     assert not (options.do_code_enrichment or options.do_formula_enrichment)
     assert not (options.generate_page_images or options.generate_picture_images)

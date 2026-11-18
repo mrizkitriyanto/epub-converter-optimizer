@@ -36,6 +36,11 @@ _KIND = {
 
 
 _LINE_END_HYPHEN = re.compile(r"\w[-–]$")
+# RapidOCR's line classifier turned some upright lines of a scanned book upside down, and Docling's
+# check of the whole region reads a badly read one again at 90, 180 and 270 degrees instead. Its
+# detector scales a crop up until the short side is 736 px, which split a one-line heading into
+# overlapping pieces ("1.1 Respons s yang"); 32 leaves each crop at its own size.
+_OCR = {"use_cls": False, "detect_orientation": True, "rapidocr_params": {"Det.limit_side_len": 32}}
 
 
 def _keep_line_end_hyphens(lines: list[str]) -> list[str]:
@@ -183,7 +188,11 @@ def extract_blocks(
         options = PdfPipelineOptions(
             artifacts_path=models,
             do_ocr=ocr != "off",
-            ocr_options=RapidOcrOptions(mode="full_page") if ocr == "force" else RapidOcrOptions(),
+            ocr_options=(
+                RapidOcrOptions(mode="full_page", **_OCR)
+                if ocr == "force"
+                else RapidOcrOptions(**_OCR)
+            ),
             do_table_structure=True,
             do_code_enrichment=False,
             do_formula_enrichment=False,
