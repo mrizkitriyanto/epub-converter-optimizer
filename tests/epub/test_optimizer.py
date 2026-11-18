@@ -808,6 +808,20 @@ def test_an_image_that_a_document_left_unparsed_refers_to_keeps_its_name_and_byt
     assert kept.level == "warning" and "OEBPS/img/shared.png" in kept.message
 
 
+def test_an_unparsed_page_refers_to_an_image_in_an_unquoted_url_or_before_a_fragment(tmp_path):
+    photo = image_bytes((200, 100), "PNG", mode="RGBA", seed=4)  # X4 makes it a JPEG
+    broken = (
+        '<p style="background: url(../img/a.png)">unclosed '
+        '<img src="../img/b.png#part" alt="b"/><img src="../img/c.png?v=2" alt="c"/>'
+    )
+    pages = {"broken": broken}
+    files = {"img/a.png": photo, "img/b.png": photo, "img/c.png": photo}
+    z, rep = run(tmp_path, package(tmp_path, pages, files), X4)
+    for name in ("a", "b", "c"):
+        assert z.read(f"OEBPS/img/{name}.png") == photo
+    assert len([f for f in rep.findings if f.kind == "image_kept"]) == 3
+
+
 def test_an_image_whose_name_is_only_part_of_a_name_in_an_unparsed_page_is_converted(tmp_path):
     photo = image_bytes((200, 100), "PNG", mode="RGBA", seed=4)  # X4 makes it a JPEG
     pages = {

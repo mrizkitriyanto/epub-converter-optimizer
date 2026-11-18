@@ -522,7 +522,8 @@ class _Package:
                 continue
             name = posixpath.basename(path)
             names = "|".join(re.escape(n) for n in {name, quote(name)})
-            reference = re.compile(rf"""(?<=["'/])(?:{names})(?=["'])""")  # a whole name in a link
+            # a whole name in a link: after a quote or "/", and not followed by more of a name
+            reference = re.compile(rf"""(?<=["'/])(?:{names})(?![\w.%-])""")
             if any(reference.search(text) for text in self.unparsed):
                 message = f"{path} is left unchanged: a page that is not well-formed refers to it"
                 self._note("image_kept", "warning", message)

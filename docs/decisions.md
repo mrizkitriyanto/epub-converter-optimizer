@@ -468,9 +468,10 @@ error for either.
   Replaced before the Markdown is parsed, the code block stays a code block. Forensic's EPUB,
   rebuilt from run 1's book folder, passes EPUBCheck 5.4.0 with no message.
 - An EPUB that eco only optimizes can hold a page that does not parse. That page is left as it
-  is, and now so is every image it refers to (the whole file name, after a quote or "/" and before
-  a quote, so `1.png` is not found in `img-071.png`): renaming one to `.jpg` left the page
-  pointing at a file that was gone. An `image_kept` warning names it, and the `bad_xml` finding
+  is, and now so is every image it refers to (the whole file name, after a quote or "/" and not
+  followed by more of a name, so `1.png` is not found in `img-071.png`, while an unquoted CSS
+  `url(../img/a.png)` or `b.png#part` is): renaming one to `.jpg` left the page pointing at a
+  file that was gone. An `image_kept` warning names it, and the `bad_xml` finding
   says the page's links are not updated. If it turns out wrong: the X4 limits are not applied to
   such an image.
 
