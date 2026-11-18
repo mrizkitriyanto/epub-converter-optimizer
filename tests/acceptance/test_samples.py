@@ -30,6 +30,7 @@ from metrics import (
     epub_text,
     epubcheck_problems,
     epubcheck_tools,
+    failure_reason,
     ground_truth_blocks,
     hardware,
     headings,
@@ -77,9 +78,13 @@ def convert(tmp_path_factory, models):
         code, seconds, peak = run_timed(cmd, log, TIMEOUT)
         if code != 0:
             how = f"was killed by {signal.Signals(-code).name}" if code < 0 else f"exited {code}"
-            tail = "\n".join(log.read_text(errors="replace").splitlines()[-15:])
+            text = log.read_text(errors="replace")
+            reason = failure_reason(text)
+            tail = "\n".join(text.splitlines()[-15:])
             pytest.fail(
-                f"eco convert {source.name} {how} after {seconds:.0f} s. End of {log}:\n{tail}",
+                f"eco convert {source.name} {how} after {seconds:.0f} s"
+                + (f": {reason}" if reason else "")
+                + f"\nEnd of {log}:\n{tail}",
                 pytrace=False,
             )
         books = list((data / "cache").glob("*.book"))

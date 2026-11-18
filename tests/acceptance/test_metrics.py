@@ -13,6 +13,7 @@ from metrics import (
     epub_text,
     epubcheck_problems,
     epubcheck_tools,
+    failure_reason,
     ground_truth_blocks,
     hardware,
     headings,
@@ -255,3 +256,10 @@ def test_a_missing_ground_truth_file_skips_the_test_and_names_the_file(monkeypat
     monkeypatch.setattr(metrics, "SAMPLES", tmp_path)
     with pytest.raises(pytest.skip.Exception, match=r"samples/ground-truth/x\.txt is missing"):
         ground_truth_blocks("x.txt")
+
+
+def test_the_reason_of_a_failed_conversion_is_its_error_lines():
+    log = "[layout] page 9/9\n[fix]\nerror: Could not write book.md. Antivirus software may\n"
+    log += "0 converted, 1 failed: x.pdf\n"
+    assert failure_reason(log) == "Could not write book.md. Antivirus software may"
+    assert failure_reason("Traceback (most recent call last):\nKeyError: 1\n") == ""

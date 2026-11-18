@@ -1,5 +1,10 @@
+import sys
+from pathlib import Path
+
+import pytest
+
 from eco.book import Block, Book
-from eco.bookfolder import load_source, read_report, write_book
+from eco.bookfolder import RemovedByAntivirus, load_source, read_report, write_book
 from eco.events import Finding
 
 
@@ -167,3 +172,48 @@ def test_report_round_trip(tmp_path):
     findings = [Finding(3, "ocr", "warning", "low confidence"), Finding(0, "info", "info", "ü")]
     write_book(Book(title="T"), tmp_path, findings)
     assert read_report(tmp_path) == findings
+
+
+def failing_write(monkeypatch, error):
+    """book.md cannot be written: the write raises `error`, as when a virus scanner removes it."""
+    write_text = Path.write_text
+
+    def fake(self, *args, **kwargs):
+        if self.name == "book.md":
+            raise error
+        return write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fake)
+
+
+def blocked(winerror=None, errno=22):
+    error = OSError(errno, "Invalid argument", "book.md")
+    if winerror is not None:
+        error.winerror = winerror  # set by hand: the attribute exists only on Windows
+    return error
+
+
+@pytest.mark.parametrize("error", [blocked(), blocked(winerror=225, errno=13)])
+def test_book_md_that_antivirus_removed_gives_one_plain_error(tmp_path, monkeypatch, error):
+    monkeypatch.setattr(sys, "platform", "win32")
+    failing_write(monkeypatch, error)
+    with pytest.raises(RemovedByAntivirus) as caught:
+        write_book(Book(title="T"), tmp_path / "x.book", [])
+    message = str(caught.value)
+    assert str(tmp_path / "x.book" / "book.md") in message
+    assert "antivirus" in message.lower() and "look like malware" in message
+    assert "exclude eco's data folder" in message and "from scanning" in message
+    assert not any(word in message.lower() for word in ("disable", "turn off", "switch off"))
+    assert caught.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    "platform, error",
+    [("win32", blocked(errno=28)), ("linux", blocked()), ("darwin", blocked(winerror=225))],
+)
+def test_other_write_errors_pass_unchanged(tmp_path, monkeypatch, platform, error):
+    monkeypatch.setattr(sys, "platform", platform)
+    failing_write(monkeypatch, error)
+    with pytest.raises(OSError) as caught:
+        write_book(Book(title="T"), tmp_path / "x.book", [])
+    assert caught.value is error

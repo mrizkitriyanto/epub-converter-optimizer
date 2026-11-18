@@ -1,6 +1,7 @@
 import html
 import json
 import re
+import sys
 from dataclasses import asdict, dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -13,6 +14,25 @@ _FRONT_MATTER = re.compile(r"---\n(.*?\n)?---[ \t]*(?:\n|\Z)", re.DOTALL)
 _MD_SPECIAL = re.compile(r"[\\`*_\[\]<>#|&]")
 _LINE_START_LIST = re.compile(r"^(\d+)([.)])")
 _LINE_START_MARK = re.compile(r"^[-+=~]")
+
+
+class RemovedByAntivirus(Exception):
+    """Windows refused to write book.md, as it does when a virus scanner removes the file: the text
+    of a book about malware can hold code that a scanner takes for malware. Raised from that
+    error."""
+
+    def __init__(self, path: Path):
+        super().__init__(
+            f"Could not write {path}. Antivirus software may have removed it, because the text of "
+            "this book can look like malware. You can exclude eco's data folder, which holds this "
+            "file, from scanning."
+        )
+
+
+def _blocked_by_antivirus(e: OSError) -> bool:
+    """True on Windows for the error a write gets when a virus scanner blocks the file:
+    ERROR_VIRUS_INFECTED (225), which Python reports as errno 22, "Invalid argument"."""
+    return sys.platform == "win32" and (e.errno == 22 or getattr(e, "winerror", None) == 225)
 
 
 @dataclass
@@ -50,7 +70,12 @@ def write_book(book: Book, folder: Path, findings: list[Finding]) -> Path:
     for (prev, _), (kind, text) in pairwise(chunks):
         out += ("\n" if prev == kind == "list_item" else "\n\n") + text
     path = folder / "book.md"
-    path.write_text(out + "\n", encoding="utf-8")
+    try:
+        path.write_text(out + "\n", encoding="utf-8")
+    except OSError as e:
+        if _blocked_by_antivirus(e):
+            raise RemovedByAntivirus(path) from e
+        raise
     write_report(folder, findings)
     return path
 

@@ -63,6 +63,25 @@ def test_missing_input_is_one_line(tmp_path, capsys):
     assert err.strip() == f"error: No such file or folder: {tmp_path / 'gone.md'}"
 
 
+def test_a_book_md_that_antivirus_removed_is_one_plain_line(
+    tmp_path, capsys, monkeypatch, fixtures_dir, fake_blocks
+):
+    monkeypatch.setattr(sys, "platform", "win32")
+    write_text = Path.write_text
+
+    def blocked(self, *args, **kwargs):
+        if self.name == "book.md":
+            raise OSError(22, "Invalid argument", str(self))
+        return write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", blocked)
+    assert convert(tmp_path, fixtures_dir["blank"], "-o", tmp_path / "o") == 1
+    err = capsys.readouterr().err
+    [line] = [line for line in err.splitlines() if line.startswith("error: ")]
+    assert "book.md. Antivirus software may have removed it" in line
+    assert "Traceback" not in err
+
+
 def test_drm_epub(tmp_path, capsys, drm_epub):
     assert convert(tmp_path, drm_epub) == 1
     assert "error: EPUB is DRM-protected: drm.epub" in capsys.readouterr().err

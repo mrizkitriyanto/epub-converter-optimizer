@@ -200,6 +200,13 @@ def run_timed(cmd: list[str], log: Path, timeout: float) -> tuple[int, float, in
     return proc.returncode, time.monotonic() - start, peak
 
 
+def failure_reason(log: str) -> str:
+    """What `eco convert` said went wrong: its `error:` lines, joined."""
+    return "; ".join(
+        line.removeprefix("error: ") for line in log.splitlines() if line.startswith("error: ")
+    )
+
+
 def time_verdict(seconds: float, limit: float, system: str, machine: str) -> str:
     """'pass' within `limit`. Over it, 'fail' on macOS arm64 and 'skip' anywhere else: the limit of
     AC2 is defined for an M3 Mac, so the time of another machine is not comparable."""
