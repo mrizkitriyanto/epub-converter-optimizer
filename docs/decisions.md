@@ -376,3 +376,13 @@ error for either.
 - The code listings that AC3 compares with are read from `samples/ground-truth/` and a missing file
   skips the test, so the public repo holds no book text. On Windows the models folder is linked into
   each fresh data folder with a junction, which needs no admin rights.
+
+## 2026-11-18: Headings: a chapter label matches a bare chapter number (AC1)
+
+- When the fix stage matches a PDF bookmark to a heading, a leading "Chapter N:" or "Bab N" in
+  either title is read as "N" before the two are compared. A bookmark often says "Chapter 3: Title"
+  where the page says "3 Title". With a short title the plain comparison stayed under 0.8, so the
+  chapter got a second heading from the bookmark and its own heading became a stray one: six
+  chapters of the Threat Hunting sample opened with their title twice. The number is kept, so
+  "Chapter 3" never matches "12". If it turns out wrong: compare the titles as they are again.
+- `EXTRACTOR_VERSION` is 2, so a book folder cached before these fixes is extracted again.

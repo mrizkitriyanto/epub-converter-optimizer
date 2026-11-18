@@ -51,6 +51,27 @@ def test_match_reaches_one_page_either_side_but_not_two(page, matched):
     assert (findings == []) is matched
 
 
+@pytest.mark.parametrize(
+    "mark, text",
+    [
+        ("Chapter 3: Quiet Harbors", "3 Quiet Harbors"),
+        ("Bab 2 Kebun Pagi", "2 Kebun Pagi"),
+        ("3 Quiet Harbors", "CHAPTER 3. QUIET HARBORS"),
+    ],
+)
+def test_a_chapter_label_in_one_title_and_a_bare_number_in_the_other_still_match(mark, text):
+    out, findings = assign_heading_levels([heading(text, page=5)], [Bookmark(mark, 0, 5)])
+    assert [(b.text, b.level) for b in out] == [(text, 1)]
+    assert findings == []
+
+
+def test_chapter_numbers_that_differ_do_not_match():
+    blocks = [heading("12", page=5)]
+    out, findings = assign_heading_levels(blocks, [Bookmark("Chapter 3", 0, 5)])
+    assert [(b.text, b.level) for b in out] == [("Chapter 3", 1), ("12", 2)]
+    assert [f.kind for f in findings] == ["heading_added"]
+
+
 def test_dissimilar_heading_does_not_match():
     blocks = [heading("Something else entirely", page=5), Block("paragraph", "x", page=7)]
     out, findings = assign_heading_levels(blocks, [Bookmark("Communication Breakdown", 0, 5)])
