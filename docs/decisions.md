@@ -732,3 +732,29 @@ a new route.
   focus is on `Download models`, the focus moves to the heading of Select files before the note goes.
   A page that is reloaded in the middle of a download still shows the first text, since `/api/setup` has
   no `running` key.
+
+## 2026-11-18: Preview and EPUB rules: line-start markup, 1 GiB cap, page starts, image size (M2-R2, M2-R5, M2-R8, M2-R9)
+
+- Line-start markup (M2-R2). The Typst writer escapes more than the special characters: a text line
+  that starts with `<digits>.`, `-`, `+` or `=` gets a backslash, so "1. Introduction" in book.md
+  shows as text and not as a numbered list item (`/` is escaped everywhere, as are the other special
+  characters). Spec section 5 allows no content to change without a warning. If it turns out wrong:
+  a few extra backslashes in the Typst source.
+- EPUB size cap (M2-R5). An EPUB whose entries add up to more than 1 GiB (`MAX_EPUB_BYTES`) when
+  unpacked is refused, by the optimizer and by `epub_to_book` (so by the CLI and the GUI) with
+  `EPUB expands to more than 1 GiB: <name>`. The sizes come from the zip directory and the check
+  runs before any entry is read, so a zip bomb never unpacks. The CLI prints it as one error line; the
+  GUI shows it as the file's error. It had to be there before the GUI took uploads (spec sections
+  6.5 and 8.13). If it turns out wrong: a legitimate giant EPUB is refused with a clear message; raise
+  the constant.
+- Page starts (M2-R8). Only a top-level `#` heading starts a preview page and gets a `<chap>` marker,
+  like the EPUB builder, which makes chapters from top-level h1 only. A `#` inside a blockquote or a
+  list item is an ordinary level-2 heading with no page break, since a page break cannot sit inside a
+  quote and one valid Markdown line must not break the whole render. If it turns out wrong: such
+  headings look like level-2 headings in previews.
+- Image size in previews (M2-R9). An image renders at most at its natural pixel size (1 px is 1 pt)
+  and at most the body width, never enlarged, as in the M1 never-upscale rule. With a caption, the
+  image height is capped so that the image and its caption fit on one page body (a floor of a
+  quarter of the body height). The plan's `image(width: 100%, fit: "contain")` clipped captions under
+  tall images, which loses content, and enlarged 40x30 px formula crops to the full width. If it turns
+  out wrong: previews show smaller images than a reader that scales them up.
