@@ -51,6 +51,21 @@ def _picture_area(blocks: list[Block], info: PageInfo) -> float:
     return area / (info.width * info.height)
 
 
+def leave_out_the_cover_page(
+    blocks: list[Block], pages: dict[int, PageInfo]
+) -> tuple[list[Block], list[Finding]]:
+    """Page 1 is always rendered as the cover image. When it is a picture (no text layer) in a
+    book whose other pages have one, it is the cover and nothing else: its blocks, the picture and
+    the text Docling read from it by OCR, would repeat the cover in the body. A scanned book keeps
+    its page 1, which can be content, and a page 1 with a text layer keeps its text."""
+    first = pages.get(1)
+    digital = any(not p.is_scanned and not p.is_blank for n, p in pages.items() if n != 1)
+    if first is None or not first.is_scanned or not digital:
+        return blocks, []
+    message = "Page 1 is a picture and became the cover; its text is not repeated in the book."
+    return [b for b in blocks if b.page != 1], [Finding(1, "cover_page", "info", message)]
+
+
 def _picture_boxes(document, info: PageInfo) -> list[Bbox]:
     """The raster pictures of a page, as CropBox-relative top-left boxes."""
     boxes = []

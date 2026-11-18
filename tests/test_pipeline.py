@@ -468,3 +468,20 @@ def test_text_read_from_a_picture_on_a_digital_page_is_kept_as_the_picture(
     assert [f.page for f in result.findings if f.kind == "picture_text_as_image"] == [1]
     forced = convert(fixtures_dir["picture_text"], tmp_path, Options(ocr="force"), out="forced")
     assert "Pictured words" in (forced.book_dir / "book.md").read_text(encoding="utf-8")
+
+
+def test_a_picture_page_1_of_a_digital_book_is_only_the_cover(tmp_path, fixtures_dir, fake_blocks):
+    writer = PdfWriter()
+    writer.append(str(fixtures_dir["scanned"][0]))
+    writer.append(str(fixtures_dir["blank"]))
+    pdf = tmp_path / "covered.pdf"
+    with pdf.open("wb") as f:
+        writer.write(f)
+    fake_blocks.blocks = [
+        Block("heading", "Words read from the cover", level=1, page=1),
+        Block("paragraph", "First page text.", page=2),
+    ]
+    result = convert(pdf, tmp_path)
+    markdown = (result.book_dir / "book.md").read_text(encoding="utf-8")
+    assert "First page text." in markdown and "Words read from the cover" not in markdown
+    assert [f.page for f in result.findings if f.kind == "cover_page"] == [1]

@@ -551,3 +551,13 @@ error for either.
 - Scanned pages and `--ocr force` keep their OCR text, and Docling's OCR mode stays its default
   (spec section 8.3).
 - If it turns out wrong: drop the pass from the fix stage.
+
+## 2026-11-19: A picture page 1 of a digital book is only the cover (T19 proposal P3)
+
+- eco always renders page 1 as the cover image. When page 1 is a picture (no text layer) and the
+  other pages of the book have a text layer, the fix pass `leave_out_the_cover_page` leaves its
+  blocks out of the body: the picture and the text Docling read from it by OCR repeated the cover
+  (11 words of Threat Hunting). A finding says so. A scanned book keeps its page 1, which can be
+  content, and a page 1 with a text layer keeps its text.
+- `EXTRACTOR_VERSION` is 6 (numbered lists, contents, picture text and this pass).
+- If it turns out wrong: drop the pass; the page then shows in the body as before.

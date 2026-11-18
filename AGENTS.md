@@ -65,7 +65,7 @@ src/eco/pdf/docling_adapter.py  extract_blocks()
 src/eco/pdf/reading_order.py fix_reading_order()
 src/eco/pdf/code.py          reextract_code(), fix_code_blocks()
 src/eco/pdf/contents.py      rebuild_contents()
-src/eco/pdf/regions.py       keep_picture_text_as_images(), materialize_regions(), render_cover(), page_slices()
+src/eco/pdf/regions.py       leave_out_the_cover_page(), keep_picture_text_as_images(), materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
 tests/conftest.py  tests/fixtures/{make.py,links.py}  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}

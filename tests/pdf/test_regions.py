@@ -1,5 +1,6 @@
 from itertools import pairwise
 
+import pytest
 import typst
 from PIL import Image, ImageChops
 
@@ -8,6 +9,7 @@ from eco.events import Finding
 from eco.pdf.pages import PageInfo, inspect_pdf
 from eco.pdf.regions import (
     keep_picture_text_as_images,
+    leave_out_the_cover_page,
     materialize_regions,
     page_slices,
     render_cover,
@@ -265,3 +267,33 @@ def test_a_scanned_page_keeps_its_ocr_text(fixtures_dir):
         blocks,
         [],
     )
+
+
+def info(number, scanned):
+    """A page with a text layer, or a scanned one (a picture and no text)."""
+    return PageInfo(number, 612.0, 792.0, 0.0, 0.0, 0 if scanned else 900, 1.0 if scanned else 0.0)
+
+
+def cover_blocks():
+    return [
+        Block("heading", "A Cover Title", page=1),
+        Block("picture", page=1, bbox=(0.0, 0.0, 612.0, 792.0)),
+        Block("paragraph", "Body text.", page=2),
+    ]
+
+
+def test_a_picture_page_1_of_a_digital_book_is_only_the_cover():
+    out, findings = leave_out_the_cover_page(cover_blocks(), {1: info(1, True), 2: info(2, False)})
+    assert out == cover_blocks()[2:]
+    assert [(f.page, f.kind, f.level) for f in findings] == [(1, "cover_page", "info")]
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        {1: info(1, True), 2: info(2, True)},  # a scanned book: page 1 can be content
+        {1: info(1, False), 2: info(2, False)},  # a title page with a text layer keeps its text
+    ],
+)
+def test_other_first_pages_stay(pages):
+    assert leave_out_the_cover_page(cover_blocks(), pages) == (cover_blocks(), [])

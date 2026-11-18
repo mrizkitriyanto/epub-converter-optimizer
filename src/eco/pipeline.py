@@ -28,6 +28,7 @@ from eco.pdf.reading_order import fix_reading_order
 from eco.pdf.regions import (
     _save_by_content,
     keep_picture_text_as_images,
+    leave_out_the_cover_page,
     materialize_regions,
     page_slices,
     render_cover,
@@ -41,7 +42,7 @@ from eco.pdf.text import (
     normalize,
 )
 
-EXTRACTOR_VERSION = 5  # bump it when extraction changes: cached book folders then stop matching
+EXTRACTOR_VERSION = 6  # bump it when extraction changes: cached book folders then stop matching
 CHUNK_PAGES = 50
 _LANGUAGE_SAMPLE = 5000
 
@@ -172,6 +173,8 @@ def _fix(
     findings: list[Finding],
 ) -> list[Block]:
     """The passes of the `fix` stage. Their order matters."""
+    blocks, found = leave_out_the_cover_page(blocks, pages)
+    _add(findings, found, on_event)
     blocks, found = fix_reading_order(blocks, pages)
     _add(findings, found, on_event)
     blocks, found = rebuild_contents(pdf, blocks, pages)
