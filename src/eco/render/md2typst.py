@@ -4,8 +4,10 @@ The converter reads the book the way the EPUB builder does (same markdown-it par
 one `main.typ` plus the image files it refers to. It writes no files itself.
 """
 
+import hashlib
 import math
 import re
+import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -13,6 +15,7 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import unquote
 
+import typst
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.footnote import footnote_plugin
@@ -21,6 +24,7 @@ from PIL import Image
 from eco.bookfolder import BookSource
 from eco.epub.images import transform_image
 from eco.options import DEVICES, ImageProfile
+from eco.style import PageStyle
 
 VIEWS = ("crosspoint", "crossink", "stock", "xtc")
 
@@ -50,29 +54,65 @@ _FIGURE_GAP_EM = 0.65  # Typst's default gap between a figure and its caption
 _MONO_EM = 0.602  # glyph advance of DejaVu Sans Mono
 _RAW_EM = 0.62  # code is set at this share of the body size
 _MIN_IMAGE_SHARE = 0.25  # an image keeps at least this share of the body height
+# The progress bar, in px. The line is thin, a chapter tick is taller and reaches past it on both
+# sides, and the track (the part of the line that is not read yet) is light gray, a level XTH has.
+_BAR_LINE = 2
+_BAR_TICK = 6
+_BAR_REACH = (_BAR_TICK - _BAR_LINE) // 2
+_BAR_TRACK = 170
+_BAR_SEPARATOR = "  \u00b7  "
+# The row of text is one string: the title, then the numbers that the style asks for, in this order.
+# Each is a switch of the style and the Typst of its text (`p` of `n` pages, the chapter's pages).
+_BAR_NUMBERS = (
+    ("bar_page", 'str(p) + " / " + str(n)'),
+    ("bar_book_percent", 'str(int(calc.round(100 * p / n))) + "%"'),
+    ("bar_chapter_page", 'str(chap-page) + " / " + str(chap-pages)'),
+    ("bar_chapter_percent", 'str(int(calc.round(100 * chap-page / chap-pages))) + "%"'),
+)
+_BAR_CHAPTERS = (
+    "  let chapters = query(<chap>).map(c => c.value)",
+    "  let current = chapters.filter(c => c.page <= p)",
+    "  let later = chapters.filter(c => c.page > p)",
+    "  let chap-start = if current.len() > 0 { current.last().page } else { 1 }",
+    "  let chap-pages = (if later.len() > 0 { later.first().page } else { n + 1 }) - chap-start",
+    "  let chap-page = p - chap-start + 1",
+)
+# A title that is too long for the row is cut at a character: the longest start of it that fits
+# with the numbers behind it (a binary search on the width that `measure` gives).
+_BAR_TITLE = (
+    '  let title = if current.len() > 0 { current.last().title } else { "" }',
+    '  if title != "" {',
+    '    let rest = if tail == "" { "" } else { sep + tail }',
+    "    row = title + rest",
+    "    if measure(styled(row)).width > row-w {",
+    "      let cs = title.clusters()",
+    "      let (lo, hi) = (0, cs.len())",
+    "      while lo < hi {",
+    "        let mid = calc.quo(lo + hi + 1, 2)",
+    "        let fits = measure(styled(cs.slice(0, mid).join() + rest)).width <= row-w",
+    "        if fits { lo = mid } else { hi = mid - 1 }",
+    "      }",
+    "      row = if lo > 0 { cs.slice(0, lo).join() + rest } else { tail }",
+    "    }",
+    "  }",
+)
 
 # Typst markup characters, plus "~" (non-breaking space), "/" (term lists, comments) and the
-# "--", "---" and "-?" shorthands.
-_SPECIAL = re.compile(r"[\\#$*_`<>@\[\]~/]|-(?=[-?])")
+# shorthands that change the characters of a text: "--", "---", "-?", a "-" before a number (a
+# minus sign) and "..." (an ellipsis). A dot is escaped when two more follow it, so that no run of
+# dots is left with three. `_escape` keeps a "-" that only comes before a letter.
+_SPECIAL = re.compile(r"[\\#$*_`<>@\[\]~/]|-(?=[\w?-])|\.(?=\.\.)")
 # Text that starts a line and would turn into a list, enum item or heading.
 _LINE_START_ENUM = re.compile(r"^(\d+)\.")
 _LINE_START_MARK = re.compile(r"^[-+=]")
 _STRING_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
 
-@dataclass(frozen=True)
-class RenderSettings:
-    font_size: int = 32
-    margin: int = 16
-    line_height: float = 1.35
-    status_bar: bool = True
-
-
 def to_typst(
     src: BookSource,
     *,
     device: str,
-    settings: RenderSettings,
+    style: PageStyle,
     view: str,
     image_profile: ImageProfile | None = None,
 ) -> dict[str, bytes | Path]:
@@ -81,13 +121,25 @@ def to_typst(
         raise ValueError(f"unknown device: {device!r}")
     if view not in VIEWS:
         raise ValueError(f"unknown view: {view!r}")
-    converter = _Converter(src, device, settings, view, image_profile)
+    converter = _Converter(src, device, style, view, image_profile)
     return {"main.typ": converter.convert().encode(), **converter.files}
+
+
+def _escape(found: re.Match) -> str:
+    """Escape a special character. A "-" counts only before another "-", "?" or a number. Any
+    number: Typst makes a minus sign of a hyphen before a superscript or an Arabic-Indic digit too,
+    and `isnumeric` knows those."""
+    char = found[0]
+    if char == "-":
+        following = found.string[found.end()]
+        if following not in "-?" and not following.isnumeric():
+            return char
+    return "\\" + char
 
 
 def _esc(text: str, line_start: bool = False) -> str:
     """Escape text for Typst markup. `line_start` is true when the text begins a line."""
-    text = _SPECIAL.sub(r"\\\g<0>", text)
+    text = _SPECIAL.sub(_escape, text)
     if line_start:
         text = _LINE_START_ENUM.sub(r"\1\\.", text)
         text = _LINE_START_MARK.sub(r"\\\g<0>", text)
@@ -105,6 +157,33 @@ def _str(text: str) -> str:
 
 def _pt(value: float) -> str:
     return f"{round(value, 2):g}pt"
+
+
+# What Typst says of an SVG, by the hash of its bytes. Typst refuses the whole document for an SVG
+# whose size or contents it cannot read, however well formed the XML is, so each one is compiled
+# alone first (without an image profile no other step reads it).
+_SVG_VERDICTS: dict[str, bool] = {}
+_SVG_PROBE = (
+    "#set page(width: 10pt, height: 10pt, margin: 0pt)\n"
+    '#image("image.svg", width: 10pt, height: 10pt)\n'
+)
+
+
+def _typst_reads_svg(data: bytes) -> bool:
+    digest = hashlib.sha256(data).hexdigest()
+    if digest not in _SVG_VERDICTS:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            folder = Path(tmp)
+            (folder / "image.svg").write_bytes(data)
+            (folder / "main.typ").write_text(_SVG_PROBE)
+            try:
+                typst.compile(
+                    folder / "main.typ", root=str(folder), format="png", ignore_system_fonts=True
+                )
+                _SVG_VERDICTS[digest] = True
+            except typst.TypstError:
+                _SVG_VERDICTS[digest] = False
+    return _SVG_VERDICTS[digest]
 
 
 def _check_pixels(im: Image.Image) -> None:
@@ -231,12 +310,78 @@ class _Html(HTMLParser):
             self.text += data
 
 
+def _bar_area(style: PageStyle) -> int:
+    """The px that the progress bar takes from the page, on its side: its text and an edge margin
+    on each side of the text. Nothing when the bar is off."""
+    return 0 if style.bar_position == "off" else style.bar_font_size + 2 * style.bar_edge_margin
+
+
+def _bar(style: PageStyle, width: int, height: int) -> tuple[str, str]:
+    """The progress bar of a page `width` by `height` px: the lines that come before `#set page`,
+    and the arguments of `#set page` that hang the bar in the header or the footer. Both are empty
+    when the bar is off.
+
+    The bar has `_bar_area` px at the edge of the page, and the margin lies between it and the
+    text. From the edge inwards: `bar_edge_margin` px, the progress line (its ticks reach past it
+    on both sides), and the row of text, which starts at the edge margin when there is no line.
+    The header starts at the top edge of the page and the footer at the bottom edge of the text,
+    so `place` puts each part where it goes.
+    """
+    if style.bar_position == "off":
+        return "", ""
+    top = style.bar_position == "top"
+    edge, side, size = style.bar_edge_margin, style.bar_side_margin, style.bar_font_size
+    origin_x = style.margin
+    origin_y = 0 if top else height - style.margin - _bar_area(style)
+    row_w = width - 2 * side
+    line_x, line_w = (0, width) if style.bar_full_width else (side, row_w)
+
+    def put(dx: str, from_edge: int, extent: int, part: str) -> str:
+        """`part`, `extent` px tall, put `from_edge` px from the edge of the page."""
+        y = from_edge if top else height - from_edge - extent
+        return f"place(top + left, dx: {dx}, dy: {y - origin_y}pt, {part})"
+
+    numbers = [code for switch, code in _BAR_NUMBERS if getattr(style, switch)]
+    marks = style.bar_line and style.bar_chapter_marks
+    chapters = style.bar_chapter_title or style.bar_chapter_page or style.bar_chapter_percent
+    text_from_edge = edge + _BAR_TICK - _BAR_REACH if style.bar_line else edge
+    row = f"box(width: row-w, height: {size}pt, align(horizon + left, styled(row)))"
+    lines = [
+        "#let eco-bar = context {",
+        "  let n = counter(page).final().first()",
+        "  let p = counter(page).get().first()",
+        f"  let row-w = {row_w}pt",
+        f"  let styled(body) = text(size: {size}pt, body)",
+        f'  let sep = "{_BAR_SEPARATOR}"',
+        *(_BAR_CHAPTERS if chapters or marks else ()),
+        f"  let tail = ({', '.join(numbers)},).join(sep)" if numbers else '  let tail = ""',
+        "  let row = tail",
+        *(_BAR_TITLE if style.bar_chapter_title else ()),
+        "  " + put(f"{side - origin_x}pt", text_from_edge, size, row),
+    ]
+    if style.bar_line:
+        thin = f"height: {_BAR_LINE}pt, stroke: none"
+        track = f"rect(width: {line_w}pt, {thin}, fill: luma({_BAR_TRACK}))"
+        read = f"rect(width: calc.round({line_w} * p / n) * 1pt, {thin}, fill: black)"
+        lines += [
+            "  " + put(f"{line_x - origin_x}pt", edge, _BAR_LINE, part) for part in (track, read)
+        ]
+    if marks:  # a tick is 2 px wide, with its middle at the start of its chapter
+        dx = f"{line_x - origin_x - 1}pt + calc.round({line_w} * (c.page - 1) / n) * 1pt"
+        rect = f"rect(width: 2pt, height: {_BAR_TICK}pt, fill: black, stroke: none)"
+        tick = put(dx, edge - _BAR_REACH, _BAR_TICK, rect)
+        lines += ["  for c in chapters {", f"    if c.page > 1 {{ {tick} }}", "  }"]
+    lines.append("}")
+    argument, spacing = ("header", "header-ascent") if top else ("footer", "footer-descent")
+    return "\n".join(lines) + "\n", f",\n  {spacing}: 0pt,\n  {argument}: eco-bar"
+
+
 class _Converter:
     def __init__(
         self,
         src: BookSource,
         device: str,
-        settings: RenderSettings,
+        style: PageStyle,
         view: str,
         profile: ImageProfile | None,
     ):
@@ -245,9 +390,10 @@ class _Converter:
         self.text = _CONTROL.sub("", src.markdown)
         self.base = src.base_dir.resolve()
         self.device = device
-        self.settings = settings
+        self.style = style
         self.stock = view == "stock"
         self.profile = profile
+        self.bar_area = _bar_area(style)
         self.files: dict[str, bytes | Path] = {}
         self._found: dict[Path, tuple[str, tuple[int, int] | None] | None] = {}  # None: left out
         self._twin = ""
@@ -259,47 +405,67 @@ class _Converter:
         return f"{self._preamble()}\n{body}\n"
 
     def _page_size(self) -> tuple[int, int]:
-        return DEVICES[self.device] or (480, 800)
+        """The page Typst lays out: the device's screen, on its side for 90 and 270 degrees.
+        `render_book` turns the pages back to the screen."""
+        width, height = DEVICES[self.device] or (480, 800)
+        return (height, width) if self.style.orientation in (90, 270) else (width, height)
 
-    def _preamble(self) -> str:
-        s = self.settings
-        width, height = self._page_size()
+    def _lang(self) -> str:
+        if self.style.lang != "auto":
+            return self.style.lang
         language = _words(self.meta.get("language") or "").lower().replace("_", "-")
         lang = language.split("-")[0]
-        lang = lang if _LANG.fullmatch(lang) else "en"
-        footer = ""
-        if s.status_bar:
-            footer = (
-                ",\n  footer: context [\n    #set text(size: 12pt)\n"
-                "    #grid(columns: (1fr, auto), gutter: 8pt,\n"
-                "      box(width: 100%, height: 1.2em, clip: true, {\n"
-                "        let found = query(selector(<chap>).before(here()))\n"
-                "        if found.len() > 0 { found.last().value.title }\n"
-                "      }),\n"
-                "      [#counter(page).display() / #counter(page).final().first()],\n"
-                "    )\n  ]"
-            )
+        return lang if _LANG.fullmatch(lang) else "en"
+
+    def _preamble(self) -> str:
+        """The lines before the book. There is no blank line in them: `render_chapter` cuts at the
+        first one."""
+        s = self.style
+        width, height = self._page_size()
+        top = s.margin + self.bar_area * (s.bar_position == "top")
+        bottom = s.margin + self.bar_area * (s.bar_position == "bottom")
+        bar, bar_arguments = _bar(s, width, height)
         return (
+            f"{bar}"
             f"#set page(width: {width}pt, height: {height}pt, "
-            f"margin: (x: {s.margin}pt, top: {s.margin}pt, bottom: {s.margin + 22}pt){footer})\n"
-            f'#set text(font: "Libertinus Serif", size: {s.font_size}pt, lang: "{lang}", '
-            "hyphenate: true)\n"
-            f"#set par(justify: true, leading: {round(s.line_height - 1, 3)}em)\n"
+            f"margin: (x: {s.margin}pt, top: {top}pt, bottom: {bottom}pt){bar_arguments})\n"
+            f'#set text(font: "{_str(s.font)}", weight: {s.font_weight}, size: {s.font_size}pt, '
+            f'lang: "{_str(self._lang())}", hyphenate: {str(s.hyphenate).lower()})\n'
+            f"#set par(justify: {str(s.align == 'justify').lower()}, "
+            f"leading: {(s.line_height - 100) / 100:g}em)\n"
+            "#set smartquote(enabled: false)\n"
             '#show raw: set text(font: "DejaVu Sans Mono", size: 0.62em)\n'
             f"{self._raw_wrap()}\n"
             "#show heading.where(level: 1): it => { pagebreak(weak: true); it }\n"
             "#show figure.caption: it => it.body\n"
+            f"{self._image_boxes()}\n"
         )
 
     def _raw_wrap(self) -> str:
         """A raw line that is wider than the page runs past the edge. Zero-width spaces between the
         characters of any run of `fit` characters or more let it wrap at the page edge."""
-        width = self._page_size()[0] - 2 * self.settings.margin
-        fit = max(8, int(width / (_MONO_EM * _RAW_EM * self.settings.font_size)))
+        width = self._page_size()[0] - 2 * self.style.margin
+        fit = max(8, int(width / (_MONO_EM * _RAW_EM * self.style.font_size)))
         return (
             "#show raw: it => {\n"
             f'  show regex("[^ ]{{{fit},}}"): m => m.text.clusters().join(sym.zws)\n'
             "  it\n}"
+        )
+
+    def _image_boxes(self) -> str:
+        """Every image leaves its page and place in a `<imgbox>` marker, for `render_book` to
+        query. The marker is inside a box, which lies where the image does: in a figure whose
+        caption is wider than the image, a position taken beside the box would be the start of the
+        line that the image is centered in. An image of relative width (a vector image) measures 0
+        wide alone, so it is measured at the body width."""
+        body_w = self._page_size()[0] - 2 * self.style.margin
+        return (
+            "#show image: it => box(context {\n"
+            "  let p = here().position()\n"
+            f"  let s = measure(width: {body_w}pt, it)\n"
+            "  [#metadata((page: p.page, x: p.x.pt(), y: p.y.pt(), w: s.width.pt(), "
+            "h: s.height.pt())) <imgbox>]\n"
+            "  it\n})"
         )
 
     # Blocks
@@ -485,14 +651,14 @@ class _Converter:
     def _box(self, size: tuple[int, int] | None, caption: str) -> str:
         """Image size: natural (1 px is 1 pt), at most the body width, and short enough that the
         image and its caption fit on one page body."""
-        s = self.settings
+        s = self.style
         page_w, page_h = self._page_size()
         body_w = page_w - 2 * s.margin
-        body_h = page_h - 2 * s.margin - 22
+        body_h = page_h - 2 * s.margin - self.bar_area
         reserve = 0.0
         if caption:
             lines = math.ceil(len(caption) / max(1, int(body_w / (s.font_size * _GLYPH_EM))))
-            reserve = (lines * s.line_height + _FIGURE_GAP_EM) * s.font_size
+            reserve = (lines * s.line_height / 100 + _FIGURE_GAP_EM) * s.font_size
         max_h = max(body_h - reserve, body_h * _MIN_IMAGE_SHARE)
         if size is None:  # a vector image has no pixel size
             return f"width: 100%, height: {_pt(max_h)}"
@@ -543,7 +709,7 @@ class _Converter:
         suffix = path.suffix.lower()
         if suffix == ".svg":
             root = ET.parse(path).getroot()
-            if root.tag not in ("svg", _SVG_ROOT):
+            if root.tag not in ("svg", _SVG_ROOT) or not _typst_reads_svg(path.read_bytes()):
                 return None
             key = self._unique(key, "svg")
             self.files[key] = path

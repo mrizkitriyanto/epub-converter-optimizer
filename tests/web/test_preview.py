@@ -14,6 +14,7 @@ import threading
 import time
 import weakref
 import zlib
+from dataclasses import fields, replace
 from io import BytesIO
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -25,11 +26,10 @@ from PIL import Image, ImageFile
 from pypdf import PdfReader, PdfWriter
 
 from eco.options import Options, image_profile
-from eco.render.md2typst import RenderSettings
 from eco.render.pages import Rendered
-from eco.style import PageStyle
+from eco.style import CHOICES, RANGES, PageStyle
 from eco.web.app import create_app
-from eco.web.preview import PreviewError
+from eco.web.preview import PreviewError, _style_key
 
 LOCAL = "http://127.0.0.1:8000"  # a browser on this computer, server on the default port
 NO_PAGE = {"error": "No such page"}
@@ -101,6 +101,11 @@ def make_job(app, *files, options=None, converted=True, book_dir=None):
 
 def url(job, tail, n=0):
     return f"/api/jobs/{job.id}/files/{n}/{tail}"
+
+
+def style_folder(view, style=None, fmt="epub"):
+    """The name of the folder of the device pages that a style is rendered into."""
+    return f"{fmt}-{view}-{_style_key(style or PageStyle())}"
 
 
 def cache(app, job, n, *parts):
@@ -279,7 +284,7 @@ def test_the_three_views_are_accepted(c, app):
     job = make_job(app, ("book.md", TWO))
     for view in ("crosspoint", "crossink", "stock"):
         assert c.get(url(job, f"preview/epub/1.png?view={view}")).status_code == 200
-        assert (cache(app, job, 0, f"epub-{view}-32") / "map.json").is_file()
+        assert (cache(app, job, 0, style_folder(view)) / "map.json").is_file()
 
 
 def test_an_invalid_request_is_checked_before_the_state_of_the_file(c, app):
@@ -320,8 +325,10 @@ def test_the_cache_of_a_file_is_under_its_own_number(c, app):
     assert first.content != c.get(url(job, "preview/epub/1.png", 1)).content
     folder = app.state.store.job_dir(job.id) / "preview"
     assert sorted(p.name for p in folder.iterdir()) == ["0", "1"]
-    assert (cache(app, job, 0, "epub-crosspoint-32") / "0001.png").read_bytes() == first.content
-    assert (cache(app, job, 1, "epub-crosspoint-32") / "0002.png").is_file()
+    assert (
+        cache(app, job, 0, style_folder("crosspoint")) / "0001.png"
+    ).read_bytes() == first.content
+    assert (cache(app, job, 1, style_folder("crosspoint")) / "0002.png").is_file()
 
 
 def test_the_main_preview_renders_with_the_jobs_own_options(c, app, monkeypatch):
@@ -331,9 +338,9 @@ def test_the_main_preview_renders_with_the_jobs_own_options(c, app, monkeypatch)
     assert c.get(url(job, "pages?view=stock")).status_code == 200
     [kw] = seen
     assert (kw["device"], kw["view"]) == ("x3", "stock")
-    assert kw["settings"] == RenderSettings(font_size=48)
+    assert kw["style"] == PageStyle(font_size=48)
     assert kw["image_profile"] == image_profile(options)
-    assert kw["cache_dir"] == cache(app, job, 0, "epub-stock-48")
+    assert kw["cache_dir"] == cache(app, job, 0, style_folder("stock", PageStyle(font_size=48)))
     assert image(c.get(url(job, "preview/epub/1.png?view=stock"))).size == (528, 792)
 
 
@@ -343,7 +350,51 @@ def test_a_bigger_font_makes_more_pages(c, app):
     pages = {"big": big, "small": small}
     count = {name: c.get(url(job, "pages")).json()["device_pages"] for name, job in pages.items()}
     assert count["big"] > count["small"]
-    assert (cache(app, big, 0, "epub-crosspoint-48") / "map.json").is_file()
+    folder = style_folder("crosspoint", PageStyle(font_size=48))
+    assert (cache(app, big, 0, folder) / "map.json").is_file()
+
+
+def other_value(name, current):
+    """A value for the field `name` of a style that is not `current` and is a valid one."""
+    if name in RANGES:
+        low, high = RANGES[name]
+        return low if current != low else high
+    if name in CHOICES:
+        return next(value for value in CHOICES[name] if value != current)
+    return {"font": "Bitter", "font_weight": 500, "lang": "de"}.get(name, not current)
+
+
+def test_no_two_styles_share_a_cache_folder():
+    base = PageStyle()
+    keys = {_style_key(base)}
+    for field in fields(PageStyle):  # every field changes what the pages look like
+        other = replace(base, **{field.name: other_value(field.name, getattr(base, field.name))})
+        keys.add(_style_key(other))
+    assert len(keys) == len(fields(PageStyle)) + 1
+    assert _style_key(PageStyle()) == _style_key(PageStyle())  # and an equal style has its folder
+
+
+def test_an_epub_preview_simulates_the_style_of_the_job(c, app):
+    plain = make_job(app, ("a.md", TWO))
+    styled = make_job(
+        app, ("a.md", TWO), options=Options(style=PageStyle(font="Bitter", align="left"))
+    )
+    assert (
+        c.get(url(plain, "preview/epub/1.png")).content
+        != c.get(url(styled, "preview/epub/1.png")).content
+    )
+    assert (
+        c.get(url(plain, "live.png?chapter=0")).content
+        != c.get(url(styled, "live.png?chapter=0")).content
+    )
+
+
+def test_an_epub_preview_is_not_turned(c, app):
+    upright = make_job(app, ("a.md", TWO))
+    turned = make_job(app, ("a.md", TWO), options=Options(style=PageStyle(orientation=90)))
+    for tail in ("preview/epub/1.png", "live.png?chapter=0"):  # an EPUB has no orientation
+        assert c.get(url(turned, tail)).content == c.get(url(upright, tail)).content
+    assert (cache(app, turned, 0, style_folder("crosspoint")) / "map.json").is_file()
 
 
 def test_a_second_request_does_not_render_again(c, app, monkeypatch):
@@ -927,7 +978,7 @@ def test_live_renders_with_the_requested_values_and_the_jobs_device(c, app, monk
     assert image(r).size == (528, 792)
     [kw] = rendered
     assert (kw["device"], kw["view"], kw["chapter"]) == ("x3", "crossink", 1)
-    assert kw["source_page"] is None and kw["settings"] == RenderSettings(font_size=40)
+    assert kw["source_page"] is None and kw["style"] == PageStyle(font_size=40)
     assert kw["image_profile"] == image_profile(Options(device="x3", size="small"))
 
 
@@ -937,7 +988,7 @@ def test_live_defaults_to_the_font_size_and_size_of_the_job(c, app, monkeypatch)
     rendered = counting(monkeypatch, "eco.web.preview.render_chapter")
     c.get(url(job, "live.png?chapter=0"))
     [kw] = rendered
-    assert kw["view"] == "crosspoint" and kw["settings"] == RenderSettings(font_size=44)
+    assert kw["view"] == "crosspoint" and kw["style"] == PageStyle(font_size=44)
     assert kw["image_profile"] == image_profile(options)
 
 
@@ -951,8 +1002,8 @@ def test_the_live_cache_holds_32_answers(c, app, monkeypatch):
     sizes = []
 
     def render(src, **kw):
-        sizes.append(kw["settings"].font_size)
-        return Rendered([small_png(kw["settings"].font_size)], [0], []), 0
+        sizes.append(kw["style"].font_size)
+        return Rendered([small_png(kw["style"].font_size)], [0], [], [[]]), 0
 
     monkeypatch.setattr("eco.web.preview.render_chapter", render)
     job = make_job(app, ("book.md", TWO))
@@ -976,7 +1027,7 @@ def test_the_live_cache_is_kept_for_a_job_and_a_file(c, app, monkeypatch):
 
     def render(src, **kw):
         calls.append(1)
-        return Rendered([small_png(1)], [0], []), 0
+        return Rendered([small_png(1)], [0], [], [[]]), 0
 
     monkeypatch.setattr("eco.web.preview.render_chapter", render)
     job = make_job(app, ("a.md", TWO), ("b.md", TWO))
@@ -989,7 +1040,7 @@ def test_the_live_cache_is_kept_for_a_job_and_a_file(c, app, monkeypatch):
 
 
 def test_the_live_cache_keeps_the_answered_page_not_the_chapter(c, app, monkeypatch):
-    chapter = Rendered([small_png(1), small_png(2), small_png(3)], [0, 0, 0], [])
+    chapter = Rendered([small_png(1), small_png(2), small_png(3)], [0, 0, 0], [], [[], [], []])
     ref = weakref.ref(chapter)
     held = [chapter]
     monkeypatch.setattr("eco.web.preview.render_chapter", lambda src, **kw: (held[0], 2))
@@ -1012,7 +1063,7 @@ def test_a_failed_live_render_is_not_cached(app, monkeypatch):
         calls.append(1)
         if len(calls) == 1:
             raise RuntimeError("typst failed")
-        return Rendered([small_png(7)], [0], []), 0
+        return Rendered([small_png(7)], [0], [], [[]]), 0
 
     monkeypatch.setattr("eco.web.preview.render_chapter", render)
     job = make_job(app, ("book.md", TWO))

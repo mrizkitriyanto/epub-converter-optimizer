@@ -8,12 +8,15 @@ share one, and they go when the job does:
                               an EPUB read by `epub_to_book`, or the page images of a PDF that was
                               converted with `mode=pages` (its worker built them in a folder that is
                               gone). A reflow PDF uses the book folder of its extraction.
-    <format>-<view>-<font>/   the device pages of the whole book: `render_book`'s cache
+    <format>-<view>-<style>/  the device pages of the whole book: `render_book`'s cache. The
+                              style is a short hash of the page style the pages were rendered
+                              with, so that no two styles share a folder.
 
 The device pages are rendered with the job's own device, size preset (as the image profile) and
-font size. The live preview renders one chapter with the font size and size preset it is given. It
-writes nothing to the disk and keeps its last answers, only the PNG and where it sits in the
-excerpt, in memory.
+page style. The live preview renders one chapter with the job's page style, but the font size and
+size preset it is given. An EPUB's preview takes the style as a simulation, without its
+orientation: an EPUB has none, the reader turns its pages. The live preview writes nothing to the
+disk and keeps its last answers, only the PNG and where it sits in the excerpt, in memory.
 
 The routes run on a pool of threads. Renders and book builds are done one at a time for a folder:
 the render cache rewrites its map and compiles inside its folder, and on Windows a file that
@@ -27,6 +30,8 @@ what `page_map` and `chapters` hold. A chapter is counted from 0, in the order o
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import threading
@@ -47,8 +52,8 @@ from eco.epub.reader import epub_to_book
 from eco.options import SIZES, Options, image_profile, options_from_dict
 from eco.pdf.pages import PdfOpenError, inspect_pdf, page_count, render_page_fit
 from eco.pipeline import page_book
-from eco.render.md2typst import RenderSettings
 from eco.render.pages import ChapterNotFound, page_file, read_map, render_book, render_chapter
+from eco.style import PageStyle
 from eco.web.jobs import JobFile, JobInfo, JobStore
 from eco.web.strings import STRINGS
 
@@ -112,6 +117,17 @@ class _Answers:
 
 def _job_options(info: JobInfo) -> Options:
     return options_from_dict(info.options)
+
+
+def _shown(style: PageStyle, fmt: str) -> PageStyle:
+    """The style a preview is rendered with: an EPUB's has no orientation."""
+    return replace(style, orientation=0) if fmt == "epub" else style
+
+
+def _style_key(style: PageStyle) -> str:
+    """A short name for a style, the same for equal styles and different for any two others."""
+    data = json.dumps(style.to_json(), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(data.encode()).hexdigest()[:12]
 
 
 def _check_choice(fmt: str, view: str) -> None:
@@ -235,14 +251,15 @@ class Previews:
         """The folder of the device pages, rendered now when it holds none, and its page map and
         chapters (the chapters' pages from 0)."""
         options = _job_options(info)
-        folder = self._folder(info, n, f"{fmt}-{view}-{options.style.font_size}")
+        style = _shown(options.style, fmt)
+        folder = self._folder(info, n, f"{fmt}-{view}-{_style_key(style)}")
         with self._hold(folder):
             found = read_map(folder)
             if found is None:
                 render_book(
                     self._source(info, n),
                     device=options.device,
-                    settings=RenderSettings(font_size=options.style.font_size),
+                    style=style,
                     view=view,
                     cache_dir=folder,
                     image_profile=image_profile(options),
@@ -289,7 +306,7 @@ class Previews:
                 excerpt, index = render_chapter(
                     self._source(info, n),
                     device=options.device,
-                    settings=RenderSettings(font_size=font_size),
+                    style=_shown(replace(options.style, font_size=font_size), fmt),
                     view=view,
                     source_page=page,
                     chapter=chapter,

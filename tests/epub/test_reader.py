@@ -11,8 +11,8 @@ from eco.epub import zipio
 from eco.epub.optimizer import DRMError, optimize_epub
 from eco.epub.reader import _safe_name, epub_to_book
 from eco.options import Options
-from eco.render.md2typst import RenderSettings
 from eco.render.pages import render_book
+from eco.style import PageStyle
 
 CONTAINER = (
     '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
@@ -55,9 +55,7 @@ def test_messy_epub_becomes_a_previewable_folder(messy_epub, tmp_path):
     assert src.meta["title"] == "Messy Book" and src.meta["language"] == "en"
     assert "\n# Chapter One" in text and "![" in text
     assert (folder / "images").is_dir() and any((folder / "images").iterdir())
-    rendered = render_book(
-        src, device="x4", settings=RenderSettings(), view="crosspoint", cache_dir=None
-    )
+    rendered = render_book(src, device="x4", style=PageStyle(), view="crosspoint", cache_dir=None)
     assert len(rendered.pages) >= 1
 
 

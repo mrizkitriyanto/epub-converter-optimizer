@@ -10,16 +10,19 @@ from pypdf import PdfReader
 
 from eco.bookfolder import load_source
 from eco.options import Options, image_profile
-from eco.render.md2typst import VIEWS, RenderSettings, to_typst
+from eco.render.md2typst import VIEWS, _esc, to_typst
+from eco.style import PageStyle, font_dirs
+
+FONTS = [str(d) for d in font_dirs()]  # the folders the page renderer reads fonts from
 
 
-def convert(tmp_path, markdown, *, device="x4", view="crosspoint", settings=None, profile=None):
+def convert(tmp_path, markdown, *, device="x4", view="crosspoint", style=None, profile=None):
     md = tmp_path / "b.md"
     md.write_text(markdown, encoding="utf-8")
     files = to_typst(
         load_source(md),
         device=device,
-        settings=settings or RenderSettings(),
+        style=style or PageStyle(),
         view=view,
         image_profile=profile,
     )
@@ -39,14 +42,18 @@ def compiles(files) -> int:
     """Compile the way the page renderer does; returns the number of pages."""
     with tempfile.TemporaryDirectory() as folder:
         main = _materialise(files, Path(folder))
-        pages = typst.compile(main, root=folder, format="png", ppi=72.0, ignore_system_fonts=True)
+        pages = typst.compile(
+            main, root=folder, format="png", ppi=72.0, ignore_system_fonts=True, font_paths=FONTS
+        )
     return len(pages) if isinstance(pages, list) else 1
 
 
 def page_text(files) -> str:
     with tempfile.TemporaryDirectory() as folder:
         main = _materialise(files, Path(folder))
-        pdf = typst.compile(main, root=folder, format="pdf", ignore_system_fonts=True)
+        pdf = typst.compile(
+            main, root=folder, format="pdf", ignore_system_fonts=True, font_paths=FONTS
+        )
     return "\n".join(page.extract_text() for page in PdfReader(BytesIO(pdf)).pages)
 
 
@@ -54,7 +61,13 @@ def query(files, selector: str, field: str):
     with tempfile.TemporaryDirectory() as folder:
         main = _materialise(files, Path(folder))
         result = typst.query(
-            main, selector, field=field, format="json", root=folder, ignore_system_fonts=True
+            main,
+            selector,
+            field=field,
+            format="json",
+            root=folder,
+            ignore_system_fonts=True,
+            font_paths=FONTS,
         )
     return json.loads(result)
 
@@ -62,7 +75,7 @@ def query(files, selector: str, field: str):
 def test_escaping_and_markers(tmp_path):
     md = tmp_path / "b.md"
     md.write_text("# Bab #1\n\n<!-- page: 7 -->\n\nHarga $5 *murah*\n")
-    main = to_typst(load_source(md), device="x4", settings=RenderSettings(), view="crosspoint")[
+    main = to_typst(load_source(md), device="x4", style=PageStyle(), view="crosspoint")[
         "main.typ"
     ].decode()
     assert "= Bab \\#1" in main and "Harga \\$5 _murah_" in main
@@ -70,7 +83,7 @@ def test_escaping_and_markers(tmp_path):
 
 
 def test_stock_view_hides_images(tmp_path, small_book):
-    main = to_typst(load_source(small_book), device="x4", settings=RenderSettings(), view="stock")[
+    main = to_typst(load_source(small_book), device="x4", style=PageStyle(), view="stock")[
         "main.typ"
     ].decode()
     assert "image(" not in main and "Image not shown on stock firmware" in main
@@ -89,30 +102,31 @@ def test_unknown_device_and_view_are_refused(tmp_path):
 
 def test_crossink_renders_like_crosspoint(tmp_path, small_book):
     def main(view):
-        return to_typst(load_source(small_book), device="x4", settings=RenderSettings(), view=view)[
+        return to_typst(load_source(small_book), device="x4", style=PageStyle(), view=view)[
             "main.typ"
         ]
 
     assert main("crossink") == main("crosspoint")
 
 
-def test_preamble_follows_device_and_settings(tmp_path):
+def test_preamble_follows_device_and_style(tmp_path):
     main, _ = convert(tmp_path, "---\nlanguage: id\n---\nText\n", device="x3")
     assert "width: 528pt, height: 792pt" in main
-    assert 'lang: "id"' in main and 'font: "Libertinus Serif"' in main and "size: 32pt" in main
+    assert 'font: "Literata", weight: 400, size: 32pt, lang: "id", hyphenate: true' in main
     assert "justify: true, leading: 0.35em" in main
     assert 'font: "DejaVu Sans Mono", size: 0.62em' in main
-    assert "bottom: 38pt" in main
+    assert "margin: (x: 16pt, top: 16pt, bottom: 38pt)" in main
     assert "counter(page).final()" in main
     general, _ = convert(tmp_path, "Text\n", device="general")
     assert "width: 480pt, height: 800pt" in general and 'lang: "en"' in general
     custom, _ = convert(
         tmp_path,
         "Text\n",
-        settings=RenderSettings(font_size=20, margin=10, line_height=1.5, status_bar=False),
+        style=PageStyle(font_size=20, margin=10, line_height=150, bar_position="off"),
     )
-    assert "size: 20pt" in custom and "bottom: 32pt" in custom and "leading: 0.5em" in custom
-    assert "footer" not in custom
+    assert "size: 20pt" in custom and "leading: 0.5em" in custom
+    assert "margin: (x: 10pt, top: 10pt, bottom: 10pt)" in custom  # no room kept for a bar
+    assert "footer" not in custom and "header" not in custom
 
 
 def test_language_that_typst_would_refuse_falls_back(tmp_path):
@@ -257,7 +271,7 @@ def test_hard_and_soft_breaks(tmp_path):
 
 def test_images_become_figures_and_ship_with_the_source(tmp_path, small_book):
     src = load_source(small_book)
-    files = to_typst(src, device="x4", settings=RenderSettings(), view="crosspoint")
+    files = to_typst(src, device="x4", style=PageStyle(), view="crosspoint")
     main = files["main.typ"].decode()
     assert (
         '#figure(image("images/p0001-img-1.png", width: 80pt, height: 60pt, fit: "contain"), '
@@ -272,9 +286,7 @@ def test_images_become_figures_and_ship_with_the_source(tmp_path, small_book):
 def test_image_profile_transforms_the_files(tmp_path, small_book):
     profile = image_profile(Options(device="x4", size="small"))
     src = load_source(small_book)
-    files = to_typst(
-        src, device="x4", settings=RenderSettings(), view="crosspoint", image_profile=profile
-    )
+    files = to_typst(src, device="x4", style=PageStyle(), view="crosspoint", image_profile=profile)
     data = files["images/p0001-img-1.png"]
     assert isinstance(data, bytes) and data.startswith(b"\x89PNG")
     assert compiles(files) == 2
@@ -285,7 +297,7 @@ def test_image_profile_that_drops_images_leaves_no_figure(tmp_path, small_book):
     files = to_typst(
         load_source(small_book),
         device="x4",
-        settings=RenderSettings(),
+        style=PageStyle(),
         view="crosspoint",
         image_profile=profile,
     )
@@ -301,7 +313,7 @@ def test_converted_image_keeps_a_matching_extension(tmp_path):
     files = to_typst(
         load_source(folder / "b.md"),
         device="general",
-        settings=RenderSettings(),
+        style=PageStyle(),
         view="crosspoint",
         image_profile=profile,
     )
@@ -321,7 +333,7 @@ def test_missing_and_outside_images_are_left_out(tmp_path):
         "![gone](missing.png)\n\n![out](../secret.png)\n\n![web](http://x.test/a.png)\n\nafter\n"
     )
     files = to_typst(
-        load_source(folder / "b.md"), device="x4", settings=RenderSettings(), view="crosspoint"
+        load_source(folder / "b.md"), device="x4", style=PageStyle(), view="crosspoint"
     )
     assert "image(" not in files["main.typ"].decode() and len(files) == 1
     assert "after" in files["main.typ"].decode()
@@ -337,7 +349,7 @@ def test_captioned_figure_html_from_the_book_folder(tmp_path):
         "</figure>\n"
     )
     files = to_typst(
-        load_source(folder / "b.md"), device="x4", settings=RenderSettings(), view="crosspoint"
+        load_source(folder / "b.md"), device="x4", style=PageStyle(), view="crosspoint"
     )
     assert "caption: [The caption]" in files["main.typ"].decode()
     assert "images/a.png" in files
@@ -363,12 +375,12 @@ def test_pipe_table_is_a_typst_table(tmp_path):
 
 def test_wide_table_uses_its_image_twin_on_xteink_only(tmp_path, small_book):
     src = load_source(small_book)
-    xteink = to_typst(src, device="x4", settings=RenderSettings(), view="crosspoint")
+    xteink = to_typst(src, device="x4", style=PageStyle(), view="crosspoint")
     main = xteink["main.typ"].decode()
     assert "#table(" not in main
     assert 'image("images/p0002-table-1.png", width: 240pt, height: 90pt, fit: "contain")' in main
     assert "images/p0002-table-1.png" in xteink
-    general = to_typst(src, device="general", settings=RenderSettings(), view="crosspoint")
+    general = to_typst(src, device="general", style=PageStyle(), view="crosspoint")
     assert "#table(\n  columns: 6," in general["main.typ"].decode()
     assert "images/p0002-table-1.png" not in general
     assert compiles(xteink) == 2 and compiles(general) == 2
@@ -381,7 +393,7 @@ def test_spanned_table_uses_its_twin_even_on_general(tmp_path):
     table = '<table><tr><td colspan="2">wide</td></tr><tr><td>a</td><td>b</td></tr></table>'
     (folder / "b.md").write_text(f"<!-- table-image: t.png -->\n{table}\n")
     src = load_source(folder / "b.md")
-    main = to_typst(src, device="general", settings=RenderSettings(), view="crosspoint")["main.typ"]
+    main = to_typst(src, device="general", style=PageStyle(), view="crosspoint")["main.typ"]
     assert b"#table(" not in main and b'image("t.png"' in main
 
 
@@ -516,12 +528,12 @@ def test_a_table_too_large_for_the_preview_uses_its_twin(tmp_path):
     table = "<table>" + "<tr><td>x</td></tr>" * 20_001 + "</table>"
     (folder / "b.md").write_text(f"<!-- table-image: t.png -->\n{table}\n")
     src = load_source(folder / "b.md")
-    main = to_typst(src, device="general", settings=RenderSettings(), view="crosspoint")["main.typ"]
+    main = to_typst(src, device="general", style=PageStyle(), view="crosspoint")["main.typ"]
     assert b'image("t.png"' in main and b"too large" not in main
 
 
 def test_stock_view_boxes_the_table_twin_too(tmp_path, small_book):
-    main = to_typst(load_source(small_book), device="x4", settings=RenderSettings(), view="stock")[
+    main = to_typst(load_source(small_book), device="x4", style=PageStyle(), view="stock")[
         "main.typ"
     ].decode()
     assert main.count("Image not shown on stock firmware") == 2  # picture and table twin
@@ -529,9 +541,7 @@ def test_stock_view_boxes_the_table_twin_too(tmp_path, small_book):
 
 
 def test_whole_small_book_compiles_with_footer(tmp_path, small_book):
-    files = to_typst(
-        load_source(small_book), device="x4", settings=RenderSettings(), view="crosspoint"
-    )
+    files = to_typst(load_source(small_book), device="x4", style=PageStyle(), view="crosspoint")
     assert compiles(files) == 2
     marks = query(files, "<chap>", "value")
     assert [m["title"] for m in marks] == ["One", "Two"]
@@ -634,10 +644,9 @@ def test_wide_image_is_limited_to_the_body_width(tmp_path):
     assert compiles(files) == 1
 
 
-def test_image_sizing_follows_the_settings(tmp_path):
+def test_image_sizing_follows_the_style(tmp_path):
     Image.new("L", (1000, 1000), 120).save(tmp_path / "big.png")
-    settings = RenderSettings(margin=40)
-    main, files = convert(tmp_path, "![](big.png)\n", settings=settings)
+    main, files = convert(tmp_path, "![](big.png)\n", style=PageStyle(margin=40))
     assert "width: 400pt, height: 400pt" in main  # 480 - 2 * 40
     assert compiles(files) == 1
 
@@ -859,3 +868,123 @@ def test_a_picture_without_a_pixel_limit_is_kept(tmp_path, monkeypatch):
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", None)  # a user who turned the check off
     main, _ = convert(tmp_path, "![](big.png)\n")
     assert 'image("big.png"' in main
+
+
+# M3: the text of the book as it is written, and every string that goes into the source
+
+
+@pytest.mark.parametrize(
+    "text, escaped",
+    [
+        ("-5", "\\-5"),
+        ("a -5 and 3-4", "a \\-5 and 3\\-4"),
+        ("-\u00b2 -\u0663", "\\-\u00b2 \\-\u0663"),  # Typst reads these as numbers too
+        ("well-known -x", "well-known -x"),  # a hyphen before a letter is nothing special
+        ("a--b a---b a-?b", "a\\--b a\\-\\--b a\\-?b"),
+        ("wait...", "wait\\..."),
+        ("a.... b", "a\\.\\... b"),  # no run of dots is left with three
+        ("a..b . . . 5.5", "a..b . . . 5.5"),
+    ],
+)
+def test_the_shorthands_that_change_text_are_escaped(text, escaped):
+    assert _esc(text) == escaped
+
+
+def test_text_is_shown_as_written(tmp_path):
+    source = (
+        "Cost -5 and 3-4 and a-b, \"double\" and 'single' and it's, "
+        "wait... and a run.... and 5--6 and 7---8 and 9-?0.\n"
+    )
+    _, files = convert(tmp_path, source, style=PageStyle(hyphenate=False))
+    text = " ".join(page_text(files).split())  # a line may break between the words
+    for expected in (
+        "Cost -5 and 3-4 and a-b",
+        "\"double\" and 'single' and it's",
+        "wait... and a run....",
+        "5--6 and 7---8 and 9-?0",
+    ):
+        assert expected in text
+    changed = "\u2212\u201c\u201d\u2018\u2019\u2026\u2013\u2014\u00ad"  # minus, quotes, dashes
+    assert not set(changed) & set(text)
+
+
+def test_a_font_name_cannot_leave_its_string(tmp_path):
+    style = PageStyle(font='X") #panic("boom')  # a family name that an upload may hold
+    main, files = convert(tmp_path, "Text\n", style=style)
+    assert 'font: "X\\") #panic(\\"boom"' in main
+    assert compiles(files) == 1  # a #panic that got out would stop the compile
+
+
+def test_a_book_language_cannot_leave_its_string(tmp_path):
+    main, files = convert(tmp_path, '---\nlanguage: en") #panic("x\n---\nText\n')
+    assert 'lang: "en"' in main
+    assert compiles(files) == 1
+
+
+def test_a_language_of_the_style_is_used_as_it_is_and_auto_follows_the_book(tmp_path):
+    book = "---\nlanguage: id\n---\nText\n"
+    assert 'lang: "id"' in convert(tmp_path, book)[0]
+    assert 'lang: "id"' in convert(tmp_path, book, style=PageStyle(lang="auto"))[0]
+    assert 'lang: "de"' in convert(tmp_path, book, style=PageStyle(lang="de"))[0]
+    assert 'lang: "en"' in convert(tmp_path, "Text\n")[0]  # a book with no language
+
+
+def test_a_chapter_title_is_shown_in_the_bar_and_cannot_leave_its_string(tmp_path):
+    title = 'Say "hi" and #panic("x") @c \\'
+    _, files = convert(tmp_path, f"# {title}\n\ntext\n")
+    assert compiles(files) == 1
+    assert f"{title}  \u00b7  1 / 1" in page_text(files)
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        PageStyle(),
+        PageStyle(bar_position="off"),
+        PageStyle(
+            bar_position="top",
+            bar_line=True,
+            bar_chapter_marks=True,
+            bar_book_percent=True,
+            bar_chapter_page=True,
+            bar_chapter_percent=True,
+        ),
+    ],
+)
+def test_the_preamble_has_no_blank_line(tmp_path, style):
+    # `render_chapter` keeps what comes before the first blank line as the preamble of an excerpt
+    main, _ = convert(tmp_path, "# One\n\ntext\n", style=style)
+    head = main.partition("\n\n")[0]
+    assert "#set page(" in head and "#show image:" in head and "#show figure.caption" in head
+
+
+# An SVG that Typst cannot read must not stop the render, whatever its XML looks like
+
+UNREADABLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"/>'
+
+
+def test_an_svg_that_typst_cannot_read_is_left_out_without_a_profile(tmp_path):
+    (tmp_path / "bad.svg").write_text(UNREADABLE_SVG)
+    (tmp_path / "good.svg").write_text(SVG)
+    main, files = convert(tmp_path, "![a](bad.svg)\n\n![b](good.svg)\n\nafter\n")
+    assert 'image("bad.svg"' not in main and "bad.svg" not in files
+    assert 'image("good.svg"' in main and "after" in main
+    assert compiles(files) >= 1  # the page of the whole book still compiles
+
+
+def test_each_svg_is_tried_once_by_its_content(tmp_path, monkeypatch):
+    tried = []
+    real = typst.compile
+
+    def spy(*args, **kwargs):
+        tried.append(1)
+        return real(*args, **kwargs)
+
+    svg = f"{UNREADABLE_SVG}<!-- {tmp_path.name} -->"  # content that no other test has
+    (tmp_path / "one.svg").write_text(svg)
+    (tmp_path / "two.svg").write_text(svg)  # the same bytes under another name
+    monkeypatch.setattr(typst, "compile", spy)
+    convert(tmp_path, "![](one.svg)\n\n![](two.svg)\n")
+    assert len(tried) == 1
+    convert(tmp_path, "![](one.svg)\n")
+    assert len(tried) == 1  # the verdict is kept
