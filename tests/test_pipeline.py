@@ -449,3 +449,22 @@ def test_a_contents_page_is_read_again_from_the_text_layer(tmp_path, fixtures_di
     assert "Alpha steps\n\nBeta steps\n\nPreface\n\nDelta notes" in markdown
     assert "<table" not in markdown and " 3\n" not in markdown
     assert [f.page for f in result.findings if f.kind == "contents_rebuilt"] == [1]
+
+
+def test_text_read_from_a_picture_on_a_digital_page_is_kept_as_the_picture(
+    tmp_path, fixtures_dir, fake_blocks
+):
+    fake_blocks.blocks = [
+        Block(
+            "paragraph", "Ordinary text that the text layer holds.", page=1, bbox=(72, 60, 300, 72)
+        ),
+        Block("heading", "Pictured words", page=1, bbox=(108, 158, 250, 172)),
+        Block("paragraph", "inside a figure", page=1, bbox=(108, 190, 290, 240)),
+    ]
+    result = convert(fixtures_dir["picture_text"], tmp_path)
+    markdown = (result.book_dir / "book.md").read_text(encoding="utf-8")
+    assert "Ordinary text" in markdown and "![image](images/p0001-picture-1." in markdown
+    assert "Pictured words" not in markdown and "inside a figure" not in markdown
+    assert [f.page for f in result.findings if f.kind == "picture_text_as_image"] == [1]
+    forced = convert(fixtures_dir["picture_text"], tmp_path, Options(ocr="force"), out="forced")
+    assert "Pictured words" in (forced.book_dir / "book.md").read_text(encoding="utf-8")

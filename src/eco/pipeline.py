@@ -25,7 +25,13 @@ from eco.pdf.contents import rebuild_contents
 from eco.pdf.docling_adapter import extract_blocks
 from eco.pdf.pages import PageInfo, PdfOpenError, bookmarks, inspect_pdf, pdf_metadata
 from eco.pdf.reading_order import fix_reading_order
-from eco.pdf.regions import _save_by_content, materialize_regions, page_slices, render_cover
+from eco.pdf.regions import (
+    _save_by_content,
+    keep_picture_text_as_images,
+    materialize_regions,
+    page_slices,
+    render_cover,
+)
 from eco.pdf.structure import assign_heading_levels
 from eco.pdf.text import (
     clean_heading_artifacts,
@@ -161,6 +167,7 @@ def _fix(
     pages: dict[int, PageInfo],
     images_dir: Path,
     language: str,
+    ocr: str,
     on_event: Callable[[Event], None],
     findings: list[Finding],
 ) -> list[Block]:
@@ -168,6 +175,9 @@ def _fix(
     blocks, found = fix_reading_order(blocks, pages)
     _add(findings, found, on_event)
     blocks, found = rebuild_contents(pdf, blocks, pages)
+    _add(findings, found, on_event)
+    # before the code pass and the region pass, which turns the pictures it adds into images
+    blocks, found = keep_picture_text_as_images(pdf, blocks, pages, ocr)
     _add(findings, found, on_event)
     blocks, found = fix_code_blocks(pdf, blocks, pages, images_dir)
     _add(findings, found, on_event)
@@ -240,7 +250,8 @@ def extract_pdf(
         text = " ".join(b.text for b in blocks)[:_LANGUAGE_SAMPLE]
         language = detect_language(text)
         pages = {info.number: info for info in infos}
-        blocks = _fix(pdf, blocks, pages, folder / "images", language, on_event, findings)
+        images = folder / "images"
+        blocks = _fix(pdf, blocks, pages, images, language, options.ocr, on_event, findings)
         write_book(_pdf_book(pdf, digest, language, blocks, folder), folder, findings)
     return folder
 

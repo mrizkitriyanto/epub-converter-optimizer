@@ -185,6 +185,25 @@ def contents_pdf(directory: Path) -> Path:
     return _write(directory, "contents.pdf", _compile(source))
 
 
+def picture_text_pdf(directory: Path) -> Path:
+    """A page with a text layer and two raster pictures of text, each 200 x 100 pt: the first at
+    (100, 150), with a caption under it in the text layer; the second at (100, 320), with a label
+    of the text layer printed over it."""
+    words = "#set page(width: 200pt, height: 100pt, margin: 8pt)\n" + SERIF
+    words += "Pictured words\n\ninside a figure"
+    _png(words, 150).save(directory / "pictured.png")
+    place = "#place(top + left, dx: {}pt, dy: {}pt)[{}]\n"
+    source = PAGE + SERIF + place.format(72, 60, "Ordinary text that the text layer holds.")
+    source += place.format(100, 150, '#image("pictured.png", width: 200pt)')
+    source += place.format(100, 260, "Figure 1 - a caption in the text layer")
+    source += place.format(100, 320, '#image("pictured.png", width: 200pt)')
+    source += place.format(110, 330, "Overlay label")
+    typ = directory / "picture_text.typ"
+    typ.write_text(source, encoding="utf-8")
+    data = typst.compile(str(typ), root=str(directory), ignore_system_fonts=True)
+    return _write(directory, "picture_text.pdf", data)
+
+
 def build_all(directory: Path) -> dict:
     return {
         "two_column": two_column_pdf(directory),
@@ -197,6 +216,7 @@ def build_all(directory: Path) -> dict:
         "photo": photo_pdf(directory),
         "shapes": shapes_pdf(directory),
         "contents": contents_pdf(directory),
+        "picture_text": picture_text_pdf(directory),
     }
 
 

@@ -1,22 +1,27 @@
-"""Regions that cannot be reflowed become images: formulas, pictures, table twins and pages that
-are mostly pictures. Also the cover and the screen-sized slices of `--mode pages`."""
+"""Regions that cannot be reflowed become images: formulas, pictures, table twins, pages that
+are mostly pictures, and text read by OCR from a picture on a page that has a text layer. Also the
+cover and the screen-sized slices of `--mode pages`."""
 
+import re
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
+import pypdfium2.raw as pdfium_raw
 from PIL import Image, ImageOps
 
 from eco.book import Block
 from eco.epub.images import _is_line_art
 from eco.events import Finding
-from eco.pdf.pages import PageInfo, crop, render_page
+from eco.pdf.pages import Bbox, PageInfo, _open, crop, render_page, to_pdfium_rect
 
 _PAGE_IMAGE_AREA = 0.8
 _PAGE_IMAGE_MAX_CHARS = 200
 _JPEG_QUALITY = 92
 _COVER_QUALITY = 90
 _OVERLAP = 0.05
+_TEXT_KINDS = ("paragraph", "heading", "list_item", "table", "footnote", "code")
+_SLACK = 2.0  # pt: a block whose centre is this close to a picture is in it
 
 
 def _save_png(im: Image.Image, images_dir: Path, stem: str) -> str:
@@ -44,6 +49,107 @@ def _picture_area(blocks: list[Block], info: PageInfo) -> float:
             height = min(y1, info.height) - max(y0, 0.0)
             area += max(0.0, width) * max(0.0, height)
     return area / (info.width * info.height)
+
+
+def _picture_boxes(document, info: PageInfo) -> list[Bbox]:
+    """The raster pictures of a page, as CropBox-relative top-left boxes."""
+    boxes = []
+    for obj in document[info.number - 1].get_objects(filter=[pdfium_raw.FPDF_PAGEOBJ_IMAGE]):
+        left, bottom, right, top = obj.get_bounds()
+        top_edge, bottom_edge = info.crop_y + info.height - top, info.crop_y + info.height - bottom
+        boxes.append((left - info.crop_x, top_edge, right - info.crop_x, bottom_edge))
+    return boxes
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", re.sub(r"<[^>]*>", " ", text).lower())
+
+
+def keep_picture_text_as_images(
+    pdf: Path, blocks: list[Block], pages: dict[int, PageInfo], ocr: str
+) -> tuple[list[Block], list[Finding]]:
+    """On a page that has a text layer, text that Docling read by OCR from a picture becomes that
+    picture (agent decision Q-22): OCR text carries reading errors and an invented structure
+    (headings in the book's outline, a guessed table), while the picture is exact.
+
+    A block is such text when its centre lies in a raster picture of the page and most of its
+    words are missing from the text layer inside its box. The blocks of one picture become one
+    `picture` block with the picture's box, in the place of the first, which the region pass then
+    crops; none is added when Docling already gave that picture a block. Scanned pages keep their
+    OCR text, and so does `--ocr force`, which asks for it."""
+    if ocr != "auto":
+        return blocks, []
+    owner: dict[int, tuple[int, int]] = {}  # block index -> (page, picture index)
+    boxes: dict[tuple[int, int], Bbox] = {}
+    with _open(pdf) as document:
+        for number in sorted({b.page for b in blocks}):
+            info = pages.get(number)
+            if info is None or info.is_scanned:
+                continue
+            pictures = _picture_boxes(document, info)
+            if not pictures:
+                continue
+            textpage = document[number - 1].get_textpage()
+            for index, block in enumerate(blocks):
+                if block.page != number or block.bbox is None or block.kind not in _TEXT_KINDS:
+                    continue
+                x, y = (block.bbox[0] + block.bbox[2]) / 2, (block.bbox[1] + block.bbox[3]) / 2
+                inside = [
+                    k
+                    for k, (x0, y0, x1, y1) in enumerate(pictures)
+                    if x0 - _SLACK <= x <= x1 + _SLACK and y0 - _SLACK <= y <= y1 + _SLACK
+                ]
+                words = _words(block.text or block.html)
+                if not inside or not words:
+                    continue
+                layer = set(_words(textpage.get_text_bounded(*to_pdfium_rect(info, block.bbox))))
+                if 2 * sum(word in layer for word in words) < len(words):
+                    owner[index] = (number, inside[0])
+                    boxes[(number, inside[0])] = pictures[inside[0]]
+    if not owner:
+        return blocks, []
+
+    def clip(page: int, box: Bbox) -> Bbox:
+        info = pages[page]
+        return (
+            max(0.0, box[0]),
+            max(0.0, box[1]),
+            min(info.width, box[2]),
+            min(info.height, box[3]),
+        )
+
+    def drawn(page: int, box: Bbox) -> bool:  # Docling already has a picture block for it
+        return any(
+            b.kind == "picture"
+            and b.page == page
+            and b.bbox is not None
+            and box[0] - _SLACK <= (b.bbox[0] + b.bbox[2]) / 2 <= box[2] + _SLACK
+            and box[1] - _SLACK <= (b.bbox[1] + b.bbox[3]) / 2 <= box[3] + _SLACK
+            for b in blocks
+        )
+
+    out: list[Block] = []
+    done: set[tuple[int, int]] = set()
+    for index, block in enumerate(blocks):
+        key = owner.get(index)
+        if key is None:
+            out.append(block)
+        elif key not in done:
+            done.add(key)
+            if not drawn(key[0], boxes[key]):
+                out.append(Block("picture", page=key[0], bbox=clip(key[0], boxes[key])))
+    per_page = Counter(page for page, _ in done)
+    findings = [
+        Finding(
+            page,
+            "picture_text_as_image",
+            "info",
+            f"Text read by OCR from {n} picture{'s' if n > 1 else ''} kept as "
+            f"{'those pictures' if n > 1 else 'the picture'}.",
+        )
+        for page, n in sorted(per_page.items())
+    ]
+    return out, findings
 
 
 def materialize_regions(

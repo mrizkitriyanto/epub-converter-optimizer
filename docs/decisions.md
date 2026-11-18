@@ -534,3 +534,20 @@ error for either.
 - Docling labelled Threat Hunting's contents pages 10-13 `document_index`, but pages 14 and 15
   `table`, with the chapter titles between them as headings; those two pages are not covered.
 - If it turns out wrong: map `document_index` to a table again.
+
+## 2026-11-19: Text read by OCR from a picture on a digital page is kept as the picture (Q-22)
+
+- On a page that has a text layer, Docling also reads pictures by OCR, and their text came out as
+  body text: Threat Hunting's page 192 (a picture of a sample document) gave headings that joined
+  the book's outline, and pictures of tables on pages 47, 52-54 and 91 gave HTML tables built from
+  OCR. The fix pass `keep_picture_text_as_images` (`src/eco/pdf/regions.py`, after the contents
+  pass) keeps such text as the picture instead: a block whose centre lies in a raster picture of
+  the page and most of whose words are missing from the text layer inside its box. The blocks of
+  one picture become one picture block with the picture's box, which the region pass crops; a
+  finding names the page.
+- Both conditions are needed. A picture with a text layer over it (an OCR'd PDF, a label printed
+  on a photo) keeps its text, and a page whose broken text layer Docling replaced with OCR has no
+  picture under its text, so it keeps its text too.
+- Scanned pages and `--ocr force` keep their OCR text, and Docling's OCR mode stays its default
+  (spec section 8.3).
+- If it turns out wrong: drop the pass from the fix stage.

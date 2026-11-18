@@ -5,8 +5,13 @@ from PIL import Image, ImageChops
 
 from eco.book import Block
 from eco.events import Finding
-from eco.pdf.pages import inspect_pdf
-from eco.pdf.regions import materialize_regions, page_slices, render_cover
+from eco.pdf.pages import PageInfo, inspect_pdf
+from eco.pdf.regions import (
+    keep_picture_text_as_images,
+    materialize_regions,
+    page_slices,
+    render_cover,
+)
 
 SCREEN = (480, 800)
 
@@ -206,3 +211,57 @@ def test_page_slices_do_not_scale_up(tmp_path):
 
 def test_blank_page_has_no_slices(fixtures_dir):
     assert page_slices(fixtures_dir["blank"], 2, SCREEN) == []
+
+
+def picture_text_blocks():
+    return [
+        Block(
+            "paragraph", "Ordinary text that the text layer holds.", page=1, bbox=(72, 60, 300, 72)
+        ),
+        Block("heading", "Pictured words", page=1, bbox=(108, 158, 250, 172)),  # OCR, picture 1
+        Block(
+            "table",
+            html="<table><tr><td>inside a figure</td></tr></table>",
+            page=1,
+            bbox=(108, 190, 290, 240),
+        ),  # OCR, picture 1
+        Block(
+            "paragraph", "Figure 1 - a caption in the text layer", page=1, bbox=(100, 260, 330, 272)
+        ),
+        Block(
+            "paragraph", "Overlay label", page=1, bbox=(110, 330, 190, 342)
+        ),  # text layer, picture 2
+        Block("paragraph", "Words nowhere at all", page=1, bbox=(72, 500, 300, 512)),  # no picture
+    ]
+
+
+def test_text_read_from_a_picture_on_a_text_layer_page_becomes_the_picture(fixtures_dir):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    blocks = picture_text_blocks()
+    out, findings = keep_picture_text_as_images(pdf, blocks, pages, "auto")
+    assert [b.kind for b in out] == ["paragraph", "picture", "paragraph", "paragraph", "paragraph"]
+    picture = out[1]
+    assert picture.page == 1 and picture.text == ""
+    assert [round(v) for v in picture.bbox] == [100, 150, 300, 250]  # the whole picture
+    assert out[2:] == blocks[3:]
+    assert [(f.page, f.kind, f.level) for f in findings] == [(1, "picture_text_as_image", "info")]
+
+
+def test_ocr_force_and_ocr_off_keep_the_text(fixtures_dir):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    for ocr in ("force", "off"):
+        assert keep_picture_text_as_images(pdf, picture_text_blocks(), pages, ocr) == (
+            picture_text_blocks(),
+            [],
+        )
+
+
+def test_a_scanned_page_keeps_its_ocr_text(fixtures_dir):
+    scan = PageInfo(1, 612.0, 792.0, 0.0, 0.0, 0, 1.0)
+    blocks = picture_text_blocks()
+    assert keep_picture_text_as_images(fixtures_dir["picture_text"], blocks, {1: scan}, "auto") == (
+        blocks,
+        [],
+    )
