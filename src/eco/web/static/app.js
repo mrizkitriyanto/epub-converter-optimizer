@@ -1484,6 +1484,7 @@
         setText(button, t('delete_job'));
         setText($('delete-error'), error.message);
         $('delete-error').hidden = false;
+        button.focus(); // it lost the focus while it was disabled
         return;
       }
     }

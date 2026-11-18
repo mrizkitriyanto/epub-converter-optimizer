@@ -919,6 +919,8 @@ def test_a_failed_delete_shows_the_servers_text_and_a_job_already_gone_counts_as
     assert "setText($('delete-error'), error.message);" in body
     assert "$('delete-error').hidden = false;" in body
     assert "setText(button, t('deleting'));" in body and "setText(button, t('delete_job'));" in body
+    # a disabled button loses the keyboard focus; after a failure it gets it back
+    assert body.index("button.disabled = false;") < body.index("button.focus();")
     reset = function_body(js, "resetReviewDom")  # one button for every job
     for part in ("$('delete-job').disabled = false", "setText($('delete-job'), t('delete_job'))"):
         assert part in reset
