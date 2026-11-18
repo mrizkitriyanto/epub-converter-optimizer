@@ -11,14 +11,15 @@ _LIGATURES = str.maketrans({"ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi",
 _SPACE_RUN = re.compile(" {2,}")
 # A hyphen, en dash or em dash after a word (OCR reads a hyphen as either dash), then a line
 # break, then a word: the word before it whole, as its start, the fragment, the dash and the
-# fragment after. In a table cell, a hyphen or en dash and a space instead of the line break, and
-# letters only, so "-rw-rw-rw- 1" and "first- and" inside a line stay as they are in text, where
-# they cannot be told apart from a split.
+# fragment after. In a table cell, a hyphen or en dash and a space instead of the line break,
+# between letters or digits; in text "-rw-rw-rw- 1" and "first- and" inside a line stay as they
+# are, since there they cannot be told apart from a split.
 _BREAK = re.compile(r"(?<!\S)(\S*?)(\w+)([-–—])\n[ \t]*(\w+)")
-_CELL_BREAK = re.compile(r"(?<!\S)(\S*?)([^\W\d_]+)([-–]) +([^\W\d_]+)")
+_CELL_BREAK = re.compile(r"(?<!\S)(\S*?)([^\W_]+)([-–]) +([^\W_]+)")
 _BREAK_FRAGMENT = re.compile(r"\w+(?=[-–—]\n)|(?<=[-–—]\n)[ \t]*\w+")
-_CELL_FRAGMENT = re.compile(r"[^\W\d_]+(?=[-–] +[^\W\d_])|(?<=[^\W\d_][-–] )[^\W\d_]+")
+_CELL_FRAGMENT = re.compile(r"[^\W_]+(?=[-–] +[^\W_])|(?<=[^\W_][-–] )[^\W_]+")
 _TAG = re.compile(r"(<[^>]*>)")
+_NOT_PROSE = {"formula", "image", "picture"}  # their text is a formula, code or an alt text
 _SENTENCE_END = (".", "!", "?", ":", ";", '"', "”", ")")
 
 _SHORT_WORDS = {
@@ -81,9 +82,10 @@ def dehyphenate(blocks: list[Block]) -> tuple[list[Block], int]:
     space instead, as Docling's table model joins the words of a cell with spaces. The split joins
     when the joined word appears elsewhere in the book, or when a fragment appears nowhere else as
     a word of its own; otherwise the hyphen stays, with no space. A digit on either side, or a word
-    that holds "/" or ".", always keeps its hyphen, and with a capital after the break only the
-    joined word decides. A word that already holds a hyphen is decided on its last part. A hyphen
-    inside a line is left alone, and so is code.
+    that holds "/" or ".", always keeps its hyphen. With a capital after the break, or with an em
+    dash (a real one is common), only the joined word decides. A word that already holds a hyphen
+    is decided on its last part. A hyphen inside a line is left alone, and so is the text of code,
+    a formula or an image, which is no prose; a caption is.
     """
     vocabulary = _vocabulary(blocks)
     joins = 0
@@ -95,7 +97,9 @@ def dehyphenate(blocks: list[Block]) -> tuple[list[Block], int]:
         if first[-1].isdigit() or second[0].isdigit() or "/" in prefix or "." in prefix:
             return kept
         if not vocabulary[(first + second).lower()] and (
-            second[0].isupper() or (vocabulary[first.lower()] and vocabulary[second.lower()])
+            second[0].isupper()
+            or dash == "—"
+            or (vocabulary[first.lower()] and vocabulary[second.lower()])
         ):
             return kept
         joins += 1
@@ -113,7 +117,12 @@ def dehyphenate(blocks: list[Block]) -> tuple[list[Block], int]:
     out = [
         b
         if b.kind == "code"
-        else replace(b, text=text(b.text), caption=text(b.caption), html=html(b.html))
+        else replace(
+            b,
+            text=b.text if b.kind in _NOT_PROSE else text(b.text),
+            caption=text(b.caption),
+            html=html(b.html),
+        )
         for b in blocks
     ]
     return out, joins

@@ -87,6 +87,8 @@ def dehyphenated(text, context=""):
         # OCR can read a hyphen at a line end as an em dash; a real em dash keeps its place
         ("seperti se—\nkarang", "sekarang", "seperti sekarang"),
         ("to spend—\nthis is", "spend this", "to spend—this is"),
+        # an em dash joins only on a joined word the book has: a word seen once is no fragment
+        ("the result—\nunprecedented gain", "", "the result—unprecedented gain"),
         # a line break that the reading order merge left with a space after it
         ("para guru-\n guru datang", "guru itu", "para guru-guru datang"),
         # a word split over three lines
@@ -102,7 +104,7 @@ def test_a_hyphen_inside_a_line_is_left_alone():
     assert dehyphenated(text, "guruguru") == text
 
 
-def test_every_block_kind_but_code_is_dehyphenated_with_the_vocabulary_of_the_whole_book():
+def test_the_prose_of_every_block_is_dehyphenated_with_the_vocabulary_of_the_whole_book():
     table = (
         "<table><tr><td>a hyphen- ated cell</td><td>password- protected</td>"
         "<td>see 512- byte</td></tr></table>"
@@ -126,11 +128,22 @@ def test_every_block_kind_but_code_is_dehyphenated_with_the_vocabulary_of_the_wh
     assert out[3].caption == "a hyphenated caption"
     assert out[4].html == (
         "<table><tr><td>a hyphenated cell</td><td>password-protected</td>"
-        "<td>see 512- byte</td></tr></table>"
+        "<td>see 512-byte</td></tr></table>"  # a digit keeps the hyphen
     )
     assert out[5] == blocks[5]
     assert out[6].text == "something about a password, protected"
     assert joins == 6
+
+
+def test_the_text_of_a_formula_or_an_image_is_no_prose_and_stays_as_it_is():
+    blocks = [
+        Block("formula", "y = b-\nc"),
+        Block("image", "x = a-\nb", image="images/c.png", caption="a hyphen-\nated caption"),
+    ]
+    out, joins = dehyphenate(blocks)
+    assert [b.text for b in out] == ["y = b-\nc", "x = a-\nb"]
+    assert out[1].caption == "a hyphenated caption"
+    assert joins == 1
 
 
 def test_dehyphenate_does_not_mutate_its_input():

@@ -408,8 +408,9 @@ error for either.
 
 ## 2026-11-18: Every line-end hyphen follows the spec's rule (R-72)
 
-- The fix stage's `dehyphenate` decides every hyphen or en dash that ended a line, in every block
-  kind but code, against the words of the whole book (spec section 8.4.6). The split joins when the
+- The fix stage's `dehyphenate` decides every hyphen or en dash that ended a line, in the prose
+  of every block (not the text of code, a formula or an image, which is no prose; a caption is),
+  against the words of the whole book (spec section 8.4.6). The split joins when the
   joined word appears elsewhere, or when a fragment appears nowhere else as a word of its own (the
   fragments at line breaks do not count). Otherwise the hyphen stays, with no space. A digit on
   either side, or a word that holds "/" or ".", keeps its hyphen; with a capital after the break,
@@ -422,7 +423,8 @@ error for either.
   at least 20 reduplications in Bicara (`guruguru`) and dozens of compounds in the digital samples
   (`selfencrypting`, `antidebugging`).
 - A table cell has no line breaks: Docling's table model joins its words with spaces. There the
-  rule applies to a hyphen between letters with a space after it (`password- protected`). In other
+  rule applies to a hyphen between letters or digits with a space after it (`password- protected`,
+  and `512- byte`, which keeps its hyphen by the digit rule: `512-byte`). In other
   text a hyphen inside a line is left alone (`-rw-rw-rw- 1`, `first- and second-order`).
 - Measured on the text layers of the digital samples: Forensic 778 line-end hyphens, 733 joined
   and 45 kept; Malware 2079, 1933 and 146; Threat Hunting 9, all kept (URLs, compounds, and em
@@ -431,11 +433,13 @@ error for either.
   `PCM-CIA`, `forward-ing`, `pre-tend`, `hall-mark` and the like). If it turns out wrong: change the
   vocabulary test in `dehyphenate`.
 - `EXTRACTOR_VERSION` is 3.
-- Added the same day: an em dash at a line end goes through the same rule. OCR read a hyphen at
-  a line end of Bicara as an em dash (`se—` and `karang`), and Docling joined it with a space; now
-  it joins to `sekarang`, and a real em dash stays with no space (`spend—this`). Table cells keep
-  the hyphen and en dash only, since a spaced em dash there is punctuation. `EXTRACTOR_VERSION` is
-  4.
+- Added the same day: an em dash at a line end goes through the rule as well. OCR read a hyphen
+  at a line end of Bicara as an em dash (`se—` and `karang`), and Docling joined it with a space.
+  An em dash joins only when the joined word appears elsewhere in the book, as with a capital after
+  the break (R-79): `sekarang` is common, so `se—` and `karang` join, and a real em dash stays with
+  no space (`spend—this`, `result—unprecedented`) even when a neighbour is a word the book has only
+  once. The 16 line-end em dashes of the three digital samples are all kept. Table cells keep the
+  hyphen and en dash only, since a spaced em dash there is punctuation. `EXTRACTOR_VERSION` is 5.
 
 ## 2026-11-18: OCR: no line classifier, and each crop read at its own size (R-71)
 
