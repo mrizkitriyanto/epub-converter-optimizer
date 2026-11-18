@@ -84,6 +84,9 @@ def dehyphenated(text, context=""):
         ("run Hex-\nRays now", "", "run Hex-Rays now"),
         # the fragments at the split are no words of their own
         ("the infor-\nmation", "", "the information"),
+        # OCR can read a hyphen at a line end as an em dash; a real em dash keeps its place
+        ("seperti se—\nkarang", "sekarang", "seperti sekarang"),
+        ("to spend—\nthis is", "spend this", "to spend—this is"),
         # a line break that the reading order merge left with a space after it
         ("para guru-\n guru datang", "guru itu", "para guru-guru datang"),
         # a word split over three lines
@@ -179,3 +182,8 @@ def test_join_split_paragraphs_needs_lowercase_start_and_two_paragraphs():
 def test_join_split_paragraphs_keeps_the_line_break_after_a_hyphen_for_dehyphenate():
     blocks = [Block("paragraph", "para guru-", page=1), Block("paragraph", "guru datang.", page=2)]
     assert [b.text for b in join_split_paragraphs(blocks)] == ["para guru-\nguru datang."]
+
+
+def test_join_split_paragraphs_keeps_the_line_break_after_an_em_dash_too():
+    blocks = [Block("paragraph", "seperti se\u2014", page=1), Block("paragraph", "karang.", page=2)]
+    assert [b.text for b in join_split_paragraphs(blocks)] == ["seperti se\u2014\nkarang."]

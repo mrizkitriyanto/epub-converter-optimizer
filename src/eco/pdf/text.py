@@ -9,13 +9,14 @@ from eco.book import Block
 
 _LIGATURES = str.maketrans({"ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl"})
 _SPACE_RUN = re.compile(" {2,}")
-# A hyphen or en dash after a word, then a line break, then a word: the word before it whole, as
-# its start, the fragment, the dash and the fragment after. In a table cell, a space instead of
-# the line break, and letters only, so "-rw-rw-rw- 1" and "first- and" inside a line stay as they
-# are in text, where they cannot be told apart from a split.
-_BREAK = re.compile(r"(?<!\S)(\S*?)(\w+)([-–])\n[ \t]*(\w+)")
+# A hyphen, en dash or em dash after a word (OCR reads a hyphen as either dash), then a line
+# break, then a word: the word before it whole, as its start, the fragment, the dash and the
+# fragment after. In a table cell, a hyphen or en dash and a space instead of the line break, and
+# letters only, so "-rw-rw-rw- 1" and "first- and" inside a line stay as they are in text, where
+# they cannot be told apart from a split.
+_BREAK = re.compile(r"(?<!\S)(\S*?)(\w+)([-–—])\n[ \t]*(\w+)")
 _CELL_BREAK = re.compile(r"(?<!\S)(\S*?)([^\W\d_]+)([-–]) +([^\W\d_]+)")
-_BREAK_FRAGMENT = re.compile(r"\w+(?=[-–]\n)|(?<=[-–]\n)[ \t]*\w+")
+_BREAK_FRAGMENT = re.compile(r"\w+(?=[-–—]\n)|(?<=[-–—]\n)[ \t]*\w+")
 _CELL_FRAGMENT = re.compile(r"[^\W\d_]+(?=[-–] +[^\W\d_])|(?<=[^\W\d_][-–] )[^\W\d_]+")
 _TAG = re.compile(r"(<[^>]*>)")
 _SENTENCE_END = (".", "!", "?", ":", ";", '"', "”", ")")
@@ -158,7 +159,7 @@ def join_split_paragraphs(blocks: list[Block]) -> list[Block]:
             and block.text[:1].islower()
         ):
             # a hyphen at the page end keeps its line break, the form dehyphenate decides
-            gap = "\n" if re.search(r"\w[-–]$", prev.text) else " "
+            gap = "\n" if re.search(r"\w[-–—]$", prev.text) else " "
             out[-1] = replace(prev, text=prev.text + gap + block.text)
         else:
             out.append(block)

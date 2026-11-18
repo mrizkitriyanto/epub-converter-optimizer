@@ -434,6 +434,7 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
         (["the result-unprece-", "dented gain"], ["the result-unprece-\ndented gain"]),
         (["para guru-", "guru datang"], ["para guru-\nguru datang"]),
         (["hujan seper–", "tinya saya"], ["hujan seper–\ntinya saya"]),
+        (["seperti se—", "karang"], ["seperti se—\nkarang"]),
         (["a hyphen-", "ated word"], ["a hyphen-\nated word"]),
         (["the end-of-", "season sale"], ["the end-of-\nseason sale"]),
         (["see example.org/a-", "b today"], ["see example.org/a-\nb today"]),

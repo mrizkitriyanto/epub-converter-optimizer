@@ -35,7 +35,7 @@ _KIND = {
 }
 
 
-_LINE_END_HYPHEN = re.compile(r"\w[-–]$")
+_LINE_END_HYPHEN = re.compile(r"\w[-–—]$")
 # RapidOCR's line classifier turned some upright lines of a scanned book upside down, and Docling's
 # check of the whole region reads a badly read one again at 90, 180 and 270 degrees instead. Its
 # detector scales a crop up until the short side is 736 px, which split a one-line heading into
@@ -44,8 +44,8 @@ _OCR = {"use_cls": False, "detect_orientation": True, "rapidocr_params": {"Det.l
 
 
 def _keep_line_end_hyphens(lines: list[str]) -> list[str]:
-    """Join each line that ends in a hyphen or en dash after a word to the next line, keeping
-    the hyphen and the line break.
+    """Join each line that ends in a hyphen, en dash or em dash after a word to the next line,
+    keeping the dash and the line break.
 
     Docling joins the lines of a block and drops every hyphen that ends a line between two words,
     so `guru-` and `guru` became `guruguru` and `end-of-` and `season` became `end-ofseason`.

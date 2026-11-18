@@ -431,6 +431,11 @@ error for either.
   `PCM-CIA`, `forward-ing`, `pre-tend`, `hall-mark` and the like). If it turns out wrong: change the
   vocabulary test in `dehyphenate`.
 - `EXTRACTOR_VERSION` is 3.
+- Added the same day: an em dash at a line end goes through the same rule. OCR read a hyphen at
+  a line end of Bicara as an em dash (`se—` and `karang`), and Docling joined it with a space; now
+  it joins to `sekarang`, and a real em dash stays with no space (`spend—this`). Table cells keep
+  the hyphen and en dash only, since a spaced em dash there is punctuation. `EXTRACTOR_VERSION` is
+  4.
 
 ## 2026-11-18: OCR: no line classifier, and each crop read at its own size (R-71)
 

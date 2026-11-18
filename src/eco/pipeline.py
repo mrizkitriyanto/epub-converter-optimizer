@@ -34,7 +34,7 @@ from eco.pdf.text import (
     normalize,
 )
 
-EXTRACTOR_VERSION = 3  # bump it when extraction changes: cached book folders then stop matching
+EXTRACTOR_VERSION = 4  # bump it when extraction changes: cached book folders then stop matching
 CHUNK_PAGES = 50
 _LANGUAGE_SAMPLE = 5000
 
