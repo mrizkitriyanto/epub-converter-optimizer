@@ -57,6 +57,7 @@ def test_match_reaches_one_page_either_side_but_not_two(page, matched):
         ("Chapter 3: Quiet Harbors", "3 Quiet Harbors"),
         ("Bab 2 Kebun Pagi", "2 Kebun Pagi"),
         ("3 Quiet Harbors", "CHAPTER 3. QUIET HARBORS"),
+        ("Chapter 3", "3"),
     ],
 )
 def test_a_chapter_label_in_one_title_and_a_bare_number_in_the_other_still_match(mark, text):

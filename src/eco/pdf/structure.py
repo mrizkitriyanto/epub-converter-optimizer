@@ -56,7 +56,7 @@ def assign_heading_levels(
 def _key(title: str) -> str:
     """A title as it is compared. A book's bookmark often says "Chapter 3: Title" where the page
     says "3 Title" (or the other way round), so a leading chapter label becomes its number."""
-    return _CHAPTER_LABEL.sub(r"\1 ", title.lower().strip())
+    return _CHAPTER_LABEL.sub(r"\1 ", title.lower().strip()).strip()
 
 
 def _best_heading(blocks: list[Block], taken: dict[int, int], mark: Bookmark) -> int | None:
