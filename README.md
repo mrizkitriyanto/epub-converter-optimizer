@@ -69,13 +69,13 @@ Options of `eco web`:
 - `--host ADDRESS`: address to listen on. The default is `127.0.0.1`, this computer only. See "Network access" below.
 - `--port N`: port to listen on (default 8000).
 - `--token TOKEN`: access token, at least 16 characters, each one of A-Z, a-z, 0-9, `-` or `_`. `ECO_TOKEN` does the same.
-- `--max-upload-mb MB`: largest upload in MiB, for all files of one upload together (default 500).
+- `--max-upload-mb MB`: largest upload in MiB, for all files of one upload together, a whole number above 0 (default 500).
 - `--no-browser`: do not open a browser. The address is printed as `Open: ...`.
 - `--data DIR`: data folder for the models and the jobs (default: `ECO_DATA` or the app folder).
 
 If the AI models are missing, the first page asks for them (about 417 MB: layout 172 MB, tables 213 MB, OCR 32 MB). It downloads them only after you click "Download models". "Continue without models" skips this: Markdown, EPUB and PDF files with Layout set to "Page images" convert without models.
 
-Converted files stay in the data folder as jobs, so the page can list them as recent conversions. Jobs are deleted after 7 days (checked every hour while the server runs). One `eco web` can run per data folder; a second one stops with an error.
+Converted files stay in the data folder as jobs, so the page can list them as recent conversions. Jobs are deleted after 7 days (checked every hour while the server runs). To delete one sooner, with its uploads, EPUB files and previews, open it and click "Delete conversion" in Review (cancel a conversion that is still running first). One `eco web` can run per data folder; a second one stops with an error.
 
 ### Network access
 
@@ -85,7 +85,7 @@ An address other than `127.0.0.1`, `localhost` or `::1` needs a token. Without `
 eco web --host 0.0.0.0
 ```
 
-The printed address is `http://0.0.0.0:8000/?token=...`. On another device, use this computer's address instead of `0.0.0.0`. A request without the token gets 401. The first request with `?token=` sets a cookie, and the page removes the token from the address bar. The connection is plain HTTP, so use it only on a network you trust. Some limits to know:
+It prints `Open: http://127.0.0.1:8000/?token=...`, the address for this computer, and a line saying that another device uses this computer's network address in place of `127.0.0.1` (for example `http://192.168.1.20:8000/?token=...`). A request without the token gets 401. The first request with `?token=` sets a cookie, and the page removes the token from the address bar. The connection is plain HTTP, so use it only on a network you trust. Some limits to know:
 
 - A `?token=` link opened from another website shows 401 once, because the cookie is `SameSite=Strict`. Reload the page, or paste the link.
 - The `eco_token` cookie belongs to the host, not the port. Other HTTP services on the same host receive it over plain HTTP.

@@ -6,8 +6,8 @@ finding moves both panes. Change settings does not repeat OCR. Network mode refu
 the token.
 
 This list is run by a person, in each browser. The first group covers that criterion. The next groups
-cover what a browser run has to check first, the gate without models, and the file rows. The results
-table is at the bottom.
+cover what a browser run has to check first, the gate without models, the file rows, and the fixes
+made after the final review (delete, "View as", Ctrl+C). The results table is at the bottom.
 
 ## Before you start
 
@@ -60,12 +60,13 @@ table is at the bottom.
   the e-reader itself). The text, the chapters and the cover show.
 - **A10 Network mode refuses requests without the token.** Run `eco web --host 0.0.0.0 --no-browser`
   (the system may ask about a firewall: allow it for this test). It prints
-  `Open: http://0.0.0.0:8000/?token=...`. From another device, or from this computer with its network
+  `Open: http://127.0.0.1:8000/?token=...` and "On another device, use this computer's network
+  address in place of 127.0.0.1." From another device, or from this computer with its network
   address, run `curl -i http://ADDRESS:8000/` and `curl -i http://ADDRESS:8000/api/jobs`: both answer
-  401 `{"error":"Missing or invalid token"}`. A browser at the printed address with the token (the
-  address instead of `0.0.0.0`) shows the page, and the token is gone from the address bar. A wrong
-  token gives 401. Without `--token` the token is made up and printed; with `--token` it is the one
-  you gave.
+  401 `{"error":"Missing or invalid token"}`. A browser on another device at the printed address,
+  with the computer's network address in place of `127.0.0.1`, shows the page, and the token is gone
+  from the address bar. A wrong token gives 401. Without `--token` the token is made up and printed;
+  with `--token` it is the one you gave.
 - **A11 Keyboard only.** Do the whole path from Select files to the download with the keyboard: Tab
   and Shift+Tab reach every control in a sensible order, the focus ring is visible at each stop, Enter
   and Space press buttons, the arrow keys change the selects and the page.
@@ -185,6 +186,24 @@ Each PDF is read by the server before it is converted (one file at a time).
 - **E8 Widths.** The rows at 390, 1000 and 1280 px: the text wraps, there is no horizontal scroll,
   "Remove" stays reachable.
 
+## F. The M2 fix wave
+
+- **F1 Delete a conversion.** In Review of a finished job click "Delete conversion". The browser
+  asks "Delete this conversion? The uploaded files, the EPUB files and the previews are removed, and
+  this cannot be undone." Cancel keeps everything as it was. OK: the button reads "Deleting…", then
+  the page shows Select files, and "Recent conversions" no longer lists the job. The browser's Back
+  button does not open it again. Delete a job that a second tab has open, then click "Delete
+  conversion" in that tab: it goes to Select files too. With the server stopped, "Delete conversion"
+  shows the reason under the buttons and reads "Delete conversion" again. The buttons still wrap at
+  390 px, and "Download EPUB" stays the one primary button.
+- **F2 View as during a live preview.** In Review open "Change settings", move the font size, and at
+  once change "View as". No text like "Cannot read properties of null" shows under the device page;
+  the preview of the new view loads.
+- **F3 Ctrl+C during a conversion.** Start a conversion that takes a while (a PDF of about 100
+  pages), then press Ctrl+C once in the terminal of `eco web`. The server stops within a few seconds
+  with no traceback. Start it again: the job shows "The server stopped before this file was
+  converted.", not "The conversion stopped unexpectedly (exit code 1)."
+
 ## Results
 
 Fill in the browser columns. The `curl` column is the server half of a step, run on 2026-11-18 on
@@ -203,7 +222,7 @@ fails.
 | A7 | pass: the preview PNG of a file with images differs between `view=crosspoint` and `view=stock`; browser half not run here: browser QA awaits the owner | | | |
 | A8 | not run here: needs the Visual C++ runtime (Q-14); a Page-images PDF rebuild (`POST /rebuild`, 201) converts again and shows no "already done" stage, as designed | | | |
 | A9 | pass: downloads answer 200 `application/epub+zip`, `Content-Disposition` `notes.x4.epub`, start with `PK`; opening in an e-reader app not run here: browser QA awaits the owner | | | |
-| A10 | not run here: the `--host 0.0.0.0` run is the owner's; on 127.0.0.1 with `--token`: no token 401, `?token=` 302 and cookie, cookie 200 (see B9) | | | |
+| A10 | not run here: the `--host 0.0.0.0` run is the owner's; on 127.0.0.1 with `--token`: no token 401, `?token=` 302 and cookie, cookie 200 (see B9); the two printed lines are checked by the CLI tests | | | |
 | A11 | not run here: browser QA awaits the owner | | | |
 | B1 | not run here: browser QA awaits the owner; server half: a `.docx` upload gives 400 "Unsupported file type: report.docx" | | | |
 | B2 | pass: the stream closes at `end`; `GET /api/jobs/ID` after it shows done; the states queued, failed and cancelled each seen in the JSON; browser half not run here: browser QA awaits the owner | | | |
@@ -236,3 +255,6 @@ fails.
 | E6 | pass: `damaged.pdf` gives 400 "Not a readable PDF: damaged.pdf" and a Markdown file 400 "Only PDF files can be inspected"; a PDF over the limit gives 413 (see B10); browser half not run here: browser QA awaits the owner | | | |
 | E7 | not run here: browser QA awaits the owner | | | |
 | E8 | not run here: browser QA awaits the owner | | | |
+| F1 | pass: `DELETE /api/jobs/ID` while the job runs gives 409 "This conversion has not finished. Cancel it before you delete it."; once it is done, after its pages and a live page were rendered, 204 with no body, and its folder (uploads, outputs, previews) is gone; then `GET /api/jobs/ID`, its `/pages` and a second DELETE give 404 "No such job" and `GET /api/jobs` no longer lists it; an EPUB job whose book was read for the preview leaves no other folder; a DELETE with a foreign `Origin` gives 403; `DELETE /api/jobs` gives 405; browser half not run here: browser QA awaits the owner | | | |
+| F2 | not run here: browser QA awaits the owner | | | |
+| F3 | not run here: needs a long conversion and a Ctrl+C in the server's own terminal; the owner runs it | | | |

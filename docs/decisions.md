@@ -758,3 +758,50 @@ a new route.
   quarter of the body height). The plan's `image(width: 100%, fit: "contain")` clipped captions under
   tall images, which loses content, and enlarged 40x30 px formula crops to the full width. If it turns
   out wrong: previews show smaller images than a reader that scales them up.
+
+## 2026-11-18: Delete a conversion, bounded tables in previews, sturdier jobs (M2-R45 and the final review)
+
+- Delete by hand (M2-R45; spec section 8.13 "dan bisa juga dihapus manual", section 6.5). A `DELETE`
+  of `/api/jobs/{id}` removes a job that has ended (done, failed, cancelled): 204. A queued or
+  running job is 409 "This conversion has not finished. Cancel it before you delete it."; no such
+  job is 404. job.json goes first, under the store's lock, so the job leaves every route at once;
+  then the folder, tried again for about 1.5 s on Windows. What still will not go is a folder
+  without job.json, which the next start purges. A preview that races the delete (or the 7-day
+  purge) must not make the job's folder again: preview folders are made one level at a time inside
+  the job's folder, `render_book` makes nothing above its cache folder, and a book that M1 builds
+  (an EPUB, a pages-mode PDF) is built in a reserved folder of its own and moved into the job by a
+  rename, which fails when the job is gone. Whatever fails while the job goes answers 404 "No such
+  job". Review has a secondary "Delete conversion" button: a `window.confirm` first, then Select
+  files, which reads Recent conversions again; a failure shows the server's text, and a job already
+  gone counts as deleted. Why: "manual" in a GUI means a control, and a private document should not
+  wait 7 days. If it turns out wrong: one route and one button to remove.
+- Tables in previews (final review, Important 1). A colspan is cut to 1..1000 and a rowspan to the
+  rows left (0 runs to the end), the way browsers read them; the columns come from a walk of the
+  grid that respects rowspans, and each row is filled to the width where it really ends. A colspan
+  stops before a column that a rowspan above takes, since Typst refuses overlapping cells and one
+  sloppy table stopped the whole preview. Beyond the review's fix: a table of more than 20,000
+  places (rows times columns) shows its image twin, or a box "Table too large to preview". Typst
+  pays for every place that holds a cell, an empty one too: after the cut, 20 KB of HTML (one
+  colspan of 1000 above 1000 short rows) still took 94 s and 6.3 GB, while 20,000 places take 2 to 3
+  s and at most 260 MB. The EPUB keeps the table. If it turns out wrong: a real table of more than
+  20,000 places shows the box in the preview; raise `_MAX_TABLE_PLACES`.
+- job.json (final review, Minor 3; Task 4 minors). It is flushed to the disk before the rename, and
+  on Windows the rename is tried again for about 1.5 s while an antivirus or the indexer holds the
+  file. A save that fails after the `end` event writes no second `end`: the next try, or the next
+  start, only saves job.json with the status that the `end` gave. The start purge removes at once
+  only a folder with no job.json at all; a job.json that is there but cannot be read (another
+  version of eco, a power loss) goes by the 7-day age rule, so one schema change cannot delete every
+  job.
+- Stored names (final review, Minor 2). `safe_name` also marks COM0, LPT0, COM and LPT with the
+  superscript digits 1 to 3, CONIN$, CONOUT$ and a device name with spaces before the dot, and it
+  cuts a long name to 200 bytes of UTF-8 (the `_` included), at a character, keeping the type. 120
+  characters of CJK or emoji were up to 480 bytes, and Linux and macOS take 255.
+- The worker (final review, Minor 1). Every worker starts through `_worker_main`, which ignores
+  SIGINT (the console's Ctrl+C reached the worker, which failed the job with "exit code 1" and a
+  traceback, against M2-R16) and starts a thread that waits for the server's process and ends the
+  worker when it goes (a killed server left its worker running, to hang later on a full pipe of
+  events). It is a wrapper for every worker rather than lines in `_work`, so the tests' stand-in
+  workers run it too and the tests can see it work.
+- `eco web` on the any-address (`0.0.0.0`, `::`) prints the loopback address that this computer
+  opens and the line "On another device, use this computer's network address in place of 127.0.0.1."
+  (no device can open `0.0.0.0`). `--max-upload-mb` takes a whole number above 0 only.

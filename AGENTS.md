@@ -6,7 +6,8 @@ This file is the source of truth for every agent and every human working on this
 
 eco converts PDF and Markdown files to EPUB, tuned for Xteink e-readers and for general e-readers.
 Milestone M1 is the core library and the `eco` CLI (`setup`, `convert`, `extract`).
-A web GUI, XTC output and a Docker image follow in later milestones.
+Milestone M2 adds the local web GUI (`eco web`). XTC output and a Docker image follow in later
+milestones.
 
 ## Golden rules
 
@@ -70,7 +71,7 @@ src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts
 src/eco/pdf/structure.py     assign_heading_levels()
 src/eco/render/md2typst.py   to_typst(), RenderSettings, VIEWS
 src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered, ChapterNotFound
-src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild), Runner, JobInfo, JobFile, safe_name(), input_path(), server_lock(), RETENTION_DAYS, _work() (worker process)
+src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild, delete, purge), Runner, JobInfo, JobFile, safe_name(), input_path(), server_lock(), RETENTION_DAYS, _worker_main() and _work() (worker process)
 src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs, /api/inspect (pages of one PDF for Select files) and /api/setup routes, _Upload and _PdfUpload (streamed uploads), Server (uvicorn that tells the app to stop)
 src/eco/web/models_setup.py  ModelSetup (the one background model download, its event log and readers), used by the /api/setup routes
 src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError, describe_pdf() and SECONDS_PER_PAGE (the rows of Select files)
@@ -79,8 +80,8 @@ src/eco/web/templates/index.html  src/eco/web/static/app.css  src/eco/web/static
 tests/conftest.py  tests/fixtures/make.py  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
 ```
 
-Some of these modules do not exist yet. Milestone M1 adds them task by task. The core knows nothing
-about the CLI or the web. Docling and Typst are reached only through their adapters.
+Every module in the map exists; later milestones add theirs to it. The core knows nothing about the
+CLI or the web. Docling and Typst are reached only through their adapters.
 
 ## How to add a fix-up pass
 
