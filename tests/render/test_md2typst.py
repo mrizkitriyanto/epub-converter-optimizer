@@ -395,6 +395,131 @@ def test_spanned_table_without_twin_keeps_the_spans(tmp_path):
     assert compiles(files) == 1
 
 
+def table_lines(main: str) -> list[str]:
+    """The lines of the one table in `main`: `columns: N,` and then one line for each row."""
+    return main.split("#table(\n", 1)[1].split("\n)", 1)[0].splitlines()
+
+
+def test_huge_spans_are_cut_the_way_browsers_cut_them(tmp_path):
+    # colspan="999999999" once asked for a list of a billion cells, and a large rowspan made Typst
+    # lay out that many rows: either one took the server's memory
+    main, files = convert(
+        tmp_path,
+        '<table><tr><td colspan="999999999">wide</td></tr>'
+        '<tr><td rowspan="999999999">tall</td><td>b</td></tr><tr><td>c</td></tr></table>\n',
+    )
+    assert table_lines(main)[0] == "  columns: 1000,"  # browsers read a larger colspan as 1000
+    assert "table.cell(colspan: 1000)[wide]" in main
+    assert "table.cell(rowspan: 2)[tall]" in main  # the rows that are left
+    assert len(main) < 20_000
+    assert compiles(files) == 1
+
+
+def test_a_span_too_long_to_read_as_a_number_is_cut_too(tmp_path):
+    main, _ = convert(tmp_path, f'<table><tr><td colspan="{"9" * 5000}">x</td></tr></table>\n')
+    assert "table.cell(colspan: 1000)[x]" in main
+
+
+@pytest.mark.parametrize("value", ["0", "-2", "two", "", "２"])
+def test_a_colspan_that_is_no_positive_number_is_1(tmp_path, value):
+    main, files = convert(
+        tmp_path, f'<table><tr><td colspan="{value}">a</td><td>b</td></tr></table>\n'
+    )
+    assert table_lines(main) == ["  columns: 2,", "  [a], [b],"]
+    assert compiles(files) == 1
+
+
+def test_a_rowspan_past_the_last_row_adds_no_row(tmp_path):
+    # common in sloppy HTML; Typst would add the rows, and the preview would show blank ones
+    main, files = convert(
+        tmp_path,
+        '<table><tr><td>a</td><td>b</td></tr><tr><td rowspan="3">c</td><td>d</td></tr></table>\n',
+    )
+    assert table_lines(main) == ["  columns: 2,", "  [a], [b],", "  [c], [d],"]
+    assert compiles(files) == 1
+
+
+def test_a_rowspan_of_0_runs_to_the_last_row(tmp_path):
+    main, _ = convert(
+        tmp_path,
+        '<table><tr><td rowspan="0">a</td><td>b</td></tr><tr><td>c</td></tr>'
+        "<tr><td>d</td></tr></table>\n",
+    )
+    assert "table.cell(rowspan: 3)[a]" in main
+
+
+def test_the_columns_count_the_places_that_a_rowspan_takes(tmp_path):
+    # row 2 starts beside "a", so it is three columns wide, and row 1 gets the empty place
+    main, files = convert(
+        tmp_path,
+        '<table><tr><td rowspan="2">a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table>\n',
+    )
+    assert table_lines(main) == [
+        "  columns: 3,",
+        "  table.cell(rowspan: 2)[a], [b], [],",
+        "  [c], [d],",
+    ]
+    assert compiles(files) == 1
+
+
+def test_a_short_row_under_a_rowspan_is_filled_to_the_width(tmp_path):
+    main, files = convert(
+        tmp_path,
+        "<table><tr><td>a</td><td>b</td><td>c</td></tr>"
+        '<tr><td rowspan="2">d</td><td>e</td></tr><tr><td>f</td></tr></table>\n',
+    )
+    assert table_lines(main) == [
+        "  columns: 3,",
+        "  [a], [b], [c],",
+        "  table.cell(rowspan: 2)[d], [e], [],",
+        "  [f], [],",
+    ]
+    assert compiles(files) == 1
+
+
+def test_a_colspan_that_runs_into_a_rowspan_stops_before_it(tmp_path):
+    # a browser lets the two cells overlap; Typst stops the whole preview at such a table
+    main, files = convert(
+        tmp_path,
+        '<table><tr><td>a</td><td rowspan="2">b</td></tr><tr><td colspan="2">c</td></tr></table>\n',
+    )
+    assert table_lines(main) == ["  columns: 2,", "  [a], table.cell(rowspan: 2)[b],", "  [c],"]
+    assert compiles(files) == 1
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        # 20 KB of HTML that is 1,000 columns wide: Typst took 94 s and 6 GB for its empty places
+        '<tr><td colspan="1000">wide</td></tr>' + "<tr><td>x</td></tr>" * 1000,
+        "<tr><td>x</td></tr>" * 20_001,  # one column, but more rows than the preview lays out
+    ],
+    ids=["wide", "long"],
+)
+def test_a_table_too_large_for_the_preview_is_a_box(tmp_path, rows):
+    main, files = convert(tmp_path, f"<table>{rows}</table>\n\nafter\n")
+    assert "#table(" not in main and "after" in main
+    assert "#rect(width: 100%, stroke: 1pt + gray)[Table too large to preview]" in main
+    assert compiles(files) == 1
+
+
+def test_the_largest_table_the_preview_lays_out(tmp_path):
+    rows = '<tr><td colspan="1000">wide</td></tr>' + "<tr><td>x</td></tr>" * 19
+    main, _ = convert(tmp_path, f"<table>{rows}</table>\n")
+    assert table_lines(main)[0] == "  columns: 1000,"  # 20 rows of 1,000: 20,000 places
+
+
+def test_a_table_too_large_for_the_preview_uses_its_twin(tmp_path):
+    folder = tmp_path / "book"
+    folder.mkdir()
+    Image.new("L", (60, 40)).save(folder / "t.png")
+    table = "<table>" + "<tr><td>x</td></tr>" * 20_001 + "</table>"
+    (folder / "b.md").write_text(f"<!-- table-image: t.png -->\n{table}\n")
+    src = load_source(folder / "b.md")
+    main = to_typst(src, device="general", settings=RenderSettings(), view="crosspoint")["main.typ"]
+    assert b'image("t.png"' in main and b"too large" not in main
+
+
 def test_stock_view_boxes_the_table_twin_too(tmp_path, small_book):
     main = to_typst(load_source(small_book), device="x4", settings=RenderSettings(), view="stock")[
         "main.typ"

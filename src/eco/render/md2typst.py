@@ -33,7 +33,13 @@ _TWIN = re.compile(r"<!--\s*table-image:\s*(.*?)\s*-->")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _LANG = re.compile(r"[a-z]{2,3}")
 _STOCK_BOX = "#rect(width: 100%, stroke: 1pt + gray)[Image not shown on stock firmware]"
+_BIG_TABLE_BOX = "#rect(width: 100%, stroke: 1pt + gray)[Table too large to preview]"
 _TWIN_MIN_COLUMNS = 5  # Xteink tables wider than 4 columns use their image twin
+_MAX_COLSPAN = 1000  # browsers read a larger colspan as 1000
+# Places (rows x columns) of the largest table the preview lays out. Typst pays for every place
+# that holds a cell, an empty one too: 20,000 took 2-3 s and 250 MB on a laptop, and one colspan
+# of 1,000 above 1,000 short rows (20 KB of HTML) took 94 s and 6 GB.
+_MAX_TABLE_PLACES = 20_000
 # What a damaged image can raise while PIL reads it. One bad image must not fail the render.
 _BAD_IMAGE = (OSError, SyntaxError, ValueError, Image.DecompressionBombError)
 # Formats Typst reads, by PIL format name (a multi-picture JPEG is reported as MPO).
@@ -140,7 +146,43 @@ class _Cell:
 
 
 def _span(value: str | None) -> int:
-    return int(value) if value and value.strip().isdecimal() else 1
+    """A colspan or rowspan as written: a whole number in ASCII digits, else 1. A number too long
+    to read is 10**9, more than any limit it meets."""
+    digits = (value or "").strip()
+    if not (digits.isascii() and digits.isdecimal()):
+        return 1
+    digits = digits.lstrip("0") or "0"
+    return int(digits) if len(digits) < 10 else 10**9
+
+
+def _layout(rows: list[list[_Cell]]) -> tuple[int, list[int]] | None:
+    """Place the cells the way a browser does: row by row, each in the first column that no cell
+    above takes with its rowspan. A rowspan is cut to the rows that are left, and 0 means all of
+    them; a colspan stops at a column that a cell above takes. Returns the number of columns and,
+    for each row, the places it leaves empty, which the table fills so that Typst puts each cell
+    where a browser does. None for a table of more than _MAX_TABLE_PLACES places."""
+    until: list[int] = []  # for each column, the first row that it is free in again
+    taken = []
+    for r, row in enumerate(rows):
+        left = len(rows) - r
+        col = 0
+        for cell in row:
+            if not 0 < cell.rowspan <= left:
+                cell.rowspan = left
+            while col < len(until) and until[col] > r:
+                col += 1
+            end = col + cell.colspan
+            # a browser lets a colspan overlap a rowspan from above; Typst refuses the table
+            end = next((c for c in range(col, min(end, len(until))) if until[c] > r), end)
+            cell.colspan = end - col
+            if end > len(until):
+                if end * len(rows) > _MAX_TABLE_PLACES:
+                    return None
+                until += [0] * (end - len(until))
+            until[col:end] = [r + cell.rowspan] * cell.colspan
+            col = end
+        taken.append(sum(free > r for free in until))
+    return len(until), [len(until) - n for n in taken]
 
 
 class _Html(HTMLParser):
@@ -164,7 +206,8 @@ class _Html(HTMLParser):
         elif tag in ("td", "th"):
             if not self.rows:
                 self.rows.append([])
-            self._cell = _Cell(tag == "th", _span(attr.get("colspan")), _span(attr.get("rowspan")))
+            colspan = min(max(_span(attr.get("colspan")), 1), _MAX_COLSPAN)
+            self._cell = _Cell(tag == "th", colspan, _span(attr.get("rowspan")))
             self.rows[-1].append(self._cell)
         elif tag == "img":
             self.images.append((attr.get("src") or "", attr.get("alt") or ""))
@@ -545,20 +588,21 @@ class _Converter:
         return "\n\n".join(part for part in parts if part)
 
     def _table(self, rows: list[list[_Cell]]) -> str:
-        columns = max(sum(cell.colspan for cell in row) for row in rows)
-        if columns == 0:
+        layout = _layout(rows)
+        columns, empty = layout or (0, [])
+        if layout and columns == 0:
             return ""
         spanned = any(c.colspan > 1 or c.rowspan > 1 for row in rows for c in row)
         wide = DEVICES[self.device] is not None and columns >= _TWIN_MIN_COLUMNS
-        if self._twin and (spanned or wide) and self._lookup(self._twin):
+        if self._twin and (spanned or wide or not layout) and self._lookup(self._twin):
             figure = self._image(self._twin, "")
             if figure or (self.profile and self.profile.drop_images):
                 return figure  # an unreadable twin falls back to the table
+        if not layout:
+            return _BIG_TABLE_BOX
         lines = []
-        for row in rows:
-            cells = [self._cell(cell) for cell in row]
-            if not any(c.rowspan > 1 for r in rows for c in r):
-                cells += ["[]"] * (columns - sum(c.colspan for c in row))
+        for row, places in zip(rows, empty, strict=True):
+            cells = [self._cell(cell) for cell in row] + ["[]"] * places
             lines.append("  " + ", ".join(cells) + ",")
         return "#table(\n  columns: " + str(columns) + ",\n" + "\n".join(lines) + "\n)"
 
