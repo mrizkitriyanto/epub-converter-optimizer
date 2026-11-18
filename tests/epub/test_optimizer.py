@@ -791,6 +791,23 @@ def test_named_entities_become_characters_and_bad_xml_is_left_unchanged(tmp_path
         assert z.read("OEBPS/text/ok.xhtml").startswith(b'<?xml version="1.0" encoding="utf-8"?>\n')
 
 
+def test_an_image_that_a_document_left_unparsed_refers_to_keeps_its_name_and_bytes(tmp_path):
+    photo = image_bytes((200, 100), "PNG", mode="RGBA", seed=4)  # X4 makes it a JPEG
+    pages = {
+        "ok": '<p><img src="../img/shared.png" alt="a"/><img src="../img/own.png" alt="b"/></p>',
+        "broken": '<p>unclosed <img src="../img/shared.png" alt="a"/>',
+    }
+    files = {"img/shared.png": photo, "img/own.png": photo}
+    z, rep = run(tmp_path, package(tmp_path, pages, files), X4)
+    assert z.read("OEBPS/img/shared.png") == photo
+    assert "OEBPS/img/own.jpg" in z.namelist() and "OEBPS/img/own.png" not in z.namelist()
+    assert 'src="../img/shared.png"' in text_of(z, "OEBPS/text/ok.xhtml")
+    [bad] = [f.message for f in rep.findings if f.kind == "bad_xml"]
+    assert "its links are not updated" in bad
+    [kept] = [f for f in rep.findings if f.kind == "image_kept"]
+    assert kept.level == "warning" and "OEBPS/img/shared.png" in kept.message
+
+
 def test_the_doctype_and_the_xml_declaration_are_kept_or_normalised(tmp_path):
     xhtml11 = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

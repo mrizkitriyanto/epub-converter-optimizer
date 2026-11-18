@@ -255,6 +255,7 @@ class _Package:
         self.findings: list[Finding] = []
         self.files: dict[str, bytes] = {}
         self.docs: dict[str, _Doc] = {}  # the package file, the XHTML pages and the NCX
+        self.unparsed: list[str] = []  # the text of the pages and NCX that do not parse
         self.items: dict[str, ET.Element] = {}  # manifest items by zip path
         self.removed: set[str] = set()
         self.renamed: dict[str, str] = {}
@@ -314,7 +315,11 @@ class _Package:
                 try:
                     self.docs[path] = _Doc.parse(self.files[path])
                 except ET.ParseError as exc:
-                    message = f"{path} is not well-formed and was left unchanged: {exc}"
+                    self.unparsed.append(self.files[path].decode("utf-8", "replace"))
+                    message = (
+                        f"{path} is not well-formed and was left unchanged, so its links are not "
+                        f"updated: {exc}"
+                    )
                     self._note("bad_xml", "warning", message)
 
     def run(self) -> None:
@@ -514,6 +519,11 @@ class _Package:
         cover = self._cover()
         for path, item in list(self.items.items()):
             if path not in self.files or not _is_raster(path, item.get("media-type", "")):
+                continue
+            name = posixpath.basename(path)
+            if any(name in text or quote(name) in text for text in self.unparsed):
+                message = f"{path} is left unchanged: a page that is not well-formed refers to it"
+                self._note("image_kept", "warning", message)
                 continue
             # a library needs the cover even when the other images are dropped
             profile = replace(self.profile, drop_images=False) if path == cover else self.profile

@@ -446,3 +446,18 @@ error for either.
   other 13 crops of pages 83, 84 and 87 read the same words. A full-page crop was never scaled up,
   so `--ocr force` does not change.
 - If it turns out wrong: drop the three settings in `docling_adapter._OCR`.
+
+## 2026-11-18: EPUB: text that XML cannot hold becomes U+FFFD, with a finding (R-73)
+
+- The builder replaces every character that XML 1.0 cannot hold (C0 controls, lone surrogates,
+  U+FFFE, U+FFFF) with U+FFFD where the text enters it: in each line of the Markdown and in the
+  metadata, which every XHTML, NCX, nav and OPF file is made of. A `xml_char_replaced` warning
+  names the count and the chapter (or "the book's metadata"). It used to delete C0 controls without
+  a finding and let U+FFFE through: Forensic's hex dump held one in a code block, the block fell
+  back to escaped text (`bad_html`), and EPUBCheck stopped at a fatal error in that chapter.
+  Replaced before the Markdown is parsed, the code block stays a code block. Forensic's EPUB,
+  rebuilt from run 1's book folder, passes EPUBCheck 5.4.0 with no message.
+- An EPUB that eco only optimizes can hold a page that does not parse. That page is left as it
+  is, and now so is every image its text names: renaming one to `.jpg` left the page pointing at a
+  file that was gone. An `image_kept` warning names it, and the `bad_xml` finding says the page's
+  links are not updated. If it turns out wrong: the X4 limits are not applied to such an image.

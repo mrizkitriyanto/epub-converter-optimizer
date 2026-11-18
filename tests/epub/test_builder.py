@@ -264,15 +264,30 @@ def test_text_before_the_first_heading_goes_to_front(tmp_path):
     assert "OEBPS/text/front.xhtml" not in z.namelist()
 
 
-def test_control_characters_cannot_break_the_xml(tmp_path):
-    z, findings = build(
-        tmp_path, '---\ntitle: "T\\f"\n---\n# A\x0cB\n\nform\x0cfeed and \x00 nul\n'
+def test_text_that_xml_cannot_hold_becomes_u_fffd_with_a_finding_for_each_chapter(tmp_path):
+    bad = "\ufffe\uffff\x01\x08"  # what XML 1.0 has no place for, even as a reference
+    markdown = (
+        '---\ntitle: "T\\f"\n---\n'
+        f"# A\x0cB\n\nform{bad}feed and \x00 nul\n\n"
+        "```\n0010 75 2D @.+.w......f#.u\ufffe\n```\n\n"
+        "# Clean\n\nNothing here.\n\n"
+        "# Raw\n\n<p>raw \uffff</p>\n\nsee &#xFFFE; and &#1;[^n]\n\n"
+        "[^n]: a note in the footnote block, at the end \ufffe\n"
     )
-    assert findings == []
+    z, findings = build(tmp_path, markdown)
     for name in z.namelist():
         if name.endswith((".xhtml", ".opf", ".ncx")):
-            read_xml(z, name)
-    assert "formfeed and  nul" in "".join(read_xml(z, "OEBPS/text/ch001.xhtml").itertext())
+            read_xml(z, name)  # every one parses
+    first = read_xml(z, "OEBPS/text/ch001.xhtml")
+    assert "form\ufffd\ufffd\ufffd\ufffdfeed and \ufffd nul" in "".join(first.itertext())
+    assert first.find(".//h:pre/h:code", NS).text == "0010 75 2D @.+.w......f#.u\ufffd\n"
+    assert read_xml(z, OPF).find(".//dc:title", NS).text == "T\ufffd"
+    replaced = "that XML cannot hold replaced with U+FFFD in"
+    assert [(f.kind, f.level, f.message) for f in findings] == [
+        ("xml_char_replaced", "warning", f"1 character {replaced} the book's metadata"),
+        ("xml_char_replaced", "warning", f"7 characters {replaced} chapter 'A\ufffdB'"),
+        ("xml_char_replaced", "warning", f"2 characters {replaced} chapter 'Raw'"),
+    ]
 
 
 def test_thematic_breaks_at_the_start_are_content_not_front_matter(tmp_path):
