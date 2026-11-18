@@ -60,6 +60,7 @@ import hmac
 import http
 import json
 import logging
+import mimetypes
 import os
 import queue
 import re
@@ -572,6 +573,9 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     """The app on the jobs of `data_dir`. With a token it is in network mode, else in local mode
     (an empty token is none). While it runs, it holds the data folder's `server_lock` and runs
     the job runner."""
+    # StaticFiles takes the type from the system, and /etc/mime.types or the Windows registry may
+    # say application/javascript for .js
+    mimetypes.add_type("text/javascript", ".js")
     store = JobStore(data_dir)
     runner = Runner(store, data_dir)
 

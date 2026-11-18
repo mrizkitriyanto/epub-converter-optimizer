@@ -3,6 +3,7 @@ import hmac
 import io
 import json
 import logging
+import mimetypes
 import os
 import re
 import signal
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from urllib.parse import quote
 
 import pytest
@@ -19,9 +21,9 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from eco import cli
 from eco.cli import main
-from eco.options import Options
+from eco.options import DEVICES, FIRMWARES, MODES, OCR_MODES, SIZES, Options
 from eco.web import app as web_app
-from eco.web import jobs
+from eco.web import jobs, preview
 from eco.web.app import CSP, _Guard, create_app
 from eco.web.jobs import JobStore, Runner
 from eco.web.strings import STRINGS
@@ -373,6 +375,175 @@ def test_page_is_the_shell_in_english(tmp_path):
 def test_no_api_docs_pages(tmp_path, path):
     # Swagger UI and ReDoc load their files from a CDN
     assert local(tmp_path).get(path).status_code == 404
+
+
+# The workspace (Task 9). No browser runs the script in these tests, so besides the places the
+# page must have, they check what a typo in the script or the page would break without a sound.
+
+SOURCES = Path(web_app.HERE)
+PAGE_PLACES = [
+    "stepper",
+    "drop-zone",
+    "device",
+    "size",
+    "start",
+    "progress",
+    "findings",
+    "source-pane",
+    "device-pane",
+    "view-as",
+]
+
+
+def source(name):
+    """The text of one of the three files of the page: index.html, app.css or app.js."""
+    folder = "templates" if name.endswith(".html") else "static"
+    return (SOURCES / folder / name).read_text(encoding="utf-8")
+
+
+def test_page_has_the_places_of_the_workspace(tmp_path):
+    html = local(tmp_path).get("/").text
+    assert [p for p in PAGE_PLACES if f'id="{p}"' not in html] == []
+    # the strings block holds every text, so the two lines must be in the markup itself
+    markup = re.sub(r'<script id="strings".*?</script>', "", html, flags=re.DOTALL)
+    assert "Everything is processed on this computer." in markup
+    assert "Approximate preview" in markup
+
+
+def test_page_loads_its_script_and_style_from_the_static_folder(tmp_path):
+    html = local(tmp_path).get("/").text
+    assert re.search(r'<script src="/static/app\.js"[^>]*\bdefer\b', html)
+    assert '<link rel="stylesheet" href="/static/app.css">' in html
+    assert '<link rel="icon" href="data:,">' in html  # no request for /favicon.ico, no 404 logged
+
+
+def test_app_js_is_served_as_javascript(tmp_path):
+    r = local(tmp_path).get("/static/app.js")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/javascript")
+
+
+def test_the_script_is_javascript_whatever_the_system_maps_js_to(tmp_path, monkeypatch):
+    # /etc/mime.types and the Windows registry may say application/javascript
+    monkeypatch.setitem(mimetypes.types_map, ".js", "application/javascript")
+    r = local(tmp_path).get("/static/app.js")
+    assert r.headers["content-type"].startswith("text/javascript")
+
+
+def test_no_external_address_in_the_page_its_style_or_its_script(tmp_path):
+    rendered = local(tmp_path).get("/").text
+    found = {
+        name: text
+        for name, text in {
+            "index.html": source("index.html"),
+            "rendered page": rendered,
+            "app.css": source("app.css"),
+            "app.js": source("app.js"),
+        }.items()
+        if "http://" in text or "https://" in text
+    }
+    assert list(found) == []
+
+
+def test_css_and_script_make_no_blob_address(tmp_path):
+    # img-src is 'self' data:, so a picture is shown by its own address or as a data URL
+    assert [n for n in ("app.css", "app.js") if "blob:" in source(n)] == []
+
+
+def test_page_has_no_inline_style_script_or_event_handler(tmp_path):
+    for html in (source("index.html"), local(tmp_path).get("/").text):
+        tags = re.findall(r"<[a-zA-Z][^>]*>", html)
+        assert [t for t in tags if re.search(r"\sstyle\s*=", t)] == []
+        assert [t for t in tags if re.search(r"\son[a-z]+\s*=", t)] == []
+        scripts = [t for t in tags if t.startswith("<script")]
+        assert scripts and all('src="' in t or 'type="application/json"' in t for t in scripts)
+
+
+def test_script_sets_no_style_attribute_and_builds_no_markup_from_text():
+    js = source("app.js")
+    assert not re.search(r"setAttribute\(\s*['\"]style['\"]", js)  # CSP: style-src 'self'
+    # the names of files and the messages of the server are not trusted: text goes in as text
+    risky = r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function"
+    assert re.findall(risky, js) == []
+
+
+def test_css_keeps_a_visible_focus_ring():
+    css = source("app.css")
+    assert ":focus-visible" in css
+    assert not re.search(r"outline\s*:\s*(none|0)\b", css)
+
+
+def test_every_text_the_page_and_the_script_use_is_in_strings():
+    js = source("app.js")
+    html = re.sub(r"\{#.*?#\}", "", source("index.html"), flags=re.DOTALL)  # not the comments
+    used = set(re.findall(r"\bt\('([a-z0-9_]+)'", js))
+    used |= {f"{k}_{n}" for k in re.findall(r"\btn\('([a-z0-9_]+)'", js) for n in ("one", "other")}
+    used |= set(re.findall(r"strings\.([a-z0-9_]+)", html))
+    assert len(used) > 50  # the patterns still find the texts
+    assert sorted(used - set(STRINGS)) == []
+
+
+def test_every_element_the_script_looks_up_is_in_the_page(tmp_path):
+    html = local(tmp_path).get("/").text
+    looked_up = set(re.findall(r"\$\('([a-z0-9-]+)'\)", source("app.js")))
+    ids = re.findall(r'\sid="([^"]+)"', html)
+    assert len(looked_up) > 30 and sorted(looked_up - set(ids)) == []
+    assert sorted({i for i in ids if ids.count(i) > 1}) == []  # an id is in the page once
+
+
+def options_of(html, select_id):
+    found = re.search(rf'<select id="{select_id}">(.*?)</select>', html, re.DOTALL)
+    return sorted(re.findall(r'<option value="([^"]*)"', found.group(1)))
+
+
+def test_the_choices_of_the_page_are_the_ones_the_server_takes(tmp_path):
+    html = local(tmp_path).get("/").text
+    expected = {
+        "device": DEVICES,
+        "size": SIZES,
+        "live-size": SIZES,
+        "firmware": FIRMWARES,
+        "ocr": OCR_MODES,
+        "mode": MODES,
+        "view-as": preview.VIEWS,
+    }
+    assert {name: options_of(html, name) for name in expected} == {
+        name: sorted(values) for name, values in expected.items()
+    }
+
+
+def test_the_page_takes_the_files_and_the_job_ids_that_the_server_makes(tmp_path):
+    html, js = local(tmp_path).get("/").text, source("app.js")
+    accepted = re.search(r'<input id="file-input"[^>]*\saccept="([^"]*)"', html).group(1)
+    assert sorted(accepted.split(",")) == sorted(jobs.KINDS)
+    kinds = re.search(r"SUPPORTED_FILE = /(.*)/i;", js).group(1)
+    assert all(re.search(kinds, f"book{suffix}", re.IGNORECASE) for suffix in jobs.KINDS)
+    assert not re.search(kinds, "report.docx", re.IGNORECASE)
+    job = JobStore(tmp_path).create([("a.md", io.BytesIO(b"# A"))], Options())
+    ids = re.search(r"/\^#job=\((.*?)\)\$/", js).group(1)  # how the script reads the address
+    assert re.fullmatch(ids, job.id)
+
+
+def test_the_font_size_limits_of_the_page_are_the_servers(tmp_path):
+    html, js = local(tmp_path).get("/").text, source("app.js")
+    low, high = web_app.FONT_SIZES.start, web_app.FONT_SIZES.stop - 1
+    fields = re.findall(
+        r'<input id="(?:font-size|live-font)" type="[a-z]+" min="(\d+)" max="(\d+)"', html
+    )
+    assert fields == [(str(low), str(high))] * 2
+    assert re.search(rf"Math\.min\({high}, Math\.max\({low}, ", js)  # the clamp in the script
+
+
+def test_every_api_address_in_the_script_is_a_route(tmp_path):
+    app = create_app(tmp_path, token=None)
+    found = re.findall(r"""['"`](/api/[^'"`]*)['"`]""", source("app.js"))
+    assert len(found) > 10
+    unknown = []
+    for address in found:
+        path = re.sub(r"\$\{[^}]*\}", "x", address).split("?")[0]  # a value, and no query
+        if not any(r.path_regex.match(path) for r in app.routes if hasattr(r, "path_regex")):
+            unknown.append(address)
+    assert unknown == []
 
 
 # Lifespan

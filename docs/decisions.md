@@ -592,3 +592,57 @@ from 0) and the state (409 before the conversion). These are the choices they le
   files and repairs a damaged one); the page offers the button only when they are missing.
 - The code is in `eco.web.models_setup`, not `setup.py` (tools treat that name as a packaging script).
 
+## 2026-11-18: The workspace page (Task 9, M2-R34, M2-R35)
+
+What the page does where the rulings leave a choice. Vanilla HTML, CSS and JavaScript, no build step;
+the texts are in `strings.py`.
+
+- The setup gate is the first screen only when the address holds no job. A job in the address
+  (`#job=`) opens at once, since a finished job needs no model. The gate hides the stepper and
+  replaces Select files completely, so Markdown and EPUB files wait for the models too, as the brief's
+  "gate" says. A reload in the middle of a download shows the button again; a click gets 409 and opens
+  the stream, which replays the log.
+- The stepper: Select files and Settings are links once they are done (to the start). Processing is
+  not a link when it is done: a finished job opens Review (M2-R34), so there is nowhere to go back to.
+- A file that is not `.pdf`, `.md` or `.epub` is refused when it is added, with the server's text
+  (`Unsupported file type: <name>`), so no upload starts for it. The server's 400 stays the backstop and
+  is shown the same way, under the drop zone, as is any other upload error (413, 200 files).
+- Processing lists only the stages a file goes through: a PDF has Reading PDF, Recognizing page layout,
+  Fixing code, formulas and reading order, Building EPUB and Optimizing and compressing (page images
+  skip Fixing), a Markdown file has the last two, an EPUB the last. `Creating XTC` is added only when
+  XTC is asked for. A stage that sent no event because the PDF was read before (the extraction cache)
+  is shown as done, with "already done", as soon as a later stage starts.
+- The bar is the share of stages done, plus the share of pages while the layout stage runs. The time left
+  comes from the page rate, measured between live page events at least 0.5 s apart and averaged. The
+  events of a replay (a reload) only move the starting point: they arrive within a moment, and their rate
+  would be absurd. So there is no estimate before the second live page event.
+- The feed in Processing shows the findings of the file being converted; Review shows those of the file
+  selected. A finding with no source page is plain text, not a button. With several files, Review has a
+  file select, and the chips, download and previews follow it. A file that was not converted shows its
+  error. When no file converted (failed, cancelled, stopped by a restart), the one primary button is
+  `Try again`, which rebuilds with the job's own options.
+- `Apply changes` is a secondary button, so Review keeps one primary button, `Download EPUB`. The panel
+  starts at the job's own values and shows the page as converted; the live picture appears after the first
+  change, and returning to the job's values shows the stored page again. The live picture of a PDF is the
+  source page being shown; for Markdown and EPUB it is the first page of the chapter that holds the page
+  being viewed (the API gives no other page of a chapter), and its caption says "page X of Y of this
+  chapter". The picture of a request is shown as a `data:` URL, since CSP allows no other for a fetched
+  image.
+- "View as" starts from the firmware the job was made for (Not sure and CrossPoint: CrossPoint; CrossInk;
+  Stock). Changing it asks for the pages again and keeps the place: the same source page, or the chapter's
+  first page.
+- The font size is a preview setting in M2 (the EPUB is not changed by it), and its hint says so. M3 adds
+  the XTC page style to the same panel.
+- A stream that ends without `end` shows "The eco server stopped" and is not reopened: a browser would
+  reconnect and replay the whole log. After a restart the user reloads, and the job shows as stopped.
+- Colours. The success, warning and error tokens are 2.1 to 3.6 : 1 on white and the border token is
+  1.5 : 1, too weak for text and for the edge of a control. Text uses `#1a7f37`, `#8a4b00` and
+  `#d70015`, control edges `#86868b`, and accent text and the hover of the primary button `#0062c4`
+  (white on `#0077ed` is 4.3 : 1). The tokens of DESIGN.md stay for fills and decoration. Steps and chips
+  use the control radius, not pills.
+- `create_app` sets the type of `.js` to `text/javascript`: StaticFiles asks the system, and
+  `/etc/mime.types` or the Windows registry may say `application/javascript`.
+- The page has an empty `data:` icon, so the browser does not ask for `/favicon.ico` and log a 404 on
+  every load.
+- Not done: remembering the settings between visits, an upload progress bar, a chapter picker, and a
+  reconnect after a restart.

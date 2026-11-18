@@ -1,3 +1,19 @@
+{#- The page is one workspace. app.js shows one stage at a time; every text comes from strings.py. -#}
+{%- macro choices(items) -%}
+{%- for value, text in items %}<option value="{{ value }}">{{ text }}</option>{% endfor -%}
+{%- endmacro -%}
+{%- set devices = [
+  ("x4", strings.device_x4),
+  ("x4-pro", strings.device_x4_pro),
+  ("x4-classic", strings.device_x4_classic),
+  ("x3", strings.device_x3),
+  ("general", strings.device_general),
+] -%}
+{%- set sizes = [
+  ("small", strings.size_small),
+  ("balanced", strings.size_balanced),
+  ("best", strings.size_best),
+] -%}
 <!doctype html>
 <html lang="en">
 <head>
@@ -5,12 +21,241 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ strings.title }}</title>
 <link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:,">
 </head>
 <body>
-<main>
-<h1>{{ strings.title }}</h1>
-<p>{{ strings.local_only }}</p>
+<header class="topbar">
+  <h1 class="brand">{{ strings.title }}</h1>
+  <p class="tagline">{{ strings.tagline }}</p>
+  <nav id="stepper" class="stepper" aria-label="{{ strings.steps_label }}">
+    <ol id="stepper-list"></ol>
+  </nav>
+</header>
+
+<main id="main">
+  <noscript><p class="banner">{{ strings.noscript }}</p></noscript>
+  <p id="banner" class="banner" role="alert" hidden></p>
+
+  <section id="stage-setup" class="stage" aria-labelledby="setup-title" hidden>
+    <div class="panel narrow">
+      <h2 id="setup-title" tabindex="-1">{{ strings.setup_title }}</h2>
+      <p>{{ strings.setup_intro }}</p>
+      <ul id="model-list" class="model-list"></ul>
+      <p id="model-total" class="total"></p>
+      <div class="actions">
+        <button id="setup-download" type="button" class="primary"></button>
+        <button id="setup-ipv4" type="button" class="secondary" hidden>{{ strings.setup_retry_ipv4 }}</button>
+      </div>
+      <p id="setup-error" class="error-text" role="alert" hidden></p>
+      <ol id="setup-log" class="log" aria-live="polite" aria-label="{{ strings.setup_log_label }}"></ol>
+    </div>
+  </section>
+
+  <section id="stage-select" class="stage" hidden>
+    <div class="split">
+      <div class="panel">
+        <h2 id="files-title" tabindex="-1">{{ strings.files_title }}</h2>
+        <label id="drop-zone" class="drop">
+          <input id="file-input" class="visually-hidden" type="file" multiple accept=".pdf,.md,.epub">
+          <span>{{ strings.drop_text }}</span>
+          <span class="choose">{{ strings.choose_files }}</span>
+        </label>
+        <p id="drop-error" class="error-text" role="alert" hidden></p>
+        <ul id="file-list" class="file-list" aria-label="{{ strings.file_list_label }}"></ul>
+      </div>
+
+      <div class="panel">
+        <h2>{{ strings.settings_title }}</h2>
+        <div class="field">
+          <label for="device">{{ strings.device_label }}</label>
+          <select id="device">{{ choices(devices) }}</select>
+        </div>
+        <div class="field" role="group" aria-labelledby="output-label">
+          <span id="output-label" class="field-label">{{ strings.output_label }}</span>
+          <div class="checks">
+            <label class="check"><input type="checkbox" name="output" value="epub" checked disabled> {{ strings.output_epub }}</label>
+            <label class="check dim"><input type="checkbox" name="output" value="xtc" disabled> {{ strings.output_xtc }}</label>
+          </div>
+          <p class="hint">{{ strings.coming_later }}</p>
+        </div>
+        <div class="field">
+          <label for="size">{{ strings.size_label }}</label>
+          <select id="size">{{ choices(sizes) }}</select>
+          <p class="hint">{{ strings.size_hint }}</p>
+        </div>
+
+        <details id="advanced" class="advanced">
+          <summary>{{ strings.advanced_title }}</summary>
+          <div class="field">
+            <label for="firmware">{{ strings.firmware_label }}</label>
+            <select id="firmware">{{ choices([
+              ("any", strings.firmware_any),
+              ("stock", strings.firmware_stock),
+              ("crosspoint", strings.firmware_crosspoint),
+              ("crossink", strings.firmware_crossink),
+            ]) }}</select>
+            <p id="firmware-advice" class="hint"></p>
+          </div>
+          <div class="field">
+            <label for="ocr">{{ strings.ocr_label }}</label>
+            <select id="ocr">{{ choices([
+              ("auto", strings.ocr_auto),
+              ("force", strings.ocr_force),
+              ("off", strings.ocr_off),
+            ]) }}</select>
+          </div>
+          <div class="field">
+            <label for="mode">{{ strings.mode_label }}</label>
+            <select id="mode">{{ choices([
+              ("auto", strings.mode_auto),
+              ("reflow", strings.mode_reflow),
+              ("pages", strings.mode_pages),
+            ]) }}</select>
+            <p id="mode-hint" class="hint"></p>
+          </div>
+          <div class="field">
+            <label for="font-size">{{ strings.font_size_label }}</label>
+            <input id="font-size" type="number" min="8" max="96" step="1" value="32" inputmode="numeric">
+            <p class="hint">{{ strings.font_size_hint }}</p>
+          </div>
+          <div class="field">
+            <label for="book-title">{{ strings.title_label }}</label>
+            <input id="book-title" type="text" autocomplete="off" placeholder="{{ strings.title_placeholder }}">
+          </div>
+          <div class="field">
+            <label for="book-author">{{ strings.author_label }}</label>
+            <input id="book-author" type="text" autocomplete="off" placeholder="{{ strings.author_placeholder }}">
+          </div>
+          <div class="field">
+            <label for="book-lang">{{ strings.lang_label }}</label>
+            <input id="book-lang" type="text" autocomplete="off" placeholder="{{ strings.lang_placeholder }}">
+          </div>
+        </details>
+
+        <div class="actions">
+          <button id="start" type="button" class="primary" disabled></button>
+        </div>
+        <p id="start-hint" class="hint"></p>
+        <p class="local-note">{{ strings.local_only }}</p>
+      </div>
+    </div>
+
+    <section class="panel recent" aria-labelledby="recent-title">
+      <h2 id="recent-title">{{ strings.recent_title }}</h2>
+      <p id="recent-status" class="muted">{{ strings.loading }}</p>
+      <ul id="recent" class="recent-list"></ul>
+    </section>
+  </section>
+
+  <section id="stage-processing" class="stage" hidden>
+    <div class="split">
+      <div id="progress" class="panel" aria-live="polite">
+        <h2 id="file-title" tabindex="-1"></h2>
+        <div id="bar" class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="{{ strings.bar_label }}">
+          <div id="bar-fill" class="bar-fill"></div>
+        </div>
+        <p id="page-line" class="muted"></p>
+        <ul id="stages" class="stages" aria-label="{{ strings.stages_label }}"></ul>
+        <p id="queue-line" class="muted"></p>
+        <p id="process-error" class="error-text" role="alert" hidden></p>
+        <div class="actions">
+          <button id="cancel" type="button" class="secondary">{{ strings.cancel }}</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>{{ strings.feed_title }}</h2>
+        <ul id="feed" class="feed" tabindex="0" aria-label="{{ strings.feed_title }}" aria-live="polite"></ul>
+        <p id="feed-empty" class="muted">{{ strings.feed_empty }}</p>
+        <p class="muted note">{{ strings.feed_note }}</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="stage-review" class="stage" hidden>
+    <div class="review-bar">
+      <h2 id="review-title" tabindex="-1"></h2>
+      <ul id="chips" class="chips"></ul>
+      <div class="review-actions">
+        <a id="download" class="button primary" href="/" download hidden>{{ strings.download_epub }}</a>
+        <button id="try-again" type="button" class="primary" hidden>{{ strings.try_again }}</button>
+        <button id="change-settings" type="button" class="secondary" aria-controls="settings-panel" aria-expanded="false" hidden>{{ strings.change_settings }}</button>
+      </div>
+    </div>
+    <div id="file-pick" class="inline-field" hidden>
+      <label for="review-file">{{ strings.review_file_label }}</label>
+      <select id="review-file"></select>
+    </div>
+    <p id="review-note" class="notice" role="status" hidden></p>
+
+    <div id="review-grid" class="review-grid">
+      <section id="findings" class="panel" aria-live="polite" aria-labelledby="findings-title">
+        <h3 id="findings-title"></h3>
+        <ul id="findings-list" class="findings-list"></ul>
+        <p id="findings-empty" class="muted" hidden>{{ strings.findings_empty }}</p>
+        <p class="muted note">{{ strings.findings_hint }}</p>
+      </section>
+
+      <section id="source-pane" class="pane" aria-label="{{ strings.source_pane_label }}">
+        <div id="source-page" class="page" hidden><img id="source-img" alt=""></div>
+        <pre id="source-text" class="text-pane" tabindex="0" aria-label="{{ strings.source_text_label }}" hidden></pre>
+        <p id="source-caption" class="caption"></p>
+        <p id="source-status" class="caption muted" role="status"></p>
+      </section>
+
+      <section id="device-pane" class="pane" aria-label="{{ strings.device_pane_label }}">
+        <div class="device">
+          <div id="device-screen" class="screen"><img id="device-img" alt=""></div>
+        </div>
+        <p id="device-caption" class="caption"></p>
+        <p class="caption approx">{{ strings.approximate }}</p>
+        <p id="device-status" class="caption muted" role="status"></p>
+        <div class="pager">
+          <button id="prev" type="button" class="secondary">{{ strings.prev_page }}</button>
+          <button id="next" type="button" class="secondary">{{ strings.next_page }}</button>
+        </div>
+        <p class="caption muted">{{ strings.keys_hint }}</p>
+        <div class="view-controls">
+          <div class="inline-field">
+            <label for="view-as">{{ strings.view_as_label }}</label>
+            <select id="view-as">{{ choices([
+              ("crosspoint", strings.view_crosspoint),
+              ("crossink", strings.view_crossink),
+              ("stock", strings.view_stock),
+            ]) }}</select>
+          </div>
+          <fieldset class="segmented">
+            <legend class="visually-hidden">{{ strings.format_label }}</legend>
+            <label><input type="radio" name="preview-format" value="epub" checked><span>{{ strings.output_epub }}</span></label>
+            <label title="{{ strings.coming_later }}"><input type="radio" name="preview-format" value="xtc" disabled><span>{{ strings.output_xtc }}</span></label>
+          </fieldset>
+        </div>
+      </section>
+
+      <aside id="settings-panel" class="panel" aria-labelledby="settings-panel-title" hidden>
+        <h3 id="settings-panel-title">{{ strings.change_settings }}</h3>
+        <div class="field stack">
+          <label for="live-font">{{ strings.live_font_label }}</label>
+          <div class="range">
+            <input id="live-font" type="range" min="8" max="96" step="1">
+            <output id="live-font-value" for="live-font"></output>
+          </div>
+        </div>
+        <div class="field stack">
+          <label for="live-size">{{ strings.size_label }}</label>
+          <select id="live-size">{{ choices(sizes) }}</select>
+        </div>
+        <p class="muted note">{{ strings.panel_note }}</p>
+        <p id="panel-error" class="error-text" role="alert" hidden></p>
+        <div class="actions">
+          <button id="apply" type="button" class="secondary" disabled>{{ strings.apply }}</button>
+          <button id="close-panel" type="button" class="secondary">{{ strings.close }}</button>
+        </div>
+      </aside>
+    </div>
+  </section>
 </main>
+
 <script id="strings" type="application/json">{{ strings|tojson }}</script>
+<script src="/static/app.js" defer></script>
 </body>
 </html>

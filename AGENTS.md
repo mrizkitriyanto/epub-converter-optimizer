@@ -75,7 +75,7 @@ src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security
 src/eco/web/models_setup.py  ModelSetup (the one background model download, its event log and readers), used by the /api/setup routes
 src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError
 src/eco/web/strings.py       STRINGS: every English text of the GUI
-src/eco/web/templates/index.html  src/eco/web/static/app.css
+src/eco/web/templates/index.html  src/eco/web/static/app.css  src/eco/web/static/app.js (the workspace: setup gate, select and settings, processing, review)
 tests/conftest.py  tests/fixtures/make.py  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
 ```
 
