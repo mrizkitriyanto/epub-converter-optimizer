@@ -311,3 +311,112 @@ def test_setup_failure_is_one_line(monkeypatch, capsys, tmp_path):
     assert main(["setup", "--yes", "--data", str(tmp_path)]) == 1
     err = capsys.readouterr().err
     assert "w.pkl" in err and len(err.strip().splitlines()) == 1 and "Traceback" not in err
+
+
+# A missing Microsoft Visual C++ Redistributable (task M3-N3, decision Q-20)
+
+
+def _winerror(code, text):
+    """An OSError with the `winerror` that ctypes.WinError sets. Only Windows reads the fourth
+    argument of OSError, so the attribute is set by hand."""
+    error = OSError(text)
+    error.winerror = code
+    return error
+
+
+def _rtree_error():
+    return OSError("could not find or load spatialindex_c-64.dll")
+
+
+# The forms of an error that says a DLL of the PDF engine could not be loaded.
+DLL_ERRORS = {
+    "rtree": _rtree_error(),
+    "pytorch by its code": _winerror(126, "The specified module could not be found."),
+    "pytorch by its text": OSError(
+        "[WinError 126] The specified module could not be found. Error loading "
+        r'"C:\eco\.venv\Lib\site-packages\torch\lib\c10.dll" or one of its dependencies.'
+    ),
+    "onnxruntime": ImportError(
+        "DLL load failed while importing onnxruntime_pybind11_state: "
+        "The specified module could not be found."
+    ),
+}
+
+OTHER_ERRORS = {
+    "rtree's words without a dll": OSError("could not find or load libspatialindex_c.so"),
+    "pytorch's words without a dll": OSError('Error loading "libtorch_cpu.so"'),
+    "another winerror": _winerror(5, "Access is denied."),
+    "an import that finds no module": ModuleNotFoundError("No module named 'onnxruntime'"),
+    "another import error": ImportError("cannot import name 'index' from 'rtree'"),
+    "rtree's words in another type": RuntimeError("could not find or load spatialindex_c-64.dll"),
+    "the import words in another type": ValueError("DLL load failed while importing cv2"),
+    "a network error": ConnectionError("connection reset"),
+}
+
+
+@pytest.mark.parametrize("error", DLL_ERRORS.values(), ids=list(DLL_ERRORS))
+def test_the_dll_errors_of_the_pdf_engine_are_found_on_windows(platform_is, error):
+    platform_is("win32")
+    assert models.vc_runtime_missing(error)
+
+
+@pytest.mark.parametrize("system", ["linux", "darwin"])
+@pytest.mark.parametrize("error", DLL_ERRORS.values(), ids=list(DLL_ERRORS))
+def test_the_same_errors_say_nothing_about_the_runtime_on_other_systems(platform_is, system, error):
+    platform_is(system)
+    assert not models.vc_runtime_missing(error)
+
+
+@pytest.mark.parametrize("error", OTHER_ERRORS.values(), ids=list(OTHER_ERRORS))
+def test_other_errors_are_not_a_missing_runtime(platform_is, error):
+    platform_is("win32")
+    assert not models.vc_runtime_missing(error)
+
+
+@pytest.mark.parametrize("link", ["__cause__", "__context__"])
+def test_a_dll_error_behind_another_error_is_found(platform_is, link):
+    platform_is("win32")
+    outer = ImportError("cannot import name 'index' from 'rtree'")
+    setattr(outer, link, _rtree_error())
+    assert models.vc_runtime_missing(outer)
+
+
+def test_a_chain_of_other_errors_is_not_a_missing_runtime(platform_is):
+    platform_is("win32")
+    assert not models.vc_runtime_missing(_caused_by(RuntimeError("outer"), ValueError("inner")))
+
+
+def test_the_message_is_the_one_text_every_layer_shows(vc_message):
+    assert str(models.VcRuntimeMissing()) == vc_message
+
+
+def test_a_missing_vc_runtime_is_named_and_never_retried(
+    tmp_path, monkeypatch, platform_is, vc_message
+):
+    platform_is("win32")
+    calls, original = [], _rtree_error()
+
+    def fail(**kw):
+        calls.append(1)
+        raise original
+
+    monkeypatch.setattr("eco.models._docling_download", fail)
+    with pytest.raises(models.VcRuntimeMissing) as raised:
+        download_models(tmp_path, sleep=lambda s: pytest.fail("retried"))
+    assert str(raised.value) == vc_message
+    assert "ipv4" not in str(raised.value).lower()
+    assert raised.value.__cause__ is original
+    assert calls == [1] and not models_ready(tmp_path)
+
+
+def test_setup_says_when_the_vc_runtime_is_missing(
+    monkeypatch, capsys, tmp_path, platform_is, vc_message
+):
+    platform_is("win32")
+
+    def fail(**kw):
+        raise _rtree_error()
+
+    monkeypatch.setattr("eco.models._docling_download", fail)
+    assert main(["setup", "--yes", "--data", str(tmp_path)]) == 1
+    assert capsys.readouterr().err == f"error: {vc_message}\n"

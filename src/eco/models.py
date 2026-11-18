@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import socket
+import sys
 import time
 from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
@@ -60,6 +61,50 @@ class ModelsMissing(Exception):
 
 class ChecksumMismatch(Exception):
     """A downloaded file is not the one the registry lists. It is deleted, so a retry fetches it."""
+
+
+class VcRuntimeMissing(Exception):
+    """The Microsoft Visual C++ Redistributable is missing, so a DLL of the PDF engine (rtree,
+    PyTorch, onnxruntime) cannot load. Raised from the error that said so. Only installing it
+    helps: a retry does not, and neither does connecting over IPv4."""
+
+    def __init__(self):
+        super().__init__(
+            "The Microsoft Visual C++ Redistributable (x64) is missing. "
+            "Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe and try again."
+        )
+
+
+def vc_runtime_missing(e: BaseException | None) -> bool:
+    """True on Windows if `e`, or an error it was raised from, is one that rtree, PyTorch or
+    onnxruntime raise when they cannot load a DLL, as they do without the Visual C++
+    Redistributable. Always False on other systems."""
+    if sys.platform != "win32":
+        return False
+    while e is not None:
+        text = str(e)
+        if isinstance(e, OSError) and (
+            ("could not find or load" in text and ".dll" in text)  # rtree
+            or getattr(e, "winerror", None) == 126  # PyTorch: ERROR_MOD_NOT_FOUND
+            or ("Error loading" in text and ".dll" in text)  # PyTorch, naming the DLL
+        ):
+            return True
+        if isinstance(e, ImportError) and "DLL load failed" in text:  # onnxruntime and others
+            return True
+        e = e.__cause__ or e.__context__
+    return False
+
+
+@contextmanager
+def explain_vc_runtime():
+    """Inside the block, an error for which `vc_runtime_missing` is true becomes VcRuntimeMissing,
+    raised from it. Any other error passes unchanged."""
+    try:
+        yield
+    except Exception as e:
+        if vc_runtime_missing(e):
+            raise VcRuntimeMissing() from e
+        raise
 
 
 def models_dir(data_dir: Path) -> Path:
@@ -224,8 +269,9 @@ def download_models(d: Path, *, ipv4: bool = False, attempts: int = 8, sleep=tim
     wrong, then check every file's format.
 
     Raises RuntimeError when the download still fails after `attempts` tries, when an OCR file
-    has no SHA-256 in rapidocr's registry, or when a file is not in an allowed format. Other
-    errors are raised as they are.
+    has no SHA-256 in rapidocr's registry, or when a file is not in an allowed format. Raises
+    VcRuntimeMissing at once, without a retry, when the PDF engine cannot load for want of the
+    Visual C++ Redistributable. Other errors are raised as they are.
     """
     d.mkdir(parents=True, exist_ok=True)
     with force_ipv4() if ipv4 else nullcontext():
@@ -234,6 +280,8 @@ def download_models(d: Path, *, ipv4: bool = False, attempts: int = 8, sleep=tim
                 _docling_download(output_dir=d)
                 break
             except Exception as e:
+                if vc_runtime_missing(e):
+                    raise VcRuntimeMissing() from e
                 if not _retryable(e):
                     raise
                 reason = f"{type(e).__name__}: {' '.join(str(e).split())}"

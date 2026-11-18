@@ -872,6 +872,25 @@ def test_select_files_shows_a_download_that_runs_and_one_that_failed():
         assert f"{name}: () => t('{key}')," in js
 
 
+def test_a_missing_vc_runtime_shows_its_message_alone_without_the_ipv4_button_and_hint():
+    js = source("app.js")
+    ended = function_body(js, "setupEnded")
+    assert (
+        "if (event.vc_runtime_missing) showSetupError(event.message, null, null, false);" in ended
+    )
+    # every other failure keeps the IPv4 hint, and the button
+    assert (
+        "else showSetupError(t('setup_stopped'), event.message, t('setup_stopped_hint'));" in ended
+    )
+    error = function_body(js, "showSetupError")
+    assert "function showSetupError(lead, detail, hint, offerIpv4 = true)" in error
+    assert "setSetupButtons(true, offerIpv4);" in error
+    buttons = function_body(js, "setSetupButtons")
+    assert "function setSetupButtons(failed, offerIpv4 = failed)" in buttons
+    assert "$('setup-ipv4').hidden = !offerIpv4;" in buttons
+    assert "download.textContent = failed ? t('try_again')" in buttons  # the plain retry stays
+
+
 def test_the_focus_leaves_the_models_note_before_the_note_is_hidden(tmp_path):
     focus = (
         "if (state.setup.ready && $('models-note').contains(document.activeElement)) "

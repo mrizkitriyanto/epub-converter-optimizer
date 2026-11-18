@@ -213,7 +213,8 @@ def extract_pdf(
     The folder is named after the PDF's SHA-256, the extractor version and `options.ocr`. One that
     holds a report.json is complete: it is reused, and only its findings are reported again. The
     stages are `read`, `layout` and `fix`. Raises PdfOpenError for a PDF that cannot be read,
-    ModelsMissing when `eco setup` has not run and Cancelled when `cancel()` says so.
+    ModelsMissing when `eco setup` has not run, VcRuntimeMissing when Docling cannot load a DLL
+    for want of the Visual C++ Redistributable, and Cancelled when `cancel()` says so.
     """
     try:
         digest = _sha256(pdf)
@@ -294,7 +295,7 @@ def convert_file(
     reflow` is the same as `auto`.
 
     Raises ValueError for an input of another kind, and what `extract_pdf` and the optimizer raise:
-    PdfOpenError, ModelsMissing, Cancelled, DRMError.
+    PdfOpenError, ModelsMissing, VcRuntimeMissing, Cancelled, DRMError.
     """
     start = time.monotonic()
     kind = "book" if path.is_dir() else path.suffix.lower().lstrip(".")

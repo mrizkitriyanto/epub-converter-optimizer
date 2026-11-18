@@ -2,9 +2,12 @@ import io
 import json
 import multiprocessing
 import os
+import queue
 import signal
+import tempfile
 import time
 import zipfile
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -19,6 +22,7 @@ from fakes import (
     wait_for,
 )
 
+from eco.models import MARKER, models_dir
 from eco.options import Options
 from eco.style import PageStyle
 from eco.web import jobs
@@ -577,6 +581,33 @@ def test_job_where_no_file_converts_fails(started):
     wait_for(lambda: store.get(info.id).status in ("done", "failed"), 120)
     assert store.get(info.id).status == "failed"
     assert store.events(info.id)[-1] == {"type": "end", "status": "failed"}
+
+
+def test_a_pdf_that_needs_the_missing_vc_runtime_fails_with_its_message(
+    tmp_path, monkeypatch, fixtures_dir, platform_is, vc_message
+):
+    # The real `_work`, called here and not in a worker process, which would not see the patches.
+    platform_is("win32")
+    monkeypatch.setattr(tempfile, "tempdir", None)  # `_work` moves it into the job; put back after
+    models_dir(tmp_path).mkdir(parents=True)
+    (models_dir(tmp_path) / MARKER).write_text(version("docling"))
+
+    def convert(self, source, **kwargs):
+        raise ImportError(
+            "DLL load failed while importing onnxruntime_pybind11_state: "
+            "The specified module could not be found."
+        )
+
+    monkeypatch.setattr("docling.document_converter.DocumentConverter.convert", convert)
+    store = JobStore(tmp_path)
+    pdf = fixtures_dir["blank"].read_bytes()
+    info = store.create([("book.pdf", io.BytesIO(pdf))], Options())
+    events = queue.Queue()
+    jobs._work(str(store.job_dir(info.id)), info.options, str(tmp_path), events)
+    sent = list(events.queue)
+    failed = [e for e in sent if e["type"] == "file" and e["status"] == "failed"]
+    assert [e["error"] for e in failed] == [vc_message]
+    assert sent[-1] == {"type": "end", "status": "failed"}
 
 
 def test_cancel_ends_the_worker_process_within_10_s(started):

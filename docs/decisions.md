@@ -861,3 +861,29 @@ the choices the rulings and the spec leave open.
   be read.
 - Hyphenation (spec section 8.9, "check for `id`"): Typst 0.15 has no Indonesian patterns. With `lang`
   `id`, `ind` or `ms` the `hyphenate` switch changes nothing, and English, German and Dutch hyphenate.
+
+## 2026-11-18: A missing Visual C++ runtime is named, and the page does not suggest IPv4 (M3-N3, Q-20)
+
+On a clean Windows machine the PDF engine cannot load without the Microsoft Visual C++ Redistributable.
+On the owner's laptop the model download ended with "could not find or load spatialindex_c-64.dll"
+(rtree loads before PyTorch, so PyTorch's own hint never showed), and the page offered "Try again over
+IPv4", which failed the same way. Spec section 5 lists a fragile install on Windows as an anti-goal, and
+section 8.14 asks for a clear message.
+
+- `eco.models.vc_runtime_missing(e)` says whether an error means that. It is true only on Windows, and
+  only for these forms, in the error or in any error it was raised from (`__cause__`, `__context__`):
+  an `OSError` whose message holds "could not find or load" and ".dll" (rtree); an `OSError` with
+  `winerror` 126, or a message holding "Error loading" and ".dll" (PyTorch); an `ImportError` whose
+  message holds "DLL load failed" (onnxruntime and other extension modules).
+- Such an error becomes `VcRuntimeMissing`, raised from the original, with one message: "The Microsoft
+  Visual C++ Redistributable (x64) is missing. Install it from
+  https://aka.ms/vs/17/release/vc_redist.x64.exe and try again." `download_models` raises it at once,
+  with no retry and no `--ipv4` hint. `extract_blocks` raises it for anything that goes wrong while it
+  imports and runs Docling, because the DLLs load at different steps. So `eco setup`, `eco convert`,
+  `eco extract`, the GUI download and the GUI jobs each show that text where they show any error.
+- The `end` event of a GUI download that stopped this way has `"vc_runtime_missing": true`; no other
+  `end` event has the key. The page then shows the message alone, with no "Try again over IPv4" and no
+  IPv4 hint. "Try again" stays, for after the install.
+- eco does not look for the runtime when it starts. It names the failure where it happens, so on
+  Windows a DLL that fails to load in these forms gets this message whichever DLL it was. The original
+  error stays chained. If it turns out wrong: the forms are in one function.

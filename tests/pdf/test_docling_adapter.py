@@ -20,7 +20,7 @@ from docling_core.types.doc import (
 )
 
 from eco.book import Block
-from eco.models import MARKER, ModelsMissing
+from eco.models import MARKER, ModelsMissing, VcRuntimeMissing
 from eco.pdf.docling_adapter import _to_blocks, extract_blocks
 
 TEXT = "Some text."
@@ -420,6 +420,46 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
     assert options.do_table_structure is True
     assert not (options.do_code_enrichment or options.do_formula_enrichment)
     assert not (options.generate_page_images or options.generate_picture_images)
+
+
+def extract_with_convert_raising(tmp_path, monkeypatch, error):
+    """Call extract_blocks with Docling's `convert` raising `error`, so Docling never runs."""
+    (tmp_path / MARKER).write_text(version("docling"))
+
+    def convert(self, source, **kwargs):
+        raise error
+
+    monkeypatch.setattr("docling.document_converter.DocumentConverter.convert", convert)
+    return extract_blocks(
+        tmp_path / "book.pdf", tmp_path, first=1, last=1, ocr="auto", on_page=lambda n: None
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError("could not find or load spatialindex_c-64.dll"),
+        ImportError(
+            "DLL load failed while importing onnxruntime_pybind11_state: "
+            "The specified module could not be found."
+        ),
+    ],
+    ids=["rtree", "onnxruntime"],
+)
+def test_a_dll_that_docling_cannot_load_is_reported_as_the_missing_vc_runtime(
+    tmp_path, monkeypatch, platform_is, vc_message, error
+):
+    platform_is("win32")
+    with pytest.raises(VcRuntimeMissing) as raised:
+        extract_with_convert_raising(tmp_path, monkeypatch, error)
+    assert str(raised.value) == vc_message
+    assert raised.value.__cause__ is error
+
+
+def test_any_other_error_of_docling_is_not_changed(tmp_path, monkeypatch, platform_is):
+    platform_is("win32")
+    with pytest.raises(ValueError, match="bad page"):
+        extract_with_convert_raising(tmp_path, monkeypatch, ValueError("bad page"))
 
 
 def test_import_does_not_load_docling():

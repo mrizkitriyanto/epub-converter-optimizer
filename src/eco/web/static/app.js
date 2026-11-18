@@ -363,21 +363,21 @@
     showSelect();
   }
 
-  function setSetupButtons(failed) {
+  function setSetupButtons(failed, offerIpv4 = failed) {
     const download = $('setup-download');
     download.disabled = false;
     download.textContent = failed ? t('try_again') : t('setup_button', { mb: state.setup.total_mb });
-    $('setup-ipv4').hidden = !failed;
+    $('setup-ipv4').hidden = !offerIpv4;
     $('setup-ipv4').disabled = false;
   }
 
-  function showSetupError(lead, detail, hint) {
+  function showSetupError(lead, detail, hint, offerIpv4 = true) {
     const lines = [h('span', { class: 'block' }, lead)];
     if (detail) lines.push(h('span', { class: 'block muted' }, detail));
     if (hint) lines.push(h('span', { class: 'block' }, hint));
     $('setup-error').replaceChildren(...lines);
     $('setup-error').hidden = false;
-    setSetupButtons(true);
+    setSetupButtons(true, offerIpv4);
     state.download = 'failed'; // the user may be on Select files, where the gate is out of sight
     renderModelsNote();
   }
@@ -430,7 +430,10 @@
 
   async function setupEnded(event) {
     if (event.status !== 'done') {
-      showSetupError(t('setup_stopped'), event.message, t('setup_stopped_hint'));
+      // The server says when a missing Visual C++ runtime stopped the run. Its message is all there is
+      // to tell, and trying over IPv4 cannot help.
+      if (event.vc_runtime_missing) showSetupError(event.message, null, null, false);
+      else showSetupError(t('setup_stopped'), event.message, t('setup_stopped_hint'));
       return;
     }
     try {
