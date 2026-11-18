@@ -35,25 +35,22 @@ _KIND = {
 }
 
 
-# A hyphen that ends a line after a word that already holds a hyphen, slash or dot (a compound,
-# a URL, a file name), or that has a digit on either side of it. Hyphenation splits none of these.
-_KEPT_HYPHEN = re.compile(r"(?:[-/.]\S*\w|\d)-$")
-_SPLIT = re.compile(r"\w-$")  # what Docling takes for a split word, when a word follows
+_LINE_END_HYPHEN = re.compile(r"\w[-–]$")
 
 
-def _join_kept_hyphens(lines: list[str]) -> list[str]:
-    """Join each line that ends in a hyphen of the text itself to the line after it.
+def _keep_line_end_hyphens(lines: list[str]) -> list[str]:
+    """Join each line that ends in a hyphen or en dash after a word to the next line, keeping
+    the hyphen and the line break.
 
     Docling joins the lines of a block and drops every hyphen that ends a line between two words,
-    taking it for a word split by hyphenation, so `end-of-` and `season` become `end-ofseason`.
-    Joined here first, the hyphen stays. Any other line end is left to Docling.
+    so `guru-` and `guru` became `guruguru` and `end-of-` and `season` became `end-ofseason`.
+    Kept as `guru-\\nguru`, the split reaches the fix stage, whose dehyphenate decides it by the
+    spec's rule. Every other line end is left to Docling.
     """
     out: list[str] = []
     for line in lines:
-        before = out[-1] if out else ""
-        kept = _KEPT_HYPHEN.search(before) or (_SPLIT.search(before) and line[:1].isdigit())
-        if kept and line[:1].isalnum():
-            out[-1] += line
+        if out and _LINE_END_HYPHEN.search(out[-1]):
+            out[-1] += "\n" + line
         else:
             out.append(line)
     return out
@@ -127,22 +124,32 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
 
 
 def _pipeline_class():
-    """Docling's PDF pipeline with a page assembly that applies `_join_kept_hyphens` first.
-    Docling is loaded by then: extract_blocks calls this inside offline_env."""
+    """Docling's PDF pipeline, changed in the two places where Docling joins a hyphen at a line
+    end: the page assembly applies `_keep_line_end_hyphens` first, and the reading order keeps the
+    hyphen and a line break when it merges a text that a page or column break cut. Docling is
+    loaded by then: extract_blocks calls this inside offline_env."""
     from docling.models.stages.page_assemble.page_assemble_model import (
         PageAssembleModel,
         PageAssembleOptions,
     )
+    from docling.models.stages.reading_order.readingorder_model import ReadingOrderModel
     from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 
     class Assemble(PageAssembleModel):
         def sanitize_text(self, lines):
-            return super().sanitize_text(_join_kept_hyphens(lines))
+            return super().sanitize_text(_keep_line_end_hyphens(lines))
+
+    class ReadingOrder(ReadingOrderModel):
+        def _merge_elements(self, element, merged_elem, new_item, page_height):
+            if _LINE_END_HYPHEN.search(new_item.text):
+                new_item.text += "\n"  # no longer ends in "-", so Docling joins with a space
+            super()._merge_elements(element, merged_elem, new_item, page_height)
 
     class Pipeline(StandardPdfPipeline):
         def _init_models(self):
             super()._init_models()
             self.assemble_model = Assemble(options=PageAssembleOptions())
+            self.reading_order_model = ReadingOrder(options=self.reading_order_model.options)
 
     return Pipeline
 

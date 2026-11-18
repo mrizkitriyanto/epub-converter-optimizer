@@ -2,13 +2,22 @@
 
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import replace
 
 from eco.book import Block
 
 _LIGATURES = str.maketrans({"ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl"})
 _SPACE_RUN = re.compile(" {2,}")
-_HYPHEN_BREAK = re.compile(r"(\w+)[-–]\s+(\w+)")
+# A hyphen or en dash after a word, then a line break, then a word: the word before it whole, as
+# its start, the fragment, the dash and the fragment after. In a table cell, a space instead of
+# the line break, and letters only, so "-rw-rw-rw- 1" and "first- and" inside a line stay as they
+# are in text, where they cannot be told apart from a split.
+_BREAK = re.compile(r"(?<!\S)(\S*?)(\w+)([-–])\n[ \t]*(\w+)")
+_CELL_BREAK = re.compile(r"(?<!\S)(\S*?)([^\W\d_]+)([-–]) +([^\W\d_]+)")
+_BREAK_FRAGMENT = re.compile(r"\w+(?=[-–]\n)|(?<=[-–]\n)[ \t]*\w+")
+_CELL_FRAGMENT = re.compile(r"[^\W\d_]+(?=[-–] +[^\W\d_])|(?<=[^\W\d_][-–] )[^\W\d_]+")
+_TAG = re.compile(r"(<[^>]*>)")
 _SENTENCE_END = (".", "!", "?", ":", ";", '"', "”", ")")
 
 _SHORT_WORDS = {
@@ -52,27 +61,58 @@ def normalize(text: str) -> str:
     return _SPACE_RUN.sub(" ", text)
 
 
+def _vocabulary(blocks: list[Block]) -> Counter[str]:
+    """The words of the whole book, lowercase, except the fragments at its line-end breaks."""
+    words: Counter[str] = Counter()
+    for b in blocks:
+        cells = _TAG.split(b.html)[::2]  # the text between the tags of a table
+        texts = [_BREAK_FRAGMENT.sub(" ", t) for t in (b.text, b.caption)]
+        texts += [_CELL_FRAGMENT.sub(" ", t) for t in cells]
+        words.update(w.lower() for t in texts for w in re.findall(r"\w+", t))
+    return words
+
+
 def dehyphenate(blocks: list[Block]) -> tuple[list[Block], int]:
-    """Join words split at a line end. Returns the new blocks and the number of joins."""
-    vocabulary = {
-        w.lower() for b in blocks if b.kind == "paragraph" for w in re.findall(r"\w+", b.text)
-    }
+    """Decide every hyphen that ended a line (spec section 8.4.6). Returns the new blocks and the
+    number of words joined.
+
+    The adapter keeps such a hyphen with its line break (`seper-\\ntinya`); a table cell has a
+    space instead, as Docling's table model joins the words of a cell with spaces. The split joins
+    when the joined word appears elsewhere in the book, or when a fragment appears nowhere else as
+    a word of its own; otherwise the hyphen stays, with no space. A digit on either side, or a word
+    that holds "/" or ".", always keeps its hyphen, and with a capital after the break only the
+    joined word decides. A word that already holds a hyphen is decided on its last part. A hyphen
+    inside a line is left alone, and so is code.
+    """
+    vocabulary = _vocabulary(blocks)
     joins = 0
 
     def fix(match: re.Match) -> str:
         nonlocal joins
-        first, second = match.groups()
-        if not second[0].islower():
-            return match.group(0)
-        # ponytail: the brief's "or neither part is" cannot happen, both parts are always in the
-        # vocabulary (fragments count), so only the joined word decides.
-        if (first + second).lower() in vocabulary:
-            joins += 1
-            return first + second
-        return f"{first}-{second}"
+        prefix, first, dash, second = match.groups()
+        kept, joined = prefix + first + dash + second, prefix + first + second
+        if first[-1].isdigit() or second[0].isdigit() or "/" in prefix or "." in prefix:
+            return kept
+        if not vocabulary[(first + second).lower()] and (
+            second[0].isupper() or (vocabulary[first.lower()] and vocabulary[second.lower()])
+        ):
+            return kept
+        joins += 1
+        return joined
+
+    def text(value: str) -> str:
+        while (fixed := _BREAK.sub(fix, value)) != value:  # again for a word over three lines
+            value = fixed
+        return value
+
+    def html(value: str) -> str:
+        parts = _TAG.split(value)
+        return "".join(p if i % 2 else _CELL_BREAK.sub(fix, p) for i, p in enumerate(parts))
 
     out = [
-        replace(b, text=_HYPHEN_BREAK.sub(fix, b.text)) if b.kind == "paragraph" else b
+        b
+        if b.kind == "code"
+        else replace(b, text=text(b.text), caption=text(b.caption), html=html(b.html))
         for b in blocks
     ]
     return out, joins
@@ -117,7 +157,9 @@ def join_split_paragraphs(blocks: list[Block]) -> list[Block]:
             and not prev.text.rstrip().endswith(_SENTENCE_END)
             and block.text[:1].islower()
         ):
-            out[-1] = replace(prev, text=prev.text + " " + block.text)
+            # a hyphen at the page end keeps its line break, the form dehyphenate decides
+            gap = "\n" if re.search(r"\w[-–]$", prev.text) else " "
+            out[-1] = replace(prev, text=prev.text + gap + block.text)
         else:
             out.append(block)
     return out

@@ -49,28 +49,92 @@ def test_heading_artifacts_leave_numbering_alone():
     assert clean_heading_artifacts("1. Pendahuluan") == "1. Pendahuluan"
 
 
-def test_dehyphenate_uses_book_vocabulary():
+def dehyphenated(text, context=""):
+    """The text of one paragraph after dehyphenate, with `context` as the rest of the book."""
+    out, _ = dehyphenate([Block("paragraph", text), Block("paragraph", context)])
+    return out[0].text
+
+
+@pytest.mark.parametrize(
+    "text, context, expected",
+    [
+        # a reduplication split inside its second half joins (the joined part is a word)
+        ("mereka masing-ma-\nsing pulang", "masing-masing", "mereka masing-masing pulang"),
+        # an em dash that the PDF parser reads as "-", before a split word
+        ("the result-unprece-\ndented gain", "", "the result-unprecedented gain"),
+        # a reduplication split at its own hyphen keeps it
+        ("para guru-\nguru datang", "guru itu", "para guru-guru datang"),
+        ("mereka masing-\nmasing pulang", "masing-masing", "mereka masing-masing pulang"),
+        # the spec's example
+        ("hujan lebat, seper–\ntinya saya", "sepertinya iya", "hujan lebat, sepertinya saya"),
+        # "ated" is no word of its own, so the split joins although "hyphenated" is nowhere else
+        ("a hyphen-\nated word", "one hyphen", "a hyphenated word"),
+        # both parts are words and the joined word is nowhere else: the hyphen stays
+        ("the end-of-\nseason sale", "the end of the season", "the end-of-season sale"),
+        ("a some-\nthing", "some thing", "a some-thing"),
+        ("a some-\nthing", "some thing, something", "a something"),
+        # a digit on either side, or a word that holds "/" or ".", keeps its hyphen
+        ("see example.org/a-\nb today", "ab", "see example.org/a-b today"),
+        ("at /srv/data-\nset now", "dataset", "at /srv/data-set now"),
+        ("a 512-\nbyte page", "512byte", "a 512-byte page"),
+        ("Figure 4-\n2 shows", "", "Figure 4-2 shows"),
+        ("model x-\n9 runs", "x9", "model x-9 runs"),
+        # a capital after the break joins only when the joined word is elsewhere
+        ("run Olly-\nDbg now", "OllyDbg", "run OllyDbg now"),
+        ("run Hex-\nRays now", "", "run Hex-Rays now"),
+        # the fragments at the split are no words of their own
+        ("the infor-\nmation", "", "the information"),
+        # a line break that the reading order merge left with a space after it
+        ("para guru-\n guru datang", "guru itu", "para guru-guru datang"),
+        # a word split over three lines
+        ("a mul-\nti-\nline", "", "a multiline"),
+    ],
+)
+def test_a_line_end_hyphen_follows_the_spec_rule(text, context, expected):
+    assert dehyphenated(text, context) == expected
+
+
+def test_a_hyphen_inside_a_line_is_left_alone():
+    text = "-rw-rw-rw- 1 root, first- and second-order, guru- guru"
+    assert dehyphenated(text, "guruguru") == text
+
+
+def test_every_block_kind_but_code_is_dehyphenated_with_the_vocabulary_of_the_whole_book():
+    table = (
+        "<table><tr><td>a hyphen- ated cell</td><td>password- protected</td>"
+        "<td>see 512- byte</td></tr></table>"
+    )
     blocks = [
-        Block("paragraph", "Hari ini hujan lebat, seper– tinya saya juga."),
-        Block("paragraph", "sepertinya iya, user- created"),
+        Block("heading", "A hyphen-\nated head"),
+        Block("list_item", "a hyphen-\nated item"),
+        Block("footnote", "a hyphen-\nated note"),
+        Block("image", image="images/a.png", caption="a hyphen-\nated caption"),
+        Block("table", html=table),
+        Block("code", "x = hyphen-\nated"),
+        Block("paragraph", "some-\nthing about a password, protected"),
+        Block("heading", "Something"),
     ]
-    out, n = dehyphenate(blocks)
-    assert out[0].text == "Hari ini hujan lebat, sepertinya saya juga."
-    assert "user-created" in out[1].text
-    assert n == 1
+    out, joins = dehyphenate(blocks)
+    assert [b.text for b in out[:3]] == [
+        "A hyphenated head",
+        "a hyphenated item",
+        "a hyphenated note",
+    ]
+    assert out[3].caption == "a hyphenated caption"
+    assert out[4].html == (
+        "<table><tr><td>a hyphenated cell</td><td>password-protected</td>"
+        "<td>see 512- byte</td></tr></table>"
+    )
+    assert out[5] == blocks[5]
+    assert out[6].text == "something about a password, protected"
+    assert joins == 6
 
 
-def test_dehyphenate_keeps_other_blocks_and_does_not_mutate():
-    para = Block("paragraph", "seper- tinya", page=3)
-    code = Block("code", "a- b")
-    out, n = dehyphenate([para, code, Block("paragraph", "sepertinya")])
-    assert (out[0].text, out[0].page, out[1], n) == ("sepertinya", 3, code, 1)
-    assert para.text == "seper- tinya"
-
-
-def test_dehyphenate_skips_uppercase_second_word():
-    out, n = dehyphenate([Block("paragraph", "Jawa- Barat Jawabarat")])
-    assert (out[0].text, n) == ("Jawa- Barat Jawabarat", 0)
+def test_dehyphenate_does_not_mutate_its_input():
+    para = Block("paragraph", "seper-\ntinya", page=3)
+    out, joins = dehyphenate([para])
+    assert (out[0].text, out[0].page, joins) == ("sepertinya", 3, 1)
+    assert para.text == "seper-\ntinya"
 
 
 def test_language():
@@ -110,3 +174,8 @@ def test_join_split_paragraphs_needs_lowercase_start_and_two_paragraphs():
     assert len(join_split_paragraphs([Block("paragraph", "a"), Block("paragraph", "Besar")])) == 2
     assert len(join_split_paragraphs([Block("paragraph", "a"), Block("heading", "kecil")])) == 2
     assert len(join_split_paragraphs([Block("list_item", "a"), Block("paragraph", "kecil")])) == 2
+
+
+def test_join_split_paragraphs_keeps_the_line_break_after_a_hyphen_for_dehyphenate():
+    blocks = [Block("paragraph", "para guru-", page=1), Block("paragraph", "guru datang.", page=2)]
+    assert [b.text for b in join_split_paragraphs(blocks)] == ["para guru-\nguru datang."]

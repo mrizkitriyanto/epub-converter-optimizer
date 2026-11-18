@@ -389,6 +389,7 @@ error for either.
 
 ## 2026-11-18: Docling adapter: a hyphen of the text at a line end stays (AC1)
 
+- Replaced by "Every line-end hyphen follows the spec's rule (R-72)" below.
 - Docling joins the lines of a block and drops every hyphen that ends a line between two word
   characters, taking it for a word split by hyphenation. eco first joins a line to the next one,
   keeping the hyphen, when the word before the hyphen already holds a hyphen, slash or dot (a
@@ -404,3 +405,29 @@ error for either.
 - It runs through `PdfFormatOption(pipeline_cls=...)`: a subclass of Docling's PDF pipeline whose
   page assembly applies the rule before Docling's own join. If it turns out wrong: drop the
   pipeline class.
+
+## 2026-11-18: Every line-end hyphen follows the spec's rule (R-72)
+
+- The fix stage's `dehyphenate` decides every hyphen or en dash that ended a line, in every block
+  kind but code, against the words of the whole book (spec section 8.4.6). The split joins when the
+  joined word appears elsewhere, or when a fragment appears nowhere else as a word of its own (the
+  fragments at line breaks do not count). Otherwise the hyphen stays, with no space. A digit on
+  either side, or a word that holds "/" or ".", keeps its hyphen; with a capital after the break,
+  only the joined word decides; a word that already holds a hyphen is decided on its last part, so
+  `masing-ma-` and `sing` join to `masing-masing` and `end-of-` and `season` keep `end-of-season`.
+- Docling joined such hyphens itself in two places, the page assembly (`sanitize_text`) and the
+  reading order's merge of a text that a page or column break cut. The adapter's pipeline class
+  keeps the hyphen and the line break in both (`guru-` newline `guru`), and so does
+  `join_split_paragraphs` at a page end, so `dehyphenate` sees every split. Docling's join had glued
+  at least 20 reduplications in Bicara (`guruguru`) and dozens of compounds in the digital samples
+  (`selfencrypting`, `antidebugging`).
+- A table cell has no line breaks: Docling's table model joins its words with spaces. There the
+  rule applies to a hyphen between letters with a space after it (`password- protected`). In other
+  text a hyphen inside a line is left alone (`-rw-rw-rw- 1`, `first- and second-order`).
+- Measured on the text layers of the digital samples: Forensic 778 line-end hyphens, 733 joined
+  and 45 kept; Malware 2079, 1933 and 146; Threat Hunting 9, all kept (URLs, compounds, and em
+  dashes that Docling's parser reads as "-"). Read by hand, the joins sampled were right, and 10
+  keeps are wrong because both fragments occur elsewhere as tokens of their own (`com-ing`,
+  `PCM-CIA`, `forward-ing`, `pre-tend`, `hall-mark` and the like). If it turns out wrong: change the
+  vocabulary test in `dehyphenate`.
+- `EXTRACTOR_VERSION` is 3.

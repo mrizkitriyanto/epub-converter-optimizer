@@ -21,7 +21,8 @@ from docling_core.types.doc import (
 
 from eco.book import Block
 from eco.models import MARKER, ModelsMissing
-from eco.pdf.docling_adapter import _join_kept_hyphens, _to_blocks, extract_blocks
+from eco.pdf.docling_adapter import _keep_line_end_hyphens, _to_blocks, extract_blocks
+from eco.pdf.text import dehyphenate
 
 TEXT = "Some text."
 # The same box twice: as Docling stores it (bottom-left origin, so top > bottom) and as a Block
@@ -426,46 +427,91 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
 @pytest.mark.parametrize(
     "lines, joined",
     [
-        (["the end-of-", "season sale"], ["the end-of-season sale"]),
-        (["see example.org/a-", "b today"], ["see example.org/a-b today"]),
-        (["at /srv/data-", "set now"], ["at /srv/data-set now"]),
-        (["a 512-", "byte page"], ["a 512-byte page"]),
-        (["Figure 4-", "2 shows"], ["Figure 4-2 shows"]),
-        (["model x-", "9 runs"], ["model x-9 runs"]),
+        (["mereka masing-ma-", "sing pulang"], ["mereka masing-ma-\nsing pulang"]),
+        (["the result-unprece-", "dented gain"], ["the result-unprece-\ndented gain"]),
+        (["para guru-", "guru datang"], ["para guru-\nguru datang"]),
+        (["hujan seper–", "tinya saya"], ["hujan seper–\ntinya saya"]),
+        (["a hyphen-", "ated word"], ["a hyphen-\nated word"]),
+        (["the end-of-", "season sale"], ["the end-of-\nseason sale"]),
+        (["see example.org/a-", "b today"], ["see example.org/a-\nb today"]),
+        (["a 512-", "byte page"], ["a 512-\nbyte page"]),
+        (["Figure 4-", "2 shows"], ["Figure 4-\n2 shows"]),
+        (["a mul-", "ti-", "line"], ["a mul-\nti-\nline"]),
+        (["the end-of-", "(season)"], ["the end-of-\n(season)"]),
     ],
 )
-def test_a_hyphen_that_belongs_to_the_text_is_kept_at_a_line_end(lines, joined):
-    assert _join_kept_hyphens(lines) == joined
+def test_a_line_end_hyphen_reaches_the_fix_stage_with_its_line_break(lines, joined):
+    assert _keep_line_end_hyphens(lines) == joined
 
 
 @pytest.mark.parametrize(
     "lines",
     [
-        ["a hyphen-", "ated word"],  # a split word: Docling joins it
-        ["a dash -", "then more"],  # a dash after a space: Docling keeps it
-        ["the end-of-", "(season)"],  # not followed by a word
-        ["first line", "second-", "line"],
+        ["a dash -", "then more"],  # a dash after a space: Docling keeps it and adds a space
+        ["first line", "second line"],
         ["no hyphen here", "2 apples"],
         ["one line only-"],
     ],
 )
 def test_other_line_ends_are_left_to_docling(lines):
-    assert _join_kept_hyphens(lines) == lines
+    assert _keep_line_end_hyphens(lines) == lines
 
 
-def test_the_pipeline_assembles_text_with_the_kept_hyphens(tmp_path, monkeypatch):
-    """The pipeline class handed to Docling builds a page assembly that keeps those hyphens and
-    still joins a split word. Its models are not loaded: only the assembly is built."""
+def built_pipeline(tmp_path, monkeypatch):
+    """The pipeline class extract_blocks hands to Docling, with its models set up but not loaded:
+    Docling's own _init_models is replaced by one that only makes the reading order options."""
+    from docling.models.stages.reading_order.readingorder_model import ReadingOrderOptions
     from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 
     _, _, seen = run_with_fake_convert(tmp_path, monkeypatch, [(1, True)])
     pipeline_cls = seen["pipeline_cls"]
     assert issubclass(pipeline_cls, StandardPdfPipeline)
-    monkeypatch.setattr(StandardPdfPipeline, "_init_models", lambda self: None)
+
+    def init_models(self):
+        self.reading_order_model = SimpleNamespace(options=ReadingOrderOptions())
+
+    monkeypatch.setattr(StandardPdfPipeline, "_init_models", init_models)
     pipeline = object.__new__(pipeline_cls)
     pipeline._init_models()
-    lines = ["an up-to-", "date and hyphen-", "ated 8-", "bit word"]
-    assert pipeline.assemble_model.sanitize_text(lines) == "an up-to-date and hyphenated 8-bit word"
+    return pipeline
+
+
+def test_docling_runs_the_page_assembly_and_reading_order_that_the_pipeline_class_sets():
+    """A rename in Docling would leave eco's models unused, so the names are pinned."""
+    from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+
+    assert "assemble_model" in StandardPdfPipeline._create_run_ctx.__code__.co_names
+    assert "reading_order_model" in StandardPdfPipeline._assemble_document.__code__.co_names
+
+
+def test_line_end_hyphens_go_through_docling_to_dehyphenate(tmp_path, monkeypatch):
+    """Docling's real sanitize_text, then the fix stage's dehyphenate: the spec's rule decides."""
+    pipeline = built_pipeline(tmp_path, monkeypatch)
+    lines = ["mereka masing-ma-", "sing pulang, the result-unprece-", "dented gain, para guru-"]
+    lines += ["guru datang, an up-to-", "date 8-", "bit word", "next line"]
+    text = pipeline.assemble_model.sanitize_text(lines)
+    assert text == (
+        "mereka masing-ma-\nsing pulang, the result-unprece-\ndented gain, para guru-\n"
+        "guru datang, an up-to-\ndate 8-\nbit word next line"
+    )
+    context = Block("paragraph", "masing-masing guru, up to date")
+    out, _ = dehyphenate([Block("paragraph", text), context])
+    assert out[0].text == (
+        "mereka masing-masing pulang, the result-unprecedented gain, para guru-guru datang, "
+        "an up-to-date 8-bit word next line"
+    )
+
+
+def test_the_reading_order_merge_keeps_a_hyphen_with_its_line_break(tmp_path, monkeypatch):
+    """Docling merges a text that a page or column break cut, and drops a hyphen at its end."""
+    order = built_pipeline(tmp_path, monkeypatch).reading_order_model
+    box = BoundingBox(l=10, t=10, r=100, b=40)
+    item = SimpleNamespace(text="para guru-", orig="para guru-", prov=[], hyperlink=None, label="t")
+    rest = SimpleNamespace(text="guru datang.", page_no=2, cluster=SimpleNamespace(bbox=box))
+    rest.label, rest.hyperlink = "t", None
+    order._merge_elements(SimpleNamespace(), rest, item, 792.0)
+    out, _ = dehyphenate([Block("paragraph", item.text), Block("paragraph", "guru itu")])
+    assert out[0].text == "para guru-guru datang."
 
 
 def test_import_does_not_load_docling():
