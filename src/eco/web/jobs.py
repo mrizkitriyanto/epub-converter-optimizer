@@ -26,6 +26,7 @@ import queue
 import re
 import secrets
 import shutil
+import signal
 import tempfile
 import threading
 import time
@@ -49,8 +50,16 @@ KINDS = {".pdf": "pdf", ".md": "md", ".epub": "epub"}
 STOPPED = "The server stopped before this file was converted."
 _ID = re.compile(r"[0-9a-f]{16}")
 _BAD_CHARS = re.compile(r'[<>:"/\\|?*]')
-_DEVICE_NAME = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.IGNORECASE)
-_MAX_NAME = 120
+# Windows opens a device for these names, whatever comes after a dot, and for COM and LPT also
+# with 0 and the superscripts 1, 2 and 3; spaces before the dot are dropped.
+_DEVICE_NAME = re.compile(
+    r"(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])"
+    r" *(?:\.|$)",
+    re.IGNORECASE,
+)
+# Bytes of UTF-8 in a stored name. Linux and macOS take 255 in a file name, and a CJK character or
+# an emoji is three or four of them.
+_MAX_NAME_BYTES = 200
 _LOOK = 0.1  # seconds between looks at the cancel and stop flags while a worker runs
 # On Windows another program (an antivirus, the search indexer, a thread that still reads a file)
 # may hold a file for a moment, and a rename or a removal then fails: these are the waits, in
@@ -85,15 +94,17 @@ def safe_name(name: str) -> str:
 
     The last part of any path (`/` or `\\`), without control characters, `<>:"|?*` turned into
     `_` (a `:` would open an NTFS alternate data stream), no trailing dots or spaces (Windows drops
-    them), a `_` in front of a Windows device name (outputs are named after it), at most 120
-    characters with the type kept, and `file` when nothing is left.
+    them), at most 200 bytes of UTF-8 with the type kept (cut at a character), a `_` in front of a
+    Windows device name (it is the only guard of the stored name, and outputs are named after it),
+    and `file` when nothing is left.
     """
     name = re.split(r"[/\\]", name)[-1]
-    name = "".join(c for c in name if unicodedata.category(c) != "Cc")
+    name = "".join(c for c in name if unicodedata.category(c) not in ("Cc", "Cs"))
     name = _BAD_CHARS.sub("_", name).rstrip(". ")
-    if len(name) > _MAX_NAME:
+    if len(name.encode()) >= _MAX_NAME_BYTES:  # cut to one byte less: room for the `_`
         suffix = Path(name).suffix[:10]
-        name = name[: _MAX_NAME - len(suffix)].rstrip(". ") + suffix
+        room = _MAX_NAME_BYTES - 1 - len(suffix.encode())
+        name = name.encode()[:room].decode(errors="ignore").rstrip(". ") + suffix
     if _DEVICE_NAME.match(name):
         name = f"_{name}"
     return name or "file"
@@ -266,11 +277,21 @@ class JobStore:
         return infos
 
     def save(self, info: JobInfo) -> None:
-        """Write job.json: a new file, then a rename, so a crash never leaves half of one."""
+        """Write job.json: a new file, flushed to the disk, then a rename, so neither a crash nor a
+        power loss leaves half of one. The rename is tried again after each of _RETRY_WAITS."""
         path = self.job_dir(info.id) / "job.json"
         tmp = path.with_name("job.json.tmp")
         with self._lock:
-            tmp.write_text(json.dumps(asdict(info), ensure_ascii=False, indent=1), "utf-8")
+            with tmp.open("w", encoding="utf-8") as f:
+                f.write(json.dumps(asdict(info), ensure_ascii=False, indent=1))
+                f.flush()
+                os.fsync(f.fileno())
+            for wait in _RETRY_WAITS:
+                try:
+                    os.replace(tmp, path)
+                    return
+                except PermissionError:
+                    time.sleep(wait)
             os.replace(tmp, path)
 
     def delete(self, job_id: str) -> None:
@@ -312,9 +333,11 @@ class JobStore:
         """Delete the jobs made more than RETENTION_DAYS ago, except a running one (its worker
         uses the folder) and, with `keep_queued`, a queued one (the runner has it in its queue).
         A folder without a readable job.json goes by its own age, so an upload that is coming in
-        stays; with `orphans` it goes whatever its age: for the start of a server, when no upload
-        can be in flight, so what is left is an upload that a hard kill cut. Returns how many
-        went."""
+        stays. With `orphans` a folder with no job.json at all goes whatever its age: for the
+        start of a server, when no upload can be in flight, so what is left is an upload that a
+        hard kill cut, or a deleted job that would not go. A job.json that is there but cannot be
+        read (another version of eco wrote it, or a power loss emptied it) is never a reason to
+        delete the job at once. Returns how many went."""
         cutoff = (time.time() if now is None else now) - RETENTION_DAYS * 86400
         deleted = 0
         for job in self.root.iterdir():
@@ -324,7 +347,8 @@ class JobStore:
                 info = self.get(job.name)
             except (KeyError, OSError, ValueError, TypeError):
                 try:
-                    expired = orphans or job.stat().st_mtime < cutoff
+                    orphan = orphans and not (job / "job.json").exists()
+                    expired = orphan or job.stat().st_mtime < cutoff
                 except FileNotFoundError:
                     continue  # it went while we looked: an upload that failed
                 kept = False
@@ -413,6 +437,28 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
     q.put({"type": "end", "status": "done" if written else "failed"})
 
 
+def _worker_main(worker: Callable, *args) -> None:
+    """What a worker process runs: `worker(*args)`, after two settings that every worker needs.
+
+    Ctrl+C in the console reaches this process too (Windows: one console; POSIX: one process
+    group). The server stops its worker itself (M2-R16), so SIGINT is ignored here; otherwise the
+    job would end "stopped unexpectedly (exit code 1)", with a traceback on stderr.
+
+    A server that is killed (taskkill /F, SIGKILL, the OOM killer) cannot stop its worker, which
+    would run on and then hang at its exit on a pipe of events that nobody reads. So a thread
+    waits for the server's process to end, and then ends this one at once."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    server = multiprocessing.parent_process()
+    if server is not None:
+        threading.Thread(target=_end_with, args=(server,), name="eco-watchdog", daemon=True).start()
+    worker(*args)
+
+
+def _end_with(server: multiprocessing.process.BaseProcess) -> None:
+    server.join()
+    os._exit(1)
+
+
 def _kill(proc: multiprocessing.process.BaseProcess) -> None:
     """terminate(), up to 5 s for the worker to go, then kill(). kill() is TerminateProcess on
     Windows and SIGKILL on POSIX, which no process can ignore."""
@@ -426,8 +472,9 @@ def _kill(proc: multiprocessing.process.BaseProcess) -> None:
 class Runner:
     """Runs submitted jobs one at a time, first in first out, each in its own worker process.
 
-    `worker` is the worker's entry point, `_work` by default. The spawned process imports it by
-    module and name, so a stand-in must be a module-level function of an importable module.
+    `worker` is the worker's entry point, `_work` by default; the process runs it through
+    `_worker_main`. The spawned process imports it by module and name, so a stand-in must be a
+    module-level function of an importable module.
     """
 
     def __init__(self, store: JobStore, data_dir: Path, worker: Callable | None = None):
@@ -548,8 +595,8 @@ class Runner:
             info.status, info.position = "running", 0
             self.store.save(info)
         events = self._ctx.Queue()
-        args = (str(job), info.options, str(self.data_dir), events)
-        proc = self._ctx.Process(target=self.worker, args=args, name=f"eco-{job_id}", daemon=True)
+        args = (self.worker, str(job), info.options, str(self.data_dir), events)
+        proc = self._ctx.Process(target=_worker_main, args=args, name=f"eco-{job_id}", daemon=True)
         try:
             proc.start()
             status, error = self._watch(info, proc, events)
@@ -601,11 +648,18 @@ class Runner:
 
     def _finish(self, info: JobInfo, status: str, error: str | None = None) -> None:
         """Under the lock: end the job. `error` goes to each file that neither converted nor
-        failed. The `end` event is the job's last."""
+        failed. The `end` event is the job's last, and it is written once: when job.json could
+        not be saved after it (a full disk, a server killed in between), a second end only saves
+        job.json, with the status that the `end` gave."""
         if error:
             for f in info.files:
                 if not f.outputs and not f.error:
                     f.error = error
+        last = self.store.events(info.id)[-1:]
+        if last and last[0]["type"] == "end":
+            info.status, info.position = last[0]["status"], 0
+            self.store.save(info)
+            return
         info.status, info.position = status, 0
         self._publish(info, {"type": "end", "status": status}, save=True)
 

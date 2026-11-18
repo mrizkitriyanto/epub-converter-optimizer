@@ -99,6 +99,41 @@ def crashing_work(job_dir, options, data_dir, q) -> None:
     os._exit(3)
 
 
+def interrupted_work(job_dir, options, data_dir, q) -> None:
+    """Gets the Ctrl+C that a console sends to every process in it (SIGINT), then goes on and
+    ends `done`."""
+    signal.raise_signal(signal.SIGINT)
+    q.put({"type": "file", "index": 0, "status": "started"})
+    q.put({"type": "end", "status": "done"})
+
+
+def locking_work(job_dir, options, data_dir, q) -> None:
+    """Holds the server lock of `<data_dir>/worker` and never ends by itself, so a test can see
+    from another process whether this one still lives. Its first event tells its pid."""
+    from eco.web.jobs import server_lock
+
+    with server_lock(Path(data_dir) / "worker"):
+        q.put({"type": "file", "index": 0, "status": "started", "pid": os.getpid()})
+        while True:
+            time.sleep(0.1)
+
+
+def serve_one_job(data_dir) -> None:
+    """A server's runner and nothing else: it runs one job with `locking_work`, then waits until
+    it is killed."""
+    import io
+
+    from eco.options import Options
+    from eco.web.jobs import JobStore, Runner
+
+    store = JobStore(Path(data_dir))
+    runner = Runner(store, Path(data_dir), worker=locking_work)
+    runner.start()
+    runner.submit(store.create([("a.md", io.BytesIO(b"# A"))], Options()).id)
+    while True:
+        time.sleep(0.1)
+
+
 def hold_server_lock(data_dir, held) -> None:
     """Holds the server lock of `data_dir` until the process is killed."""
     from eco.web.jobs import server_lock

@@ -1,14 +1,25 @@
 import io
 import multiprocessing
 import os
+import signal
 import time
 import zipfile
 from pathlib import Path
 
 import pytest
-from fakes import crashing_work, epub_text, epub_title, hold_server_lock, stubborn_work, wait_for
+from fakes import (
+    crashing_work,
+    epub_text,
+    epub_title,
+    hold_server_lock,
+    interrupted_work,
+    serve_one_job,
+    stubborn_work,
+    wait_for,
+)
 
 from eco.options import Options
+from eco.web import jobs
 from eco.web.jobs import STOPPED, JobStore, Runner, safe_name, server_lock
 
 
@@ -100,18 +111,34 @@ def test_a_reserved_folder_that_is_never_adopted_is_purged_by_its_age(tmp_path):
     assert not job.exists()
 
 
-def test_purge_with_orphans_removes_a_folder_without_a_readable_job_json_at_any_age(tmp_path):
+def test_purge_with_orphans_removes_a_folder_without_a_job_json_at_any_age(tmp_path):
     store = JobStore(tmp_path)
     cut = store.reserve()  # no job.json, made just now
-    broken = store.reserve()
-    (broken / "job.json").write_text("{not json", encoding="utf-8")
-    not_a_job = store.reserve()
-    (not_a_job / "job.json").write_text("[]", encoding="utf-8")
     young = store.create([md()], Options())
     assert store.purge() == 0  # by age alone, nothing is old
-    assert store.purge(orphans=True) == 3
-    assert not any(p.exists() for p in (cut, broken, not_a_job))
+    assert store.purge(orphans=True) == 1
+    assert not cut.exists()
     assert [info.id for info in store.list()] == [young.id]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        b"{not json",
+        b"[]",
+        b"\x00" * 300,  # what a power loss can leave
+        b'{"id": "x", "a field of a later eco": 1}',  # a newer or an older eco wrote it
+    ],
+)
+def test_purge_at_start_leaves_a_job_json_it_cannot_read_to_the_age_rule(tmp_path, text):
+    store = JobStore(tmp_path)
+    job = store.reserve()
+    (job / "job.json").write_bytes(text)
+    (job / "output" / "book.x4.epub").write_bytes(b"an EPUB")
+    assert store.purge(orphans=True) == 0
+    assert (job / "output" / "book.x4.epub").is_file()  # never deleted at once
+    assert store.purge(now=time.time() + 8 * 86400, orphans=True) == 1  # but after 7 days
+    assert not job.exists()
 
 
 def expired(store, status):
@@ -179,9 +206,44 @@ def test_upload_names_are_safe_on_every_os(name, safe):
     assert safe_name(name) == safe
 
 
-def test_long_upload_name_is_cut_and_keeps_its_type():
-    name = safe_name("a" * 300 + ".pdf")
-    assert len(name) == 120 and name.endswith("a.pdf")
+@pytest.mark.parametrize(
+    "name",
+    [
+        "COM0.pdf",
+        "lpt0.md",
+        "COM¹.pdf",  # COM¹: Windows takes the superscript digits as 1, 2 and 3
+        "com²",
+        "LPT³.epub",
+        "CONIN$.pdf",
+        "conout$.md",  # written to the console on Windows 10
+        "con .pdf",  # Windows drops the spaces before the dot
+        "Aux  .epub",
+    ],
+)
+def test_every_windows_device_name_gets_a_mark_in_front(name):
+    assert safe_name(name) == f"_{name}"
+
+
+@pytest.mark.parametrize("name", ["COM10.pdf", "lpt.md", "conin.pdf", "console .md", "com⁴"])
+def test_a_name_that_only_looks_like_a_device_is_kept(name):
+    assert safe_name(name) == name
+
+
+@pytest.mark.parametrize("stem", ["a" * 300, "文" * 120, "\U0001f4d5" * 60, "é" * 150 + "x" * 100])
+def test_a_long_upload_name_is_cut_by_bytes_and_keeps_its_type(tmp_path, stem):
+    # Linux and macOS take at most 255 bytes in a file name, and a CJK character or an emoji is
+    # three or four of them: 86 characters may already be too many
+    name = safe_name(stem + ".pdf")
+    assert len(name.encode()) <= 200 and name.endswith(".pdf")
+    assert stem.startswith(name.removesuffix(".pdf"))  # cut at a character, never inside one
+    (tmp_path / name).write_bytes(b"%PDF")  # a name the disk takes
+
+
+def test_a_device_name_that_a_cut_makes_gets_its_mark_within_the_limit():
+    name = safe_name("con" + " " * 300 + "a.pdf")  # the cut leaves "con" and the type
+    assert name == "_con.pdf"
+    long = safe_name("_" * 400 + ".pdf")
+    assert len(long.encode()) <= 200
 
 
 def stored(job_dir: Path) -> list[str]:
@@ -276,6 +338,100 @@ def test_end_event_is_kept_before_the_status_that_ends_the_job(tmp_path):
     calls.clear()
     assert run.cancel(info.id)
     assert calls == ["end", "cancelled"]
+
+
+def test_job_json_is_on_the_disk_before_it_takes_the_place_of_the_old_one(tmp_path, monkeypatch):
+    # a power loss after the rename must not leave an empty job.json
+    store = JobStore(tmp_path)
+    info = store.create([md()], Options())
+    calls = []
+    real_replace = os.replace
+    monkeypatch.setattr(jobs.os, "fsync", lambda fd: calls.append("fsync"))
+    monkeypatch.setattr(
+        jobs.os, "replace", lambda src, dst: (calls.append("replace"), real_replace(src, dst))
+    )
+    info.status = "done"
+    store.save(info)
+    assert calls == ["fsync", "replace"]
+
+
+def test_save_tries_again_while_another_program_holds_job_json(tmp_path, monkeypatch):
+    # Windows: an antivirus or the search indexer holds the file for a moment ([WinError 5])
+    store = JobStore(tmp_path)
+    info = store.create([md()], Options())
+    monkeypatch.setattr(jobs, "_RETRY_WAITS", (0, 0))
+    real_replace, tries = os.replace, []
+
+    def held_twice(src, dst):
+        tries.append(dst)
+        if len(tries) <= 2:
+            raise PermissionError(13, "Access is denied")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(jobs.os, "replace", held_twice)
+    info.status = "done"
+    store.save(info)
+    assert len(tries) == 3 and store.get(info.id).status == "done"
+
+
+def test_save_gives_up_after_the_last_try(tmp_path, monkeypatch):
+    store = JobStore(tmp_path)
+    info = store.create([md()], Options())
+    monkeypatch.setattr(jobs, "_RETRY_WAITS", (0, 0))
+    tries = []
+
+    def held(src, dst):
+        tries.append(dst)
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(jobs.os, "replace", held)
+    info.status = "done"
+    with pytest.raises(PermissionError):
+        store.save(info)
+    assert len(tries) == 3
+    monkeypatch.undo()
+    assert store.get(info.id).status == "queued"  # the old job.json, whole
+
+
+def test_save_tries_again_only_on_windows():
+    assert bool(jobs._RETRY_WAITS) == (os.name == "nt")
+    assert sum(jobs._RETRY_WAITS) < 2  # a moment, not a hang
+
+
+def test_a_save_that_fails_after_the_end_writes_no_second_end(tmp_path, fake_worker):
+    class FailsOnce(JobStore):
+        failed = False
+
+        def save(self, info):
+            if info.status == "done" and not self.failed:  # the save that ends the job
+                self.failed = True
+                raise OSError("the disk is busy")
+            super().save(info)
+
+    store = FailsOnce(tmp_path)
+    run = Runner(store, tmp_path)
+    run.start()
+    try:
+        info = store.create([md()], Options())
+        run.submit(info.id)
+        wait_for(lambda: store.failed and store.get(info.id).status == "done", 20)
+    finally:
+        run.stop()
+    ends = [event for event in store.events(info.id) if event["type"] == "end"]
+    assert ends == [{"type": "end", "status": "done"}]
+
+
+def test_a_job_whose_end_was_kept_but_not_its_status_ends_as_its_end_says(tmp_path, started):
+    # the server stopped between the `end` event and job.json: the next start writes no second end
+    old = JobStore(tmp_path)
+    info = old.create([md()], Options())
+    info.status = "running"
+    old.save(info)
+    old.append_event(info.id, {"type": "file", "index": 0, "status": "started"})
+    old.append_event(info.id, {"type": "end", "status": "cancelled"})
+    store, _ = started()
+    assert store.get(info.id).status == "cancelled"
+    assert store.events(info.id)[1:] == [{"type": "end", "status": "cancelled"}]
 
 
 def test_rebuild_makes_a_new_job_from_the_same_inputs(tmp_path):
@@ -506,6 +662,47 @@ def test_new_server_settles_the_jobs_an_old_one_left(tmp_path, started, fake_wor
     assert store.events(was_running.id)[-1] == {"type": "end", "status": "done"}
     # a job that never started keeps its place and runs
     wait_for(lambda: store.get(was_queued.id).status == "done", 10)
+
+
+def test_ctrl_c_in_the_console_does_not_stop_the_worker(started):
+    # the console sends it to the worker too (Windows: one console; POSIX: one process group); the
+    # server stops the worker itself, so a job must not end "stopped unexpectedly (exit code 1)"
+    store, run = started(worker=interrupted_work)
+    info = store.create([md()], Options())
+    run.submit(info.id)
+    wait_for(lambda: store.get(info.id).status not in ("queued", "running"), 20)
+    left = store.get(info.id)
+    assert (left.status, left.files[0].error) == ("done", None)
+
+
+def test_a_worker_ends_when_its_server_is_killed(tmp_path):
+    # taskkill /F, SIGKILL or the OOM killer: the server cannot stop its worker, which would run
+    # on, and later hang at its exit on a full pipe of events nobody reads
+    ctx = multiprocessing.get_context("spawn")
+    server = ctx.Process(target=serve_one_job, args=(str(tmp_path),))  # its runner has children
+    server.start()
+    pid = None
+    try:
+        store = JobStore(tmp_path)
+
+        def worker_pid():
+            for info in store.list():
+                for event in store.events(info.id):
+                    if "pid" in event:
+                        return event["pid"]
+            return None
+
+        wait_for(lambda: worker_pid() is not None, 60)
+        pid = worker_pid()
+        assert not free(tmp_path / "worker")  # the worker runs and holds its lock
+        server.kill()
+        server.join(10)
+        wait_for(lambda: free(tmp_path / "worker"), 15)  # the worker went with its server
+    finally:
+        if server.is_alive():
+            server.kill()
+        if pid is not None and not free(tmp_path / "worker"):
+            os.kill(pid, signal.SIGTERM)  # do not leave it running when the test fails
 
 
 def test_server_lock_is_held_once_per_data_folder(tmp_path):
