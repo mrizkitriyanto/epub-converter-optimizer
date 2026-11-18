@@ -11,6 +11,7 @@ import threading
 from io import BytesIO
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+import pypdfium2 as pdfium
 import pytest
 from fakes import wire
 from fastapi.testclient import TestClient
@@ -306,6 +307,20 @@ def test_a_password_protected_pdf_gets_the_message_of_the_pipeline(tmp_path, enc
     r = inspect(client(data), "locked.pdf", encrypted_pdf.read_bytes())
     assert (r.status_code, r.json()) == (400, {"error": "PDF is password-protected: locked.pdf"})
     assert on_disk(data) == ["jobs"]
+
+
+@pytest.mark.parametrize("step", ["get_textpage", "get_objects"])
+def test_a_pdf_that_opens_but_fails_on_a_page_is_400_and_leaves_nothing(
+    tmp_path, digital, monkeypatch, step
+):
+    # PDFium opens it, then cannot read one of its pages: once a 500 with a traceback in the log
+    def broken(page, *args, **kwargs):
+        raise pdfium.PdfiumError("Failed to load page.")
+
+    monkeypatch.setattr(pdfium.PdfPage, step, broken)
+    r = inspect(client(tmp_path), "a.pdf", digital)
+    assert (r.status_code, r.json()) == (400, {"error": "This PDF could not be read"})
+    assert on_disk(tmp_path) == ["jobs"]
 
 
 def test_the_message_names_the_file_as_a_conversion_would_store_it(tmp_path):

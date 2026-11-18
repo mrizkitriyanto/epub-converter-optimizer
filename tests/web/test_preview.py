@@ -806,6 +806,29 @@ def test_live_page_picks_the_chapter_that_holds_the_page(c, app, small_book, thr
     assert body(three) == body(c.get(url(job, "preview/epub/2.png")))
 
 
+def test_the_live_page_of_a_page_deep_in_its_chapter_is_that_page(c, app, tmp_path, three_pages):
+    # the common case of a PDF: the page asked for is not the first page of its chapter
+    paragraphs = "\n\n".join(
+        f"Paragraph {n} of the second chapter, with enough words to fill a few lines."
+        for n in range(1, 13)
+    )
+    book = tmp_path / "long.book"
+    book.mkdir()
+    (book / "book.md").write_text(
+        "<!-- page: 1 -->\n\n# One\n\nFirst chapter text.\n\n<!-- page: 2 -->\n\n# Two\n\n"
+        f"{paragraphs}\n\n<!-- page: 3 -->\n\nThe text of page three.\n",
+        encoding="utf-8",
+    )
+    job = make_job(app, ("scan.pdf", three_pages), book_dir=book)
+    pages = c.get(url(job, "pages")).json()
+    two = pages["chapters"][1][1]  # the first device page of chapter Two
+    third = pages["page_map"].index(3) + 1  # the device page where source page 3 starts
+    live = c.get(url(job, "live.png?page=3"))
+    assert int(live.headers["x-excerpt-index"]) == third - two > 0
+    assert int(live.headers["x-excerpt-pages"]) == len(pages["page_map"]) - two + 1
+    assert body(live) == body(c.get(url(job, f"preview/epub/{third}.png")))
+
+
 def test_live_chapter_shows_that_chapter(c, app):
     job = make_job(app, ("book.md", LONG))
     one = c.get(url(job, "live.png?chapter=0"))

@@ -206,6 +206,10 @@ class _Guard:
             return self._login(request.query_params["token"])
         elif not self._authorized(request):
             return _error(401, STRINGS["error_token"])
+        # The page answers with `Referrer-Policy: no-referrer`, under which a browser sends
+        # `Origin: null` with a form POST and with a fetch() whose mode is not "cors", and this
+        # check refuses both. So every state-changing request of the page must stay a fetch() in
+        # its default mode.
         origin = request.headers.get("origin")
         own = f"{request.scope['scheme']}://{host}"
         if method in _STATE_CHANGING and origin is not None and origin.lower() != own:

@@ -39,6 +39,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import NamedTuple
 
+from pypdfium2 import PdfiumError
+
 from eco.bookfolder import BookSource, load_source
 from eco.epub.optimizer import DRMError
 from eco.epub.reader import epub_to_book
@@ -150,12 +152,15 @@ def _draw(file: JobFile, page: int) -> bytes:
 def describe_pdf(path: Path) -> dict:
     """What a row of Select files shows of a PDF before it is converted: its pages, how many of
     them are scanned (M1's rule, the one the `read` stage counts by) and the rates that turn them
-    into an estimate. 400, with M1's own message, for a PDF that cannot be opened."""
+    into an estimate. 400, with M1's own message, for a PDF that cannot be opened, and 400 for
+    one that opens but has a page that PDFium cannot read."""
     try:
         with _PDFIUM:
             infos = inspect_pdf(path)
     except PdfOpenError as error:
         raise PreviewError(400, str(error)) from None
+    except PdfiumError:
+        raise PreviewError(400, STRINGS["error_pdf"]) from None
     return {
         "pages": len(infos),
         "scanned_pages": sum(info.is_scanned for info in infos),

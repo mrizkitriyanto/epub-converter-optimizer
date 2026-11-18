@@ -25,6 +25,7 @@ from eco.options import (
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
 _LOOPBACK = ("127.0.0.1", "localhost", "::1")
+_ANY_ADDRESS = {"0.0.0.0": "127.0.0.1", "::": "[::1]"}  # and the loopback that reaches it
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{16,}")
 _TOKEN_RULE = "The token must be at least 16 characters, each one of A-Z, a-z, 0-9, - or _."
 _BROWSER_DELAY = 1.0  # seconds: the server listens by then
@@ -216,9 +217,15 @@ def _web(args: argparse.Namespace) -> int:
     app = create_app(data, token=token, max_upload_mb=args.max_upload_mb)
     host = f"[{args.host}]" if ":" in args.host else args.host
     query = f"?token={token}" if token else ""  # URL-safe: _TOKEN or token_urlsafe
-    print(f"Open: http://{host}:{args.port}/{query}", flush=True)
-    # a browser cannot connect to the any-address; this computer's loopback reaches the server
-    local = {"0.0.0.0": "127.0.0.1", "::": "[::1]"}.get(args.host, host)
+    # no device can open the any-address; this computer's loopback reaches the server, and other
+    # devices reach it at this computer's own address on the network
+    local = _ANY_ADDRESS.get(args.host, host)
+    print(f"Open: http://{local}:{args.port}/{query}", flush=True)
+    if args.host in _ANY_ADDRESS:
+        print(
+            f"On another device, use this computer's network address in place of {local}.",
+            flush=True,
+        )
     browser = threading.Timer(
         _BROWSER_DELAY, webbrowser.open, [f"http://{local}:{args.port}/{query}"]
     )
@@ -239,8 +246,19 @@ def _web(args: argparse.Namespace) -> int:
     return 0
 
 
+def _megabytes(value: str) -> int:
+    """`--max-upload-mb`: a whole number above 0. With 0 every upload would be too large."""
+    if not value.isdigit() or int(value) == 0:
+        raise argparse.ArgumentTypeError("must be a whole number of MB above 0")
+    return int(value)
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="eco", description="Convert PDF and Markdown to EPUB.")
+    parser = argparse.ArgumentParser(
+        prog="eco",
+        description="Convert PDF and Markdown to EPUB and optimize EPUB files, on the command "
+        "line or in a web browser (eco web).",
+    )
     parser.add_argument("--version", action="store_true", help="show the version and exit")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
@@ -293,7 +311,7 @@ def _parser() -> argparse.ArgumentParser:
     web.add_argument("--no-browser", action="store_true", help="do not open a browser")
     web.add_argument(
         "--max-upload-mb",
-        type=int,
+        type=_megabytes,
         default=500,
         metavar="MB",
         help="largest upload in MB (default: 500)",

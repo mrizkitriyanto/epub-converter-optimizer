@@ -288,6 +288,17 @@ def test_state_change_from_the_app_or_without_origin_gets_through(tmp_path, meth
     assert (r.status_code, r.json()) == (200, {"ok": True})
 
 
+def test_the_page_changes_state_only_with_a_fetch_in_its_default_mode(tmp_path):
+    # with no-referrer a browser sends `Origin: null` for a form POST and a fetch() in another
+    # mode, and the guard refuses that
+    assert not re.search(
+        r"\bmode\s*:\s*['\"](?:no-cors|same-origin|cors|navigate)", source("app.js")
+    )
+    assert not re.search(r"<form\b", local(tmp_path).get("/").text)
+    r = local(tmp_path).post("/api/jobs", headers={"Origin": "null"})
+    assert r.status_code == 403
+
+
 def test_reading_from_another_origin_is_not_an_origin_error(tmp_path):
     assert local(tmp_path).get("/", headers={"Origin": "http://evil.example"}).status_code == 200
 
@@ -1143,10 +1154,14 @@ def test_web_ends_quietly_on_the_ctrl_c_that_uvicorn_passes_on(monkeypatch, caps
     assert err == "" and open_line(out) == ["Open: http://127.0.0.1:8000/"]
 
 
+OTHER_DEVICES = "On another device, use this computer's network address in place of {local}."
+
+
 def test_web_made_up_token_opens_the_app(served, capsys, tmp_path):
     main(["web", "--host", "0.0.0.0", "--port", "9000", "--no-browser", "--data", str(tmp_path)])
     [line] = open_line(capsys.readouterr().out)
-    found = re.fullmatch(r"Open: http://0\.0\.0\.0:9000/\?token=([A-Za-z0-9_-]{32})", line)
+    # no device can open 0.0.0.0: this computer opens its loopback address
+    found = re.fullmatch(r"Open: http://127\.0\.0\.1:9000/\?token=([A-Za-z0-9_-]{32})", line)
     assert found
     app, kwargs = served["run"]
     assert (kwargs["host"], kwargs["port"]) == ("0.0.0.0", 9000)
@@ -1230,8 +1245,43 @@ def test_web_loopback_hosts_print_their_address(served, capsys, tmp_path, host, 
 def test_web_ipv6_any_address_is_bracketed_and_needs_a_token(served, capsys, tmp_path):
     main(["web", "--host", "::", "--no-browser", "--data", str(tmp_path)])
     [line] = open_line(capsys.readouterr().out)
-    assert line.startswith("Open: http://[::]:8000/?token=")
+    assert line.startswith("Open: http://[::1]:8000/?token=")
     assert served["run"][1]["host"] == "::"
+
+
+@pytest.mark.parametrize("host, local", [("0.0.0.0", "127.0.0.1"), ("::", "[::1]")])
+def test_web_on_every_address_says_how_other_devices_reach_it(
+    served, capsys, tmp_path, host, local
+):
+    main(["web", "--host", host, "--token", GOOD, "--no-browser", "--data", str(tmp_path)])
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == [f"Open: http://{local}:8000/?token={GOOD}", OTHER_DEVICES.format(local=local)]
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "192.168.1.20"])
+def test_web_on_one_address_prints_that_address_alone(served, capsys, tmp_path, host):
+    # an address of this computer on the network opens from every device as it is
+    main(["web", "--host", host, "--token", GOOD, "--no-browser", "--data", str(tmp_path)])
+    assert capsys.readouterr().out.splitlines() == [f"Open: http://{host}:8000/?token={GOOD}"]
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "1.5", "x"])
+def test_web_takes_a_positive_whole_upload_limit_only(served, capsys, tmp_path, limit):
+    # 0 or less once refused every upload with "File too large (limit 0 MB)"
+    argv = ["web", "--max-upload-mb", limit, "--no-browser", "--data", str(tmp_path / "d")]
+    assert main(argv) == 2
+    err = capsys.readouterr().err
+    assert "--max-upload-mb: must be a whole number of MB above 0" in err
+    assert served["run"] is None and not (tmp_path / "d").exists()
+
+
+def test_the_help_names_every_command(capsys):
+    assert main(["--help"]) == 0
+    out = " ".join(capsys.readouterr().out.split())
+    assert "Convert PDF and Markdown to EPUB and optimize EPUB files" in out
+    assert "in a web browser (eco web)" in out
+    for command in ("setup", "convert", "extract", "web"):
+        assert command in out
 
 
 def test_second_eco_web_on_the_same_data_stops_with_one_line(capsys, monkeypatch, tmp_path):
