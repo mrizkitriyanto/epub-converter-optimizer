@@ -11,8 +11,9 @@ table is at the bottom.
 
 ## Before you start
 
-- Browsers: the current Chrome, Firefox and Safari (Safari on macOS). Run the whole list in one, then
-  the groups that touch the page itself in the other two.
+- Browsers: the current Chrome, Firefox and Safari (Safari on macOS). Run every step in all three
+  browsers. The `curl` commands of A10 need no browser; the browser parts of A10, B9 and B10 differ between
+  browsers too, so run them in all three.
 - Start the server with `eco web --no-browser --data DIR` (stop it with Ctrl+C). It prints
   `Open: http://127.0.0.1:8000/`. Open that address yourself.
 - Two data folders: one empty (no models) and one where `eco setup` has run. A step says which one it
@@ -36,13 +37,14 @@ table is at the bottom.
   files. Review & download opens for the first one; the "File" list holds all three.
 - **A3 Progress.** With the PDF running: the bar moves, the line reads "Page i of n", and the stage
   list shows "Reading PDF", "Recognizing page layout", "Fixing code, formulas and reading order",
-  "Building EPUB" and "Optimizing and compressing", each marked done, in progress or waiting. A
+  "Building EPUB" and "Optimizing and compressing", each marked done, in progress or waiting. A PDF in "Page images" has no "Fixing code, formulas and reading order" stage. A
   Markdown file shows only the last two stages.
 - **A4 Cancel.** Start a PDF of about 100 pages and click "Cancel" while it runs. The button reads
   "Cancelling…", the job ends within 10 s, and Review shows "The conversion was cancelled." Start two
   jobs and cancel the second while it waits: it ends at once.
 - **A5 Reload restores the job.** Reload during Processing: the same stage shows again and the live
-  updates continue. Reload in Review: the same file and page show.
+  updates continue. Reload in Review: the same job opens in Review, on its first converted file and page 1 (the
+  address holds only `#job=ID`, so the file and the page you were on are not kept).
 - **A6 A finding moves both panes.** Open a PDF whose findings list is not empty. Click a finding with
   a page: the original page (caption "Original PDF, page N") and the device page (caption "Page N of
   M") both move to it.
@@ -77,7 +79,7 @@ In this order: these are the places where the script is least tested.
   dropped `report.docx` gives "Unsupported file type: report.docx" and no row. "Remove" leaves the
   focus on a sensible control.
 - **B2 The stream.** Start, Processing, Review for a Markdown file (a second or two). In the network
-  tab the event stream closes at its end, with no reconnect loop. "Back" returns to Select files. A
+  tab the event stream closes at its end, with no reconnect loop. The browser's Back button returns to Select files. A
   reload on an address with `#job=` restores each state: queued, running, done, failed, cancelled. The
   heading takes the focus at each change of stage.
 - **B3 A PDF with models.** The bar and "Page i of n" move. The time left ("about N min left")

@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-eco mengubah file PDF dan Markdown menjadi EPUB. Hasilnya disesuaikan untuk e-reader Xteink (X4, X4 Pro, X4 v2 Classic, X3) dan untuk e-reader umum. eco bisa mengalirkan ulang teks, mempertahankan halaman tetap, menjalankan OCR pada PDF hasil pindai, dan memperkecil gambar serta ukuran file.
+eco mengubah file PDF dan Markdown menjadi EPUB, dan mengoptimalkan file EPUB. Hasilnya disesuaikan untuk e-reader Xteink (X4, X4 Pro, X4 v2 Classic, X3) dan untuk e-reader umum. eco bisa mengalirkan ulang teks, mempertahankan halaman tetap, menjalankan OCR pada PDF hasil pindai, dan memperkecil gambar serta ukuran file.
 
 eco berupa alat baris perintah dengan GUI web yang berjalan di komputer Anda sendiri. Output XTC sedang direncanakan.
 
@@ -62,7 +62,7 @@ eco extract buku.pdf -o out/
 eco web
 ```
 
-Perintah ini menjalankan server lokal dan membuka `http://127.0.0.1:8000/` di browser Anda. Tambahkan file PDF, Markdown, atau EPUB (sampai 200 file per unggahan), pilih device dan pengaturan, lalu mulai. Kemajuan menampilkan tahap dan halaman, dan Anda bisa membatalkan konversi yang sedang berjalan. Tinjauan menampilkan temuan di samping halaman asli dan pratinjau halaman e-reader. Satu klik pada temuan menggerakkan keduanya. "Change settings" mengubah lagi dengan pengaturan lain; PDF tidak dibaca ulang. Setelah itu unduh EPUB-nya. Semuanya diproses di komputer ini.
+Perintah ini menjalankan server lokal dan membuka `http://127.0.0.1:8000/` di browser Anda. Tambahkan file PDF, Markdown, atau EPUB (sampai 200 file per unggahan), pilih device dan pengaturan, lalu mulai. Kemajuan menampilkan tahap dan halaman, dan Anda bisa membatalkan konversi yang sedang berjalan. Tinjauan menampilkan temuan di samping halaman asli dan pratinjau halaman e-reader. Satu klik pada temuan menggerakkan keduanya. "Change settings" mengubah lagi dengan pengaturan lain; PDF tidak dibaca ulang. Setelah itu unduh EPUB-nya. Semuanya diproses di komputer ini. Halamannya hanya berbahasa Inggris, jadi nama tombol dan label di sini ditulis dalam bahasa Inggris.
 
 Opsi `eco web`:
 

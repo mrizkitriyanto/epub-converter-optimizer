@@ -2,7 +2,7 @@
 
 [Bahasa Indonesia](README.id.md)
 
-eco converts PDF and Markdown files to EPUB. It tunes the result for Xteink e-readers (X4, X4 Pro, X4 v2 Classic, X3) and for general e-readers. It can reflow text, keep fixed pages, run OCR on scanned PDFs, and shrink images and file size.
+eco converts PDF and Markdown files to EPUB and optimizes EPUB files. It tunes the result for Xteink e-readers (X4, X4 Pro, X4 v2 Classic, X3) and for general e-readers. It can reflow text, keep fixed pages, run OCR on scanned PDFs, and shrink images and file size.
 
 eco is a command-line tool with a web GUI that runs on your own computer. XTC output is planned.
 
@@ -62,7 +62,7 @@ eco extract book.pdf -o out/
 eco web
 ```
 
-This starts a local server and opens `http://127.0.0.1:8000/` in your browser. Add PDF, Markdown or EPUB files (up to 200 per upload), choose the device and the settings, and start. Progress shows the stage and the page, and you can cancel a running conversion. Review shows the findings next to the original page and a preview of the e-reader page. A click on a finding moves both. "Change settings" converts again with other settings; a PDF is not read again. Then download the EPUBs. Everything is processed on this computer.
+This starts a local server and opens `http://127.0.0.1:8000/` in your browser. Add PDF, Markdown or EPUB files (up to 200 per upload), choose the device and the settings, and start. Progress shows the stage and the page, and you can cancel a running conversion. Review shows the findings next to the original page and a preview of the e-reader page. A click on a finding moves both. "Change settings" converts again with other settings; a PDF is not read again. Then download the EPUBs. Everything is processed on this computer. The page is in English only.
 
 Options of `eco web`:
 
