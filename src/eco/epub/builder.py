@@ -50,7 +50,7 @@ _TWIN = re.compile(r"<!--\s*table-image:\s*(.*?)\s*-->")
 _NEWLINE = re.compile(r"\r\n?|\n")
 # What XML 1.0 cannot hold: anything outside #x9, #xA, #xD, #x20-#xD7FF, #xE000-#xFFFD and
 # #x10000-#x10FFFF, so C0 controls, lone surrogates, U+FFFE and U+FFFF.
-_NOT_XML = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
+_NOT_XML = re.compile("[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
 _ENTITY = re.compile(r"&(?:([A-Za-z][A-Za-z0-9]*);|#(?:[0-9]+|x[0-9A-Fa-f]+);)?")
 _VOID = re.compile(
     r"<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)"
@@ -88,13 +88,13 @@ class _Builder:
         # that XML cannot hold becomes U+FFFD, counted by line to name its chapter.
         self.meta, replaced = {}, 0
         for key, value in src.meta.items():
-            self.meta[key], n = _NOT_XML.subn("�", value)
+            self.meta[key], n = _NOT_XML.subn("\ufffd", value)
             replaced += n
         if replaced:
             self._note_replaced(replaced, "the book's metadata")
         self.lines, self.replaced = [], {}  # line index -> characters replaced in it
         for index, line in enumerate(_NEWLINE.split(src.markdown)):
-            line, n = _NOT_XML.subn("�", line)
+            line, n = _NOT_XML.subn("\ufffd", line)
             self.lines.append(line)
             if n:
                 self.replaced[index] = n
