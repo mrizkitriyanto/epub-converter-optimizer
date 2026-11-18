@@ -806,7 +806,7 @@ a new route.
   opens and the line "On another device, use this computer's network address in place of 127.0.0.1."
   (no device can open `0.0.0.0`). `--max-upload-mb` takes a whole number above 0 only.
 
-## 2026-11-18: The renderer honours the page style: bar, boxes, orientation (M3 Task 2, M3-R3, M3-R9, M3-R10)
+## 2026-11-18: The renderer honours the page style: bar, boxes, orientation (M3 Task 2, M3-R3, M3-R9, M3-R10, M3-R11)
 
 `render_book`, `render_chapter` and `to_typst` take a `PageStyle` and `RenderSettings` is gone. These are
 the choices the rulings and the spec leave open.
@@ -814,14 +814,20 @@ the choices the rulings and the spec leave open.
 - Text as written (M3-R10). A `-` before a number (Typst makes a minus sign U+2212 of it, also before a
   superscript or an Arabic-Indic digit) and `...` (an ellipsis) are escaped like `--`, `---` and `-?`
   were, and `smartquote` is off, so quotes stay as typed. A dot is escaped when two more follow it, so
-  no run of dots is left with three. An XTC page is the book's text as a picture, and a changed
+  no run of dots is left with three. A `-` or a `.` that ends a piece of text is always escaped: a
+  link's text is escaped on its own, and what follows a piece could join it (`a -[5](#n)` was a minus
+  sign). An XTC page is the book's text as a picture, and a changed
   character would be content that changed without a warning (spec section 5). If it turns out wrong:
   straight quotes look less typographic; one regex and one `set` rule.
 - Strings in the source (M3-R9). The font family, the language and the chapter titles (the `<chap>`
-  markers, which the bar reads as data) go through `_str`. `lang: auto` takes the book's language when
-  its first subtag is two or three lowercase letters, and "en" (Typst's default) otherwise.
+  markers, which the bar reads as data) go through `_str`, and the weight is written as `int(...)`, so
+  a style built in code (only `from_json` checks a weight) cannot put anything else into the source.
+  `lang: auto` takes the book's language when its first subtag is two or three lowercase letters, and
+  "en" (Typst's default) otherwise.
 - The progress bar takes `bar_font_size + 2 * bar_edge_margin` px at its edge, and `margin` more lies
   between it and the text; with the bar off nothing is kept (M2 kept 22 px with its status bar off).
+  That is the least (M3-R11): with a line the text starts 4 px inside the edge margin, so the side
+  that the line is on takes `max(bar_edge_margin, 4)`, and the area always holds all that is drawn.
   From the edge inwards: the edge margin, the line (2 px; the read part black, the rest light gray 170,
   a level XTH has), its chapter ticks (6 px, black, reaching 2 px past the line on both sides, at the
   first page of each chapter but page 1), and the row of text, which starts at the edge margin when
@@ -829,14 +835,18 @@ the choices the rulings and the spec leave open.
   page, not from the text margin (both are 16 by default), and `bar_full_width` runs the line from side
   to side. The row is one string, left-aligned: title, `x / y`, book percent, chapter `x / y`, chapter
   percent, joined by two spaces, a middle dot and two spaces. A title that does not fit is cut at a
-  character, so that the numbers stay. Text before the first heading counts as a chapter with no title.
+  character, so that the numbers stay. Numbers that do not fit the row are left out from the end,
+  whole (half of one would read as another), and a first number that alone does not fit is left out
+  too: the row is one line inside its own area, never wrapped over the page. Text before the first
+  heading counts as a chapter with no title.
   It is a `footer` (`header` at the top) with a descent of 0, and `place` puts each part. If it turns out
   wrong: the geometry is in `_bar`.
 - Image boxes. `#show image` wraps each image in a `box` with a `<imgbox>` marker (`here().position()`
   and `measure`). Without the box a figure whose caption is wider than the image reports the start of
   the line that the image is centered in, 31 px to the left in a test. An image of relative width (a
-  vector image) measures 0 wide alone, so it is measured at the body width, and nested in a quote its
-  box can be wider than its frame. A box takes every pixel the image touches, so an image between
+  vector image) measures 0 wide alone, so it is measured at the width of its container, which
+  `layout` gives inside a `place` (a quote or a list takes some of the body's width, and the box is
+  its frame). A box takes every pixel the image touches, so an image between
   pixels has a box 1 px bigger. The stock view's placeholder, a table that is too large and the text
   have no box. The boxes are kept in `map.json`, and a cache without them is rendered again.
 - Orientation. A page is laid out with its width and height swapped for 90 and 270 and then turned

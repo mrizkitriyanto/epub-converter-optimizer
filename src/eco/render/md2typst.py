@@ -59,6 +59,7 @@ _MIN_IMAGE_SHARE = 0.25  # an image keeps at least this share of the body height
 _BAR_LINE = 2
 _BAR_TICK = 6
 _BAR_REACH = (_BAR_TICK - _BAR_LINE) // 2
+_BAR_LINE_ROOM = _BAR_TICK - _BAR_REACH  # from the edge margin to the text, when there is a line
 _BAR_TRACK = 170
 _BAR_SEPARATOR = "  \u00b7  "
 # The row of text is one string: the title, then the numbers that the style asks for, in this order.
@@ -68,6 +69,13 @@ _BAR_NUMBERS = (
     ("bar_book_percent", 'str(int(calc.round(100 * p / n))) + "%"'),
     ("bar_chapter_page", 'str(chap-page) + " / " + str(chap-pages)'),
     ("bar_chapter_percent", 'str(int(calc.round(100 * chap-page / chap-pages))) + "%"'),
+)
+# Numbers that do not fit the row are left out from the end, whole (half a number would read as
+# another one). The first stays.
+_BAR_FIT_NUMBERS = (
+    "  while numbers.len() > 1 and measure(styled(numbers.join(sep))).width > row-w {",
+    "    numbers = numbers.slice(0, -1)",
+    "  }",
 )
 _BAR_CHAPTERS = (
     "  let chapters = query(<chap>).map(c => c.value)",
@@ -96,12 +104,36 @@ _BAR_TITLE = (
     "    }",
     "  }",
 )
+# What is left may still be wider than the row (a number alone, in a font with wide digits). It
+# would break into a second line over the page, and half of a number reads as another one, so then
+# nothing is drawn.
+_BAR_FITS = '  if measure(styled(row)).width > row-w { row = "" }'
+
+# Every image leaves its page and place in an `<imgbox>` marker, for `render_book` to query. The
+# marker is made inside a box, which lies where the image does: in a figure whose caption is wider
+# than the image, a position taken beside the box would be the start of the line that the image is
+# centered in. An image of relative width (a vector image) measures 0 wide alone, so it is
+# measured at the width of its container, which `layout` gives (a quote or a list takes some of
+# the body's). `place` keeps that block out of the flow, so the image lies where it would without
+# the rule.
+_IMAGE_BOXES = (
+    "#show image: it => box({\n"
+    "  place(top + left, layout(size => {\n"
+    "    let p = here().position()\n"
+    "    let s = measure(width: size.width, it)\n"
+    "    [#metadata((page: p.page, x: p.x.pt(), y: p.y.pt(), w: s.width.pt(), "
+    "h: s.height.pt())) <imgbox>]\n"
+    "  }))\n"
+    "  it\n})"
+)
 
 # Typst markup characters, plus "~" (non-breaking space), "/" (term lists, comments) and the
 # shorthands that change the characters of a text: "--", "---", "-?", a "-" before a number (a
 # minus sign) and "..." (an ellipsis). A dot is escaped when two more follow it, so that no run of
-# dots is left with three. `_escape` keeps a "-" that only comes before a letter.
-_SPECIAL = re.compile(r"[\\#$*_`<>@\[\]~/]|-(?=[\w?-])|\.(?=\.\.)")
+# dots is left with three. A "-" or a "." that ends the text is escaped too: what is written next
+# (the text of a link, which is escaped on its own) could join it. `_escape` keeps a "-" that
+# only comes before a letter.
+_SPECIAL = re.compile(r"[\\#$*_`<>@\[\]~/]|-(?=[\w?-]|\Z)|\.(?=\.\.|\Z)")
 # Text that starts a line and would turn into a list, enum item or heading.
 _LINE_START_ENUM = re.compile(r"^(\d+)\.")
 _LINE_START_MARK = re.compile(r"^[-+=]")
@@ -126,13 +158,13 @@ def to_typst(
 
 
 def _escape(found: re.Match) -> str:
-    """Escape a special character. A "-" counts only before another "-", "?" or a number. Any
-    number: Typst makes a minus sign of a hyphen before a superscript or an Arabic-Indic digit too,
-    and `isnumeric` knows those."""
+    """Escape a special character. A "-" counts only at the end of the text, or before another
+    "-", "?" or a number. Any number: Typst makes a minus sign of a hyphen before a superscript or
+    an Arabic-Indic digit too, and `isnumeric` knows those."""
     char = found[0]
     if char == "-":
-        following = found.string[found.end()]
-        if following not in "-?" and not following.isnumeric():
+        following = found.string[found.end() : found.end() + 1]  # "" at the end of the text
+        if following and following not in "-?" and not following.isnumeric():
             return char
     return "\\" + char
 
@@ -312,8 +344,14 @@ class _Html(HTMLParser):
 
 def _bar_area(style: PageStyle) -> int:
     """The px that the progress bar takes from the page, on its side: its text and an edge margin
-    on each side of the text. Nothing when the bar is off."""
-    return 0 if style.bar_position == "off" else style.bar_font_size + 2 * style.bar_edge_margin
+    on each side of the text. With a line, the side that the line is on takes `_BAR_LINE_ROOM` px
+    where the edge margin is less (M3-R11: the area holds all that the bar draws). Nothing when
+    the bar is off."""
+    if style.bar_position == "off":
+        return 0
+    edge = style.bar_edge_margin
+    line_side = max(edge, _BAR_LINE_ROOM) if style.bar_line else edge
+    return style.bar_font_size + edge + line_side
 
 
 def _bar(style: PageStyle, width: int, height: int) -> tuple[str, str]:
@@ -344,8 +382,13 @@ def _bar(style: PageStyle, width: int, height: int) -> tuple[str, str]:
     numbers = [code for switch, code in _BAR_NUMBERS if getattr(style, switch)]
     marks = style.bar_line and style.bar_chapter_marks
     chapters = style.bar_chapter_title or style.bar_chapter_page or style.bar_chapter_percent
-    text_from_edge = edge + _BAR_TICK - _BAR_REACH if style.bar_line else edge
+    text_from_edge = edge + _BAR_LINE_ROOM if style.bar_line else edge
     row = f"box(width: row-w, height: {size}pt, align(horizon + left, styled(row)))"
+    tail = ['  let tail = ""']
+    if numbers:
+        tail = [f"  let numbers = ({', '.join(numbers)},)"]
+        tail += _BAR_FIT_NUMBERS if len(numbers) > 1 else ()
+        tail.append("  let tail = numbers.join(sep)")
     lines = [
         "#let eco-bar = context {",
         "  let n = counter(page).final().first()",
@@ -354,9 +397,10 @@ def _bar(style: PageStyle, width: int, height: int) -> tuple[str, str]:
         f"  let styled(body) = text(size: {size}pt, body)",
         f'  let sep = "{_BAR_SEPARATOR}"',
         *(_BAR_CHAPTERS if chapters or marks else ()),
-        f"  let tail = ({', '.join(numbers)},).join(sep)" if numbers else '  let tail = ""',
+        *tail,
         "  let row = tail",
         *(_BAR_TITLE if style.bar_chapter_title else ()),
+        _BAR_FITS,
         "  " + put(f"{side - origin_x}pt", text_from_edge, size, row),
     ]
     if style.bar_line:
@@ -429,8 +473,9 @@ class _Converter:
             f"{bar}"
             f"#set page(width: {width}pt, height: {height}pt, "
             f"margin: (x: {s.margin}pt, top: {top}pt, bottom: {bottom}pt){bar_arguments})\n"
-            f'#set text(font: "{_str(s.font)}", weight: {s.font_weight}, size: {s.font_size}pt, '
-            f'lang: "{_str(self._lang())}", hyphenate: {str(s.hyphenate).lower()})\n'
+            f'#set text(font: "{_str(s.font)}", weight: {int(s.font_weight)}, '
+            f'size: {s.font_size}pt, lang: "{_str(self._lang())}", '
+            f"hyphenate: {str(s.hyphenate).lower()})\n"
             f"#set par(justify: {str(s.align == 'justify').lower()}, "
             f"leading: {(s.line_height - 100) / 100:g}em)\n"
             "#set smartquote(enabled: false)\n"
@@ -438,7 +483,7 @@ class _Converter:
             f"{self._raw_wrap()}\n"
             "#show heading.where(level: 1): it => { pagebreak(weak: true); it }\n"
             "#show figure.caption: it => it.body\n"
-            f"{self._image_boxes()}\n"
+            f"{_IMAGE_BOXES}\n"
         )
 
     def _raw_wrap(self) -> str:
@@ -450,22 +495,6 @@ class _Converter:
             "#show raw: it => {\n"
             f'  show regex("[^ ]{{{fit},}}"): m => m.text.clusters().join(sym.zws)\n'
             "  it\n}"
-        )
-
-    def _image_boxes(self) -> str:
-        """Every image leaves its page and place in a `<imgbox>` marker, for `render_book` to
-        query. The marker is inside a box, which lies where the image does: in a figure whose
-        caption is wider than the image, a position taken beside the box would be the start of the
-        line that the image is centered in. An image of relative width (a vector image) measures 0
-        wide alone, so it is measured at the body width."""
-        body_w = self._page_size()[0] - 2 * self.style.margin
-        return (
-            "#show image: it => box(context {\n"
-            "  let p = here().position()\n"
-            f"  let s = measure(width: {body_w}pt, it)\n"
-            "  [#metadata((page: p.page, x: p.x.pt(), y: p.y.pt(), w: s.width.pt(), "
-            "h: s.height.pt())) <imgbox>]\n"
-            "  it\n})"
         )
 
     # Blocks

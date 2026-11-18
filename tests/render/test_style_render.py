@@ -332,6 +332,22 @@ def test_the_bar_takes_its_room_from_the_text(tmp_path):
     assert off[1] < top[1] - 15  # which it would not, with no bar on that side
 
 
+@pytest.mark.parametrize("position", ["bottom", "top"])
+@pytest.mark.parametrize("edge", [0, 1, 2, 3, 4, 8])
+def test_the_bar_area_holds_everything_the_bar_draws(tmp_path, position, edge):
+    # With no margin, the area that the bar reserves is where the text ends and its own begins
+    style = PageStyle(margin=0, bar_edge_margin=edge, bar_line=True, bar_position=position)
+    tall = picture(tmp_path, (100, 3000), name="tall.png")  # as tall as the text area is
+    [[(_, top, _, bottom)]] = render(book(tmp_path, f"![]({tall})\n"), style).image_boxes
+    alone = render(book(tmp_path, "<!-- page: 1 -->\n", "empty.md"), style)  # a page of the bar
+    bar = ink(page(alone), (0, 0, 480, 800))
+    area = max(14 + 2 * edge, 14 + edge + 4)  # a line, and the ticks that reach 4 px past its edge
+    if position == "bottom":
+        assert 800 - bottom == area and bar[1] >= bottom
+    else:
+        assert top == area and bar[3] <= top
+
+
 def test_a_title_longer_than_the_row_is_cut_and_the_numbers_stay(tmp_path):
     title = "A chapter title that runs on and on and on and on past the end of the row"
     src = book(tmp_path, f"# {title}\n\ntext\n")
@@ -343,11 +359,56 @@ def test_a_title_longer_than_the_row_is_cut_and_the_numbers_stay(tmp_path):
     assert ink(im, (0, 700, 480, 800))[2] <= 464  # inside the side margin
 
 
+# Twelve chapters of one page each: from page 10 the numbers have two digits. At a font size of 32 px
+# the row is 320 px (side margins of 80), "12 / 12 \u00b7 100% \u00b7 1 / 1" is 296 px wide, which leaves no
+# room for a letter of the title, and the four numbers together are 409 px, which cannot fit.
+TWELVE = "\n\n".join(f"# Chapter {n}\n\ntext" for n in range(1, 13)) + "\n"
+WIDEST = {
+    "bar_font_size": 32,
+    "bar_side_margin": 80,
+    "bar_book_percent": True,
+    "bar_chapter_page": True,
+    "bar_chapter_percent": True,
+}
+
+
 def test_a_title_has_no_room_when_the_numbers_fill_the_row(tmp_path):
-    src = book(tmp_path, "# Title\n\ntext\n")
-    wide = PageStyle(bar_font_size=32, bar_side_margin=80, bar_book_percent=True)
-    wide = replace(wide, bar_chapter_page=True, bar_chapter_percent=True)
-    assert bar_text(src, wide, tmp_path) == ["1 / 1  \u00b7  100%  \u00b7  1 / 1  \u00b7  100%"]
+    style = PageStyle(**{**WIDEST, "bar_chapter_percent": False})
+    last = bar_text(book(tmp_path, TWELVE), style, tmp_path)[-1]
+    assert last == "12 / 12  \u00b7  100%  \u00b7  1 / 1"
+
+
+def test_numbers_that_do_not_fit_the_row_are_dropped_whole_and_the_bar_stays_in_its_area(tmp_path):
+    src = book(tmp_path, TWELVE)
+    for position, band in (("top", (0, 0, 480, 50)), ("bottom", (0, 130, 480, 800))):
+        r = render(src, PageStyle(bar_position=position, **WIDEST))
+        assert len(r.pages) == 12
+        for n in range(12):  # the bar's area is 32 + 2 * 4 px, and its row is the 320 px between
+            left, top, right, bottom = ink(page(r, n), band)  # the side margins, from x = 80
+            in_area = bottom <= 40 if position == "top" else top >= 800 - 40
+            assert in_area and 79 <= left and right <= 401, (position, n + 1)
+    last = bar_text(src, PageStyle(**WIDEST), tmp_path)[-1]
+    assert last == "12 / 12  \u00b7  100%  \u00b7  1 / 1"  # the last number goes, not half of it
+
+
+def test_a_number_that_alone_is_wider_than_the_row_is_not_drawn_at_all(tmp_path):
+    fonts = tmp_path / "fonts"
+    fonts.mkdir()
+    font = TTFont(FONTS_DIR / "bitter" / "Bitter-Regular.ttf")  # with digits ten times as wide
+    for record in font["name"].names:
+        if record.nameID in (1, 16):
+            record.string = "Wide Digits"
+    cmap = font.getBestCmap()
+    for digit in "0123456789":
+        advance, left = font["hmtx"].metrics[cmap[ord(digit)]]
+        font["hmtx"].metrics[cmap[ord(digit)]] = (advance * 10, left)
+    font.save(fonts / "wide.ttf")
+    src = book(tmp_path, TWELVE)  # a heading with wide digits takes lines, so look at the bar only
+    for position, band in (("top", (0, 0, 480, 50)), ("bottom", (0, 700, 480, 800))):
+        style = PageStyle(font="Wide Digits", bar_position=position, **WIDEST)
+        r = render(src, style, font_extra_dirs=[fonts])
+        # "1 / 12" alone is 457 px in it, the row is 320, and half of it would read as another number
+        assert [ink(page(r, n), band) for n in range(12)] == [None] * 12
 
 
 # Orientation
@@ -452,6 +513,32 @@ def test_the_box_of_a_vector_image_is_its_frame(tmp_path):
     assert (x0, x1) == (16, 464)  # the body, the way it is laid out
     ink_box = ink(page(r), (0, 0, 480, 800))
     assert x0 <= ink_box[0] and ink_box[2] <= x1 and y0 <= ink_box[1] and ink_box[3] <= y1
+
+
+QUOTED_FRAMES = {
+    # A quote leaves 1 em (32 px) at its left, so the frame of a vector image in one is the body
+    # from x = 16 + 32, in the pixels of the turned page: 480 x 800 laid out, or 800 x 480 for 90
+    # and 270, and the box is turned with it.
+    0: (48, 16, 464, 784),
+    90: (16, 48, 464, 784),
+    180: (16, 16, 432, 784),
+    270: (16, 16, 464, 752),
+}
+
+
+@pytest.mark.parametrize("orientation", [0, 90, 180, 270])
+def test_the_box_of_a_vector_image_in_a_quote_is_its_frame(tmp_path, orientation):
+    (tmp_path / "v.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20"/></svg>'
+    )
+    r = render(
+        book(tmp_path, "> ![](v.svg)\n"), PageStyle(bar_position="off", orientation=orientation)
+    )
+    assert r.image_boxes == [[QUOTED_FRAMES[orientation]]]  # not as wide as the body is
+    x0, y0, x1, y1 = QUOTED_FRAMES[orientation]
+    left, top, right, bottom = ink(page(r), (x0, y0, x1, y1))
+    side = min(x1 - x0, y1 - y0)  # the square image fills the short side of its frame
+    assert (right - left, bottom - top) == (side, side)  # and the box holds all of it
 
 
 def test_a_tall_image_with_a_caption_keeps_its_box_in_the_body(tmp_path):

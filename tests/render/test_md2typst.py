@@ -881,13 +881,40 @@ def test_a_picture_without_a_pixel_limit_is_kept(tmp_path, monkeypatch):
         ("-\u00b2 -\u0663", "\\-\u00b2 \\-\u0663"),  # Typst reads these as numbers too
         ("well-known -x", "well-known -x"),  # a hyphen before a letter is nothing special
         ("a--b a---b a-?b", "a\\--b a\\-\\--b a\\-?b"),
-        ("wait...", "wait\\..."),
+        ("wait...", "wait\\..\\."),
         ("a.... b", "a\\.\\... b"),  # no run of dots is left with three
         ("a..b . . . 5.5", "a..b . . . 5.5"),
+        # What ends a text may join what is written after it (a link's text, for one)
+        ("a-", "a\\-"),
+        ("a--", "a\\-\\-"),
+        ("a.", "a\\."),
+        ("a..", "a.\\."),
     ],
 )
 def test_the_shorthands_that_change_text_are_escaped(text, escaped):
     assert _esc(text) == escaped
+
+
+@pytest.mark.parametrize(
+    "markdown, shown",
+    [
+        ("a -[5](#n) end", "a -5 end"),
+        ("[23](#a)-[25](#b)", "23-25"),
+        ("[**23**](#a)-[25](#b)", "23-25"),  # after a closing mark the hyphen starts a token
+        ("[23](#a)--[25](#b)", "23--25"),
+        ("a [-](#x)5 end", "a -5 end"),  # a link text that ends in a hyphen
+        ("wait..[.](#x) end", "wait... end"),
+        ("[b..](#y). end", "b... end"),  # a link text that ends in two dots
+        ("x-[?](#q)y", "x-?y"),
+    ],
+)
+def test_a_shorthand_cannot_form_across_a_link(tmp_path, markdown, shown):
+    # The text before a link and the text of the link are escaped one after the other
+    style = PageStyle(hyphenate=False, bar_position="off")
+    _, files = convert(tmp_path, markdown + "\n", style=style)
+    text = " ".join(page_text(files).split())
+    assert shown in text
+    assert not set("\u2212\u2026\u00ad") & set(text)  # no minus sign, ellipsis or soft hyphen
 
 
 def test_text_is_shown_as_written(tmp_path):
@@ -913,6 +940,16 @@ def test_a_font_name_cannot_leave_its_string(tmp_path):
     main, files = convert(tmp_path, "Text\n", style=style)
     assert 'font: "X\\") #panic(\\"boom"' in main
     assert compiles(files) == 1  # a #panic that got out would stop the compile
+
+
+def test_a_font_weight_cannot_put_anything_but_a_number_into_the_source(tmp_path):
+    # PageStyle checks a weight against its font only in from_json, so code can build this one
+    hostile = PageStyle(font_weight='400, size: 1pt) #panic("boom')
+    with pytest.raises(ValueError):
+        convert(tmp_path, "Text\n", style=hostile)
+    main, files = convert(tmp_path, "Text\n", style=PageStyle(font_weight="700"))
+    assert 'font: "Literata", weight: 700, size: 32pt' in main
+    assert compiles(files) == 1
 
 
 def test_a_book_language_cannot_leave_its_string(tmp_path):
