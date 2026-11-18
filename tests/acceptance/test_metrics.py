@@ -10,6 +10,7 @@ import metrics
 import pytest
 from metrics import (
     code_blocks,
+    drop_section,
     epub_text,
     epubcheck_problems,
     epubcheck_tools,
@@ -263,3 +264,43 @@ def test_the_reason_of_a_failed_conversion_is_its_error_lines():
     log += "0 converted, 1 failed: x.pdf\n"
     assert failure_reason(log) == "Could not read book.md. Antivirus software may"
     assert failure_reason("Traceback (most recent call last):\nKeyError: 1\n") == ""
+
+
+def test_words_keep_the_text_after_an_escaped_angle_bracket():
+    # eco escapes "<" in book.md as "\<"; that is text, not the start of a tag
+    assert words("run the tool with \\<name\\> and check a \\< b <b>c</b>") == [
+        "run",
+        "the",
+        "tool",
+        "with",
+        "name",
+        "and",
+        "check",
+        "a",
+        "b",
+        "c",
+    ]
+
+
+def test_drop_section_removes_a_heading_and_what_follows_it_up_to_the_next_heading_of_its_level():
+    markup = (
+        '<h1 id="h-1">One</h1><p>first text</p>'
+        '<h1 id="h-2">Index</h1><h2>A</h2><p>apple, 12</p>'
+        "<h1>Other <em>Books</em></h1><p>last text</p>"
+    )
+    assert words(drop_section(markup, "Index")) == [
+        "one",
+        "first",
+        "text",
+        "other",
+        "books",
+        "last",
+        "text",
+    ]
+    assert drop_section(markup, "Contents") == markup
+    assert words(
+        drop_section(
+            markup.replace("<h1>Other", "<h2>Other").replace("</h1><p>last", "</h2><p>last"),
+            "Index",
+        )
+    ) == ["one", "first", "text"]

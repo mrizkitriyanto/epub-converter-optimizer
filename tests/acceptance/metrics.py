@@ -27,12 +27,13 @@ _BANNED = {".otf", ".ttf", ".woff", ".woff2", ".svg", ".webp", ".gif"}
 
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _MD_LINK = re.compile(r"(?<!\\)\[([^\]]*)\]\([^)]*\)")  # not the `\[1\](x)` that eco writes
-_TAG = re.compile(r"<[^>]*>")
+_TAG = re.compile(r"(?<!\\)<[^>]*>")  # not the `\<` that eco writes for a "<" of the text
 _WORD = re.compile(r"[A-Za-z0-9À-ɏ']+")
 _PAGE = re.compile(r"<!-- page: (\d+) -->")
 _FENCE = re.compile(r"^(`{3,}|~{3,})\n(.*?)\n\1$", re.DOTALL | re.MULTILINE)
 _HEADING = re.compile(r"^#{1,6} (.+)$", re.MULTILINE)
 _BODY = re.compile(r"<body[^>]*>(.*)</body>", re.DOTALL)
+_HEADING_TAG = re.compile(r"<h([1-6])\b[^>]*>(.*?)</h\1>", re.DOTALL)
 _EPUB_NS = {
     "c": "urn:oasis:names:tc:opendocument:xmlns:container",
     "o": "http://www.idpf.org/2007/opf",
@@ -108,6 +109,18 @@ def epub_text(path: Path) -> str:
             name = posixpath.normpath(posixpath.join(folder, hrefs[ref.get("idref")]))
             docs.append(z.read(name).decode("utf-8"))
     return "\n".join(m.group(1) if (m := _BODY.search(doc)) else doc for doc in docs)
+
+
+def drop_section(markup: str, title: str) -> str:
+    """`markup` without the section under the first heading whose text is `title`: that heading and
+    everything up to the next heading of its level or a higher one."""
+    found = list(_HEADING_TAG.finditer(markup))
+    for i, m in enumerate(found):
+        if " ".join(words(m.group(2))) == " ".join(words(title)):
+            level = int(m.group(1))
+            end = next((n.start() for n in found[i + 1 :] if int(n.group(1)) <= level), None)
+            return markup[: m.start()] + (markup[end:] if end is not None else "")
+    return markup
 
 
 def x4_problems(path: Path) -> list[str]:

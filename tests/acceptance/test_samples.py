@@ -27,6 +27,7 @@ import pytest
 from fixtures.links import link_dir
 from metrics import (
     code_blocks,
+    drop_section,
     epub_text,
     epubcheck_problems,
     epubcheck_tools,
@@ -136,10 +137,17 @@ def sharing_a_line(expected: list[list[str]], blocks: list[list[str]]) -> list[l
 
 
 def test_ac1_threat_hunting_text_matches_the_publisher_epub(threat_hunting):
+    """The text of the output EPUB against the publisher's (R-65). The publisher EPUB has no index,
+    so precision leaves the output's index section out and is printed both ways (Q-21)."""
     truth = words(epub_text(sample("foundationsofthreathunting.epub")))
-    out = words(threat_hunting.markdown)
-    precision, recall = sequence_scores(truth, out)
-    print(f"AC1: precision {precision:.4f}, recall {recall:.4f} (limit 0.99 each)")
+    markup = epub_text(threat_hunting.epub)
+    out, without_index = words(markup), words(drop_section(markup, "Index"))
+    precision_all, recall = sequence_scores(truth, out)
+    precision, _ = sequence_scores(truth, without_index)
+    print(
+        f"AC1: precision {precision:.4f} without the index ({precision_all:.4f} with its "
+        f"{len(out) - len(without_index)} words), recall {recall:.4f} (limit 0.99 each)"
+    )
     assert precision >= 0.99 and recall >= 0.99, f"precision {precision:.4f}, recall {recall:.4f}"
 
 
