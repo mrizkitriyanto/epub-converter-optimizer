@@ -452,6 +452,15 @@ summary {
   margin-top: 8px;
 }
 
+.models-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
 .file-list,
 .recent-list,
 .model-list,
@@ -763,6 +772,10 @@ li.finding.plain {
   justify-content: center;
   gap: 10px 16px;
   margin-top: 10px;
+}
+
+.view-controls .hint {
+  flex-basis: 100%;
 }
 
 .segmented {

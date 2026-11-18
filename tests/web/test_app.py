@@ -546,6 +546,144 @@ def test_every_api_address_in_the_script_is_a_route(tmp_path):
     assert unknown == []
 
 
+# Task 9, fix round 1. Still no browser, so these read the page and the functions of the script
+# that carry each fix. They would fail on the page of commit 999f85c.
+
+
+def function_body(js, name):
+    """The source of one function of app.js. They all sit one level inside its closure: each
+    starts at two spaces and ends at a closing brace that has two spaces."""
+    found = re.search(rf"\n  (?:async )?function {name}\(.*?\n  \}}\n", js, re.DOTALL)
+    assert found, f"app.js has no function {name}"
+    return found.group(0)
+
+
+def stage_markup(html, name):
+    """The markup from the section of one stage up to the start of the next stage."""
+    chunks = re.split(r'(?=<section id="stage-)', html)
+    return next(c for c in chunks if c.startswith(f'<section id="stage-{name}"'))
+
+
+def test_a_new_review_starts_with_the_panel_closed_and_the_buttons_as_new():
+    # the panel, Apply and Try again are the same elements for every job
+    js = source("app.js")
+    assert "resetReviewDom();" in function_body(js, "showReview")
+    reset = function_body(js, "resetReviewDom")
+    assert "hidePanel();" in reset
+    assert "setText($('apply'), t('apply'))" in reset  # not "Applying…" from the job before
+    assert "$('try-again').disabled = false" in reset
+    assert "$('panel-error').hidden = true" in reset and "setText($('panel-error'), '')" in reset
+    hide = function_body(js, "hidePanel")
+    for part in ("$('settings-panel').hidden = true", "classList.remove('with-panel')"):
+        assert part in hide
+    assert "setAttribute('aria-expanded', 'false')" in hide
+    assert "hidePanel();" in function_body(js, "closePanel")
+
+
+def test_the_lists_of_review_are_not_kept_from_another_job():
+    js = source("app.js")
+    # two jobs can have the same pattern of converted files, so the job is part of the key
+    pick = function_body(js, "renderFilePick")
+    assert "const key = `${job.id}:" in pick
+    findings = function_body(js, "renderFindings")
+    assert "const key = `${state.job.id}:" in findings
+
+
+def test_the_replay_of_a_stream_ends_on_a_gap_between_two_events_not_on_a_slow_start():
+    js = source("app.js")
+    gap = r"stream\.lastAt !== null\s*&&\s*now - stream\.lastAt >= REPLAY_GAP_MS"
+    assert re.search(gap, function_body(js, "listen"))
+    assert "openedAt" not in js  # the time the stream was opened decides nothing
+
+
+def test_a_late_reason_for_a_failed_picture_is_not_written_under_another_page():
+    body = function_body(source("app.js"), "explainImage")
+    assert re.search(r"if \(image\.getAttribute\('src'\) === address\) setText\(status, ", body)
+    assert body.count("setText(") == 1  # every answer, a reason or a network error, goes through it
+
+
+def test_each_step_link_puts_the_focus_where_it_leads():
+    js = source("app.js")
+    assert "onclick: (event) => onStepLink(event, index)" in function_body(js, "stepItem")
+    body = function_body(js, "onStepLink")
+    assert "$('file-input').focus()" in body and "$('device').focus()" in body
+
+
+def test_the_xtc_hint_of_the_preview_toggle_is_text_on_the_page_and_not_a_tooltip(tmp_path):
+    html = local(tmp_path).get("/").text
+    radio = re.search(r'<input type="radio" name="preview-format" value="xtc"[^>]*>', html).group(0)
+    described = re.search(r'aria-describedby="([^"]+)"', radio)
+    assert described, "the disabled toggle names its hint"
+    hint = re.search(rf'<p id="{described.group(1)}" class="([^"]*)">([^<]*)</p>', html)
+    assert hint and hint.group(2) == STRINGS["coming_later"]
+    assert "visually-hidden" not in hint.group(1)
+    assert f'title="{STRINGS["coming_later"]}"' not in html  # a tooltip needs a pointer
+
+
+# Ruling M2-R39: continue without the models
+
+
+def test_the_texts_of_ruling_m2_r39():
+    assert STRINGS["setup_skip"] == "Continue without models"
+    assert STRINGS["models_download"] == "Download models"
+    note = STRINGS["models_missing_note"]
+    assert note == "Without the AI models, PDFs convert only with Layout set to Page images."
+    # the note must use the names that the page gives the setting and its value
+    assert STRINGS["mode_label"] in note and STRINGS["mode_pages"] in note
+
+
+def test_the_setup_gate_has_one_primary_button_and_a_secondary_one_to_go_on(tmp_path):
+    gate = stage_markup(local(tmp_path).get("/").text, "setup")
+    buttons = re.findall(
+        r'<button id="([^"]+)" type="button" class="([^"]+)"[^>]*>([^<]*)</button>', gate
+    )
+    assert [i for i, classes, _ in buttons if "primary" in classes.split()] == ["setup-download"]
+    skip = [(classes, text) for i, classes, text in buttons if i == "setup-skip"]
+    assert skip == [("secondary", STRINGS["setup_skip"])]
+
+
+def test_select_files_has_the_note_about_the_models_and_a_secondary_button_to_the_gate(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    note = re.search(r'<div id="models-note" class="[^"]*" hidden>(.*?)</div>', select, re.DOTALL)
+    assert note, "the note is in the markup, hidden until the script shows it"
+    assert f'<p class="muted">{STRINGS["models_missing_note"]}</p>' in note.group(1)
+    button = '<button id="models-download" type="button" class="secondary">'
+    assert f"{button}{STRINGS['models_download']}</button>" in note.group(1)
+    assert "primary" not in note.group(1)  # Start conversion stays the one primary button
+
+
+def test_the_script_goes_on_without_the_models_for_this_page_load_only():
+    js = source("app.js")
+    assert re.search(r"state\.setup\.ready \|\| state\.skipModels", function_body(js, "showStart"))
+    go_on = function_body(js, "continueWithoutModels")
+    assert "state.skipModels = true;" in go_on and "showSelect();" in go_on
+    assert js.count("skipModels = true") == 1  # set by that button and by nothing else
+    assert re.search(r"skipModels: false", js)  # a new page load starts at the gate
+    for store in ("localStorage", "sessionStorage", "document.cookie", "indexedDB"):
+        assert store not in js  # the choice is not remembered across visits
+    bind = function_body(js, "bind")
+    assert "$('setup-skip').addEventListener('click', continueWithoutModels);" in bind
+    assert "$('models-download').addEventListener('click', showSetup);" in bind
+
+
+def test_select_files_shows_the_note_while_the_models_are_missing():
+    js = source("app.js")
+    assert "renderModelsNote();" in function_body(js, "showSelect")
+    assert "$('models-note').hidden = state.setup.ready" in function_body(js, "renderModelsNote")
+
+
+def test_a_download_goes_on_when_the_user_leaves_the_gate_and_select_files_follows_it():
+    js = source("app.js")
+    # the gate keeps what the download made of it (a running download, a failure): showing the gate
+    # again must not reset its buttons, or the primary button would start a second download
+    show = function_body(js, "showSetup")
+    assert "setSetupButtons" not in show and "setup-error" not in show
+    assert "setSetupButtons(false);" in function_body(js, "init")  # set once, when the page starts
+    assert "setup" not in function_body(js, "stopWork")  # a change of stage leaves the stream alone
+    ended = function_body(js, "setupEnded")
+    assert re.search(r"else if \(state\.stage === 'select'\) renderModelsNote\(\);", ended)
+
+
 # Lifespan
 
 

@@ -600,8 +600,8 @@ the texts are in `strings.py`.
 - The setup gate is the first screen only when the address holds no job. A job in the address
   (`#job=`) opens at once, since a finished job needs no model. The gate hides the stepper and
   replaces Select files completely, so Markdown and EPUB files wait for the models too, as the brief's
-  "gate" says. A reload in the middle of a download shows the button again; a click gets 409 and opens
-  the stream, which replays the log.
+  "gate" says (M2-R39, below, adds a way past it). A reload in the middle of a download shows the
+  button again; a click gets 409 and opens the stream, which replays the log.
 - The stepper: Select files and Settings are links once they are done (to the start). Processing is
   not a link when it is done: a finished job opens Review (M2-R34), so there is nowhere to go back to.
 - A file that is not `.pdf`, `.md` or `.epub` is refused when it is added, with the server's text
@@ -646,3 +646,28 @@ the texts are in `strings.py`.
   every load.
 - Not done: remembering the settings between visits, an upload progress bar, a chapter picker, and a
   reconnect after a restart.
+
+## 2026-11-18: Continue without the models (M2-R39)
+
+- Spec §8.14 asks the setup page to list the models with their sizes and total, to ask for consent, and
+  to say clearly at conversion when the models are missing. It does not block an input that needs no
+  model. Markdown and EPUB files need none, and neither does a PDF read as page images, so a 417 MB
+  download must not be the price of converting them.
+- The setup gate is still the first view while `/api/setup` is not ready and the address holds no job.
+  It has a second, secondary button, `Continue without models`, beside the primary `Download models
+  (~417 MB)`. The button opens Select files for this page load only. The page keeps a flag in memory,
+  so a reload shows the gate again, and until then every return to the start (the stepper links, a bad
+  address) goes to Select files.
+- While the models are missing, Select files shows one muted line, `Without the AI models, PDFs
+  convert only with Layout set to Page images.`, and a secondary `Download models` button that goes
+  back to the gate, where the sizes and the consent are. The line goes when a download that was started
+  finishes, also when the user left the gate while it ran.
+- Markdown, EPUB and Page images PDFs convert as usual. A PDF in another layout mode starts, then ends
+  `failed` with the message the server already gives (`AI models are not installed. Run: eco setup`).
+  There is no check at upload and no server change, so the page never has to guess which PDFs need
+  the models.
+- The gate keeps what a download made of it (a running download, a failure, the log) while the user is
+  on Select files. Showing the gate no longer resets its buttons: that let the first button start a
+  second download, and it lost a failure that came while the gate was hidden.
+- This replaces the sentence of "The workspace page" that made Markdown and EPUB files wait for the
+  models. If it turns out wrong: remove the one button, the one line and the one control.

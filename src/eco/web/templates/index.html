@@ -45,6 +45,7 @@
       <div class="actions">
         <button id="setup-download" type="button" class="primary"></button>
         <button id="setup-ipv4" type="button" class="secondary" hidden>{{ strings.setup_retry_ipv4 }}</button>
+        <button id="setup-skip" type="button" class="secondary">{{ strings.setup_skip }}</button>
       </div>
       <p id="setup-error" class="error-text" role="alert" hidden></p>
       <ol id="setup-log" class="log" aria-live="polite" aria-label="{{ strings.setup_log_label }}"></ol>
@@ -61,6 +62,10 @@
           <span class="choose">{{ strings.choose_files }}</span>
         </label>
         <p id="drop-error" class="error-text" role="alert" hidden></p>
+        <div id="models-note" class="models-note" hidden>
+          <p class="muted">{{ strings.models_missing_note }}</p>
+          <button id="models-download" type="button" class="secondary">{{ strings.models_download }}</button>
+        </div>
         <ul id="file-list" class="file-list" aria-label="{{ strings.file_list_label }}"></ul>
       </div>
 
@@ -226,8 +231,9 @@
           <fieldset class="segmented">
             <legend class="visually-hidden">{{ strings.format_label }}</legend>
             <label><input type="radio" name="preview-format" value="epub" checked><span>{{ strings.output_epub }}</span></label>
-            <label title="{{ strings.coming_later }}"><input type="radio" name="preview-format" value="xtc" disabled><span>{{ strings.output_xtc }}</span></label>
+            <label><input type="radio" name="preview-format" value="xtc" aria-describedby="xtc-hint" disabled><span>{{ strings.output_xtc }}</span></label>
           </fieldset>
+          <p id="xtc-hint" class="hint">{{ strings.coming_later }}</p>
         </div>
       </section>
 

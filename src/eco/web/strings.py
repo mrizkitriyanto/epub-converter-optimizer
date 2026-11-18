@@ -81,6 +81,7 @@ STRINGS = {
     "setup_button": "Download models (~{mb} MB)",
     "setup_working": "Downloading…",
     "setup_retry_ipv4": "Try again over IPv4",
+    "setup_skip": "Continue without models",
     "setup_log_label": "Download progress",
     "setup_stopped": "The download did not finish.",
     "setup_stopped_hint": "If it keeps failing, try again over IPv4.",
@@ -89,6 +90,10 @@ STRINGS = {
     "files_title": "Files",
     "drop_text": "Drop PDF, Markdown or EPUB files here",
     "choose_files": "Choose files",
+    "models_missing_note": (
+        "Without the AI models, PDFs convert only with Layout set to Page images."
+    ),
+    "models_download": "Download models",
     "file_list_label": "Chosen files",
     "remove_file": "Remove",
     "remove_file_named": "Remove {name}",

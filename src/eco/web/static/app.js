@@ -116,7 +116,7 @@
   const JSON_HEADERS = { 'Content-Type': 'application/json' };
   const LIVE_DELAY_MS = 300; // after the last change, before the live preview is asked for
   const QUEUE_POLL_MS = 2000; // a queued job has no event: its position is polled
-  const REPLAY_GAP_MS = 250; // a quiet gap this long means the replay of a stream is over
+  const REPLAY_GAP_MS = 250; // a quiet gap this long between two events means the replay of a stream is over
   const MIN_SAMPLE_MS = 500; // page events closer than this are folded into one rate sample
   const DEFAULT_FONT_SIZE = 32;
 
@@ -186,6 +186,7 @@
     started: false, // after the first stage is shown, a change of stage moves the focus
     stage: null, // setup, select, processing or review
     setup: null, // GET /api/setup
+    skipModels: false, // the user went on from the setup gate without the models; this page load only
     files: [], // the files chosen, not uploaded yet
     uploading: false,
     job: null, // GET /api/jobs/{id}
@@ -251,15 +252,18 @@
     // Select files and Settings lead back to the start; the later steps have nowhere to lead.
     const content =
       status === 'done' && index < 2
-        ? h('a', { class: 'step-link', href: '#', onclick: onStepLink }, name, completed)
+        ? h('a', { class: 'step-link', href: '#', onclick: (event) => onStepLink(event, index) }, name, completed)
         : h('span', { class: 'step-label', 'aria-current': status === 'current' ? 'step' : null }, name, completed);
     return h('li', { class: `step ${status}` }, content);
   }
 
-  function onStepLink(event) {
-    if (state.stage !== 'select') return; // the address changes, and the route follows
+  // On Select files a step link only moves the focus, to what the step is about. From the other
+  // stages the address changes, and the route follows.
+  function onStepLink(event, index) {
+    if (state.stage !== 'select') return;
     event.preventDefault();
-    $('file-input').focus();
+    if (index === 0) $('file-input').focus();
+    else $('device').focus();
   }
 
   // --------------------------------------------------------------- routing
@@ -310,7 +314,11 @@
     });
   }
 
-  const showStart = () => (state.setup.ready ? showSelect() : showSetup());
+  // The setup gate is the first view while the models are missing, unless the user went on without them.
+  function showStart() {
+    if (state.setup.ready || state.skipModels) showSelect();
+    else showSetup();
+  }
 
   function dropTokenFromAddress() {
     const address = new URL(location.href);
@@ -321,6 +329,9 @@
 
   // ------------------------------------------------------------ setup gate
 
+  // The buttons, the error and the log of the gate belong to the download: they are set when the page
+  // starts and by the download, never by showing the gate. A download that went on while the user was
+  // on Select files, and its failure, are what the gate shows when the user comes back.
   function showSetup() {
     setStage('setup');
     const { models, total_mb: total } = state.setup;
@@ -335,9 +346,12 @@
       ),
     );
     setText($('model-total'), t('setup_total', { mb: total }));
-    $('setup-error').hidden = true;
-    setSetupButtons(false);
     focusStage();
+  }
+
+  function continueWithoutModels() {
+    state.skipModels = true;
+    showSelect();
   }
 
   function setSetupButtons(failed) {
@@ -415,16 +429,23 @@
     }
     if (!state.setup.ready) showSetupError(t('setup_not_ready'));
     else if (state.stage === 'setup') route();
+    else if (state.stage === 'select') renderModelsNote(); // the user went on without the models
   }
 
   // ---------------------------------------------------- select and settings
 
   function showSelect() {
     setStage('select');
+    renderModelsNote();
     renderFiles();
     syncSettingHints();
     loadRecent();
     focusStage();
+  }
+
+  // Markdown and EPUB files need no model, and neither does a PDF read as page images.
+  function renderModelsNote() {
+    $('models-note').hidden = state.setup.ready;
   }
 
   function showDropErrors(messages) {
@@ -583,14 +604,15 @@
   // that ends without `end` means the server stopped.
   function listen(job) {
     const source = new EventSource(URLS.events(job.id));
-    const stream = { source, openedAt: performance.now(), lastAt: null, replaying: true, ended: false };
+    const stream = { source, lastAt: null, replaying: true, ended: false };
     state.stream = stream;
     source.onmessage = (message) => {
       if (state.stream !== stream) return;
       const event = parseEvent(message);
       if (!event) return;
+      // Only a gap between two events ends the replay: how long the stream took to open says nothing.
       const now = performance.now();
-      if (now - (stream.lastAt === null ? stream.openedAt : stream.lastAt) >= REPLAY_GAP_MS) stream.replaying = false;
+      if (stream.lastAt !== null && now - stream.lastAt >= REPLAY_GAP_MS) stream.replaying = false;
       stream.lastAt = now;
       apply(event, stream.replaying);
       if (event.type === 'end') {
@@ -871,9 +893,23 @@
     review.controller.abort();
   }
 
+  // The settings panel and its buttons, and Try again, are the same elements for every job. A review
+  // that begins starts them over, so the panel, "Applying…" and a disabled Try again do not carry on.
+  function resetReviewDom() {
+    hidePanel();
+    $('panel-error').hidden = true;
+    setText($('panel-error'), '');
+    setText($('apply'), t('apply'));
+    $('apply').disabled = true;
+    $('try-again').disabled = false;
+  }
+
   function showReview() {
     setStage('review');
-    if (!state.review || state.review.jobId !== state.job.id) state.review = newReview(state.job);
+    if (!state.review || state.review.jobId !== state.job.id) {
+      state.review = newReview(state.job);
+      resetReviewDom();
+    }
     $('view-as').value = state.review.view;
     renderReview();
     focusStage();
@@ -921,7 +957,7 @@
     pick.hidden = job.files.length < 2;
     if (pick.hidden) return;
     const select = $('review-file');
-    const key = job.files.map(isConverted).join();
+    const key = `${job.id}:${job.files.map(isConverted).join()}`; // two jobs can look alike
     if (select.dataset.key !== key) {
       select.dataset.key = key;
       const label = (file) => (isConverted(file) ? file.name : `${file.name} (${t('review_not_converted')})`);
@@ -942,7 +978,7 @@
 
   function renderFindings(file) {
     const list = $('findings-list');
-    const key = `${state.review.fileIndex}:${file.findings.length}`;
+    const key = `${state.job.id}:${state.review.fileIndex}:${file.findings.length}`;
     setText($('findings-title'), t('findings_title', { n: file.findings.length }));
     $('findings-empty').hidden = file.findings.length > 0;
     if (list.dataset.key === key) return;
@@ -1121,16 +1157,19 @@
     if (page) goTo(page);
   }
 
-  // a picture that cannot be shown says why: the server gave a reason, the picture could not
+  // A picture that cannot be shown says why: the server gave a reason, the picture could not. The
+  // reason is written only if the picture is still the one that failed.
   async function explainImage(image, status) {
     const address = image.getAttribute('src');
     if (!address || address.startsWith('data:')) return;
+    let reason;
     try {
       const response = await fetch(address);
-      setText(status, response.ok ? t('error_unknown', { status: response.status }) : await errorText(response));
+      reason = response.ok ? t('error_unknown', { status: response.status }) : await errorText(response);
     } catch (error) {
-      setText(status, t('error_unreachable'));
+      reason = t('error_unreachable');
     }
+    if (image.getAttribute('src') === address) setText(status, reason);
   }
 
   function sizeFrameToImage(image, frame) {
@@ -1216,13 +1255,17 @@
     $('live-font').focus();
   }
 
+  function hidePanel() {
+    $('settings-panel').hidden = true;
+    $('review-grid').classList.remove('with-panel');
+    $('change-settings').setAttribute('aria-expanded', 'false');
+  }
+
   // `restore` puts the page as converted back in place of a live one.
   function closePanel(moveFocus, restore) {
     const review = state.review;
     review.panelOpen = false;
-    $('settings-panel').hidden = true;
-    $('review-grid').classList.remove('with-panel');
-    $('change-settings').setAttribute('aria-expanded', 'false');
+    hidePanel();
     if (restore && review.pages && review.pages.device_pages > 0) refreshDevice();
     if (moveFocus) $('change-settings').focus();
   }
@@ -1337,6 +1380,8 @@
     });
     $('setup-download').addEventListener('click', () => startDownload(false));
     $('setup-ipv4').addEventListener('click', () => startDownload(true));
+    $('setup-skip').addEventListener('click', continueWithoutModels);
+    $('models-download').addEventListener('click', showSetup);
     $('cancel').addEventListener('click', cancelJob);
     $('try-again').addEventListener('click', tryAgain);
     $('change-settings').addEventListener('click', () => {
@@ -1383,6 +1428,7 @@
       showBanner(error.message);
       return;
     }
+    setSetupButtons(false);
     await route();
     state.started = true;
     window.addEventListener('hashchange', () => route().catch(pageFailed));
