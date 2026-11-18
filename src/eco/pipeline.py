@@ -21,6 +21,7 @@ from eco.events import Cancelled, Event, Finding, FindingEvent, PageEvent, Stage
 from eco.models import models_dir
 from eco.options import DEVICES, Options, image_profile
 from eco.pdf.code import fix_code_blocks
+from eco.pdf.contents import rebuild_contents
 from eco.pdf.docling_adapter import extract_blocks
 from eco.pdf.pages import PageInfo, PdfOpenError, bookmarks, inspect_pdf, pdf_metadata
 from eco.pdf.reading_order import fix_reading_order
@@ -165,6 +166,8 @@ def _fix(
 ) -> list[Block]:
     """The passes of the `fix` stage. Their order matters."""
     blocks, found = fix_reading_order(blocks, pages)
+    _add(findings, found, on_event)
+    blocks, found = rebuild_contents(pdf, blocks, pages)
     _add(findings, found, on_event)
     blocks, found = fix_code_blocks(pdf, blocks, pages, images_dir)
     _add(findings, found, on_event)

@@ -517,3 +517,20 @@ error for either.
   so each starts its own list; an ordered list that does not start at 1 cannot continue a
   paragraph in Markdown. Items of one `<ol>` are numbered from its start, one by one, so a list
   whose own numbers skip one shows them in sequence. If it turns out wrong: write "- " again.
+
+## 2026-11-19: Contents and index pages are read again from the text layer (Q-23)
+
+- Docling labels a page of contents or an index `document_index` and reads it as a table, and its
+  table model forces two columns into a grid whose rows pair entries of both columns. The adapter
+  now keeps such a block as `contents`, with Docling's table, and the fix pass `rebuild_contents`
+  (`src/eco/pdf/contents.py`, right after the reading order) reads it again from the PDF text
+  layer inside its box: a full-width line (a part or chapter title) in its place, and between such
+  lines the left column, then the right, top to bottom, one entry per line.
+- In the contents each line is a paragraph without its print page number (arabic or a lowercase
+  roman numeral) and its dot leader, since a reflowable book has no such pages; a line that is only
+  a number stays. An index (a block in the back half of the book) keeps its numbers, which are its
+  content, as one list item per line. A finding names each page read again.
+- A scanned page, or a box in which the text layer has nothing, keeps Docling's table.
+- Docling labelled Threat Hunting's contents pages 10-13 `document_index`, but pages 14 and 15
+  `table`, with the chapter titles between them as headings; those two pages are not covered.
+- If it turns out wrong: map `document_index` to a table again.

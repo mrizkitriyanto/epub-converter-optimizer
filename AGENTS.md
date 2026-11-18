@@ -64,6 +64,7 @@ src/eco/pdf/pages.py         PageInfo, inspect_pdf(), bookmarks(), pdf_metadata(
 src/eco/pdf/docling_adapter.py  extract_blocks()
 src/eco/pdf/reading_order.py fix_reading_order()
 src/eco/pdf/code.py          reextract_code(), fix_code_blocks()
+src/eco/pdf/contents.py      rebuild_contents()
 src/eco/pdf/regions.py       materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()

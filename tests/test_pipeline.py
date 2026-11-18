@@ -436,3 +436,16 @@ def test_a_cached_folder_whose_book_md_is_gone_is_extracted_again(
     assert extract(pdf, data) == folder
     assert (folder / "book.md").is_file()
     assert len(fake_blocks.calls) == 4  # two chunks each time
+
+
+def test_a_contents_page_is_read_again_from_the_text_layer(tmp_path, fixtures_dir, fake_blocks):
+    fake_blocks.blocks = [
+        Block("heading", "Contents", level=1, page=1),
+        Block("contents", page=1, bbox=(60.0, 95.0, 560.0, 240.0), html="<table></table>"),
+        Block("paragraph", "A page of ordinary text.", page=2),
+    ]
+    result = convert(fixtures_dir["contents"], tmp_path)
+    markdown = (result.book_dir / "book.md").read_text(encoding="utf-8")
+    assert "Alpha steps\n\nBeta steps\n\nPreface\n\nDelta notes" in markdown
+    assert "<table" not in markdown and " 3\n" not in markdown
+    assert [f.page for f in result.findings if f.kind == "contents_rebuilt"] == [1]

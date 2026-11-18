@@ -159,6 +159,32 @@ def shapes_pdf(directory: Path) -> tuple[Path, Bbox]:
     return _write(directory, "shapes.pdf", _compile(source)), (100.0, 100.0, 320.0, 160.0)
 
 
+def contents_pdf(directory: Path) -> Path:
+    """Three pages: a contents page (full-width part titles, two columns of entries with dot
+    leaders and print page numbers), a page of text, and an index in two columns."""
+
+    def at(x: int, y: int, text: str, size: int = 11) -> str:
+        return f"#place(top + left, dx: {x}pt, dy: {y}pt)[#text(size: {size}pt)[{text}]]\n"
+
+    contents = at(72, 50, "Contents", 18) + at(
+        72, 100, "Part One: Getting Ready for the Long Walk", 16
+    )
+    for n, (left, right) in enumerate(
+        [("Alpha steps", "Delta notes"), ("Beta steps", "Epsilon notes"), ("Preface", "Zeta notes")]
+    ):
+        y = 130 + 16 * n
+        number = "xi" if left == "Preface" else str(3 + n)
+        contents += at(72, y, f"{left} . . . . . . {number}") + at(330, y, f"{right} {20 + n}")
+    contents += at(72, 190, "Part Two: Coming Home Again Much Later", 16)
+    contents += at(72, 220, "Eta work 31") + at(330, 220, "Iota work 35")
+    index = at(72, 50, "Index", 18)
+    for n, (left, right) in enumerate([("apple 12, 14", "banana 7"), ("pie 15", "cherry 3, 9")]):
+        index += at(72, 100 + 16 * n, left) + at(330, 100 + 16 * n, right)
+    source = PAGE + SERIF + contents + "#pagebreak()\n" + at(72, 72, "A page of ordinary text.")
+    source += "#pagebreak()\n" + index
+    return _write(directory, "contents.pdf", _compile(source))
+
+
 def build_all(directory: Path) -> dict:
     return {
         "two_column": two_column_pdf(directory),
@@ -170,6 +196,7 @@ def build_all(directory: Path) -> dict:
         "tall": tall_pdf(directory),
         "photo": photo_pdf(directory),
         "shapes": shapes_pdf(directory),
+        "contents": contents_pdf(directory),
     }
 
 

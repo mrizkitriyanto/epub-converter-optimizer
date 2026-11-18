@@ -160,10 +160,13 @@ def test_table_has_html_and_its_caption():
     assert "<th>H1</th><th>H2</th>" in block.html and "<td>a</td><td>b</td>" in block.html
 
 
-def test_document_index_is_a_table():
+def test_document_index_is_a_contents_block_that_keeps_doclings_table():
+    """The fix stage reads it again from the text layer, or keeps the table on a scanned page."""
     doc = new_doc()
     doc.add_table(data=table_data(), label=DocItemLabel.DOCUMENT_INDEX, prov=prov())
-    assert [b.kind for b in _to_blocks(doc, frozenset())] == ["table"]
+    [block] = _to_blocks(doc, frozenset())
+    assert (block.kind, block.page, block.bbox) == ("contents", 1, BLOCK_BOX)
+    assert "<td>a</td>" in block.html
 
 
 def test_caption_that_a_code_block_owns_is_a_paragraph_right_after_the_code():

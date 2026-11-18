@@ -30,7 +30,9 @@ _KIND = {
     "picture": "picture",
     "chart": "picture",
     "table": "table",
-    "document_index": "table",  # Docling's label for a contents page. The item is a table.
+    # Docling's label for a page of contents or an index. The item is a table; the fix stage
+    # reads it again from the text layer (contents.py), or keeps the table on a scanned page.
+    "document_index": "contents",
     "footnote": "footnote",
 }
 
@@ -106,9 +108,10 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
         text = getattr(item, "text", "")  # pictures and tables have none
         # Docling leaves a formula's text empty (the text layer goes to `orig`), and a formula,
         # picture or table is cropped from the page later, so those three are kept without text.
-        if not text.strip() and kind not in ("formula", "picture", "table"):
+        if not text.strip() and kind not in ("formula", "picture", "table", "contents"):
             continue
         page, bbox = _position(doc, item)
+        tabular = kind in ("table", "contents")
         level = number = 0
         if kind == "heading":
             level = 1 if item.label == "title" else item.level
@@ -125,8 +128,8 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
                 level=level,
                 page=page,
                 bbox=bbox,
-                html=item.export_to_html(doc, add_caption=False) if kind == "table" else "",
-                caption=item.caption_text(doc) if kind in ("table", "picture") else "",
+                html=item.export_to_html(doc, add_caption=False) if tabular else "",
+                caption=item.caption_text(doc) if tabular or kind == "picture" else "",
                 ocr=page in scanned,
                 number=number,
             )

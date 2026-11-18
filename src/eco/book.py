@@ -2,7 +2,16 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 BlockKind = Literal[
-    "heading", "paragraph", "list_item", "code", "table", "image", "footnote", "formula", "picture"
+    "heading",
+    "paragraph",
+    "list_item",
+    "code",
+    "table",
+    "image",
+    "footnote",
+    "formula",
+    "picture",
+    "contents",  # a page of contents or an index, until the fix stage turns it into text
 ]
 
 
