@@ -28,6 +28,11 @@ jobs:
       - name: PyTorch is the CPU build
         if: runner.os == 'Linux'
         run: uv run python -c "import torch; assert '+cpu' in torch.__version__"
+      - name: Git-style tool install uses CPU PyTorch
+        if: runner.os == 'Linux'
+        run: |
+          uv tool install .
+          "$(uv tool dir)/eco/bin/python" -c "import torch; assert '+cpu' in torch.__version__"
 
   epubcheck:
     runs-on: ubuntu-latest
