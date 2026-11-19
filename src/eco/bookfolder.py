@@ -1,6 +1,7 @@
 import html
 import json
 import re
+import sys
 from dataclasses import asdict, dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -13,6 +14,29 @@ _FRONT_MATTER = re.compile(r"---\n(.*?\n)?---[ \t]*(?:\n|\Z)", re.DOTALL)
 _MD_SPECIAL = re.compile(r"[\\`*_\[\]<>#|&]")
 _LINE_START_LIST = re.compile(r"^(\d+)([.)])")
 _LINE_START_MARK = re.compile(r"^[-+=~]")
+
+
+class RemovedByAntivirus(Exception):
+    """Windows refused to write or read book.md, as it does when a virus scanner has found a threat
+    in the file, or book.md is gone right after eco wrote it: the text of a book about malware can
+    hold code that a scanner takes for malware. Raised from that error. `action` is "write", "read"
+    or "find"; eco writes book.md into its data folder, but it reads book folders of the user too."""
+
+    def __init__(self, path: Path, action: str = "write"):
+        if action == "write":
+            folder = "eco's data folder, which holds this file,"
+        else:  # a book folder that eco reads can be the user's
+            folder = "the folder that holds this file"
+        super().__init__(
+            f"Could not {action} {path}. Antivirus software may have removed it, because the text "
+            f"of this book can look like malware. You can exclude {folder} from scanning."
+        )
+
+
+def _blocked_by_antivirus(e: OSError) -> bool:
+    """True on Windows for the error a write or read gets when a virus scanner blocks the file:
+    ERROR_VIRUS_INFECTED (225), which Python reports as errno 22, "Invalid argument"."""
+    return sys.platform == "win32" and (e.errno == 22 or getattr(e, "winerror", None) == 225)
 
 
 @dataclass
@@ -31,6 +55,7 @@ def write_book(book: Book, folder: Path, findings: list[Finding]) -> Path:
     footnotes: list[tuple[int, str]] = []  # (level of the section they belong to, text)
     section_level = 7  # before the first heading: flushed by any heading
     page = 0
+    delimiter, previous = ".", None  # previous: the number of the item just written, if any
     for block in book.blocks:
         if block.kind == "footnote":
             footnotes.append((section_level, block.text))
@@ -43,14 +68,31 @@ def write_book(book: Book, folder: Path, findings: list[Finding]) -> Path:
         if block.page > 0 and block.page != page:
             page = block.page
             chunks.append(("page", f"<!-- page: {page} -->"))
-        chunks.append((block.kind, _render(block)))
+        if block.kind == "list_item" and block.number is not None:
+            # CommonMark numbers a list one by one from its first item, so an item that does not
+            # follow on from the one before starts a new list, which a new delimiter does
+            if previous is None:
+                delimiter = "."
+            elif block.number != previous + 1:
+                delimiter = ")" if delimiter == "." else "."
+            previous = block.number
+            # a chunk of its own kind, so it is joined only to numbered items
+            chunks.append(("numbered_item", _render(block, delimiter)))
+        else:
+            previous = None
+            chunks.append((block.kind, _render(block)))
     chunks.extend(("footnote", _footnote(text)) for _, text in footnotes)
 
     out = chunks[0][1]
     for (prev, _), (kind, text) in pairwise(chunks):
-        out += ("\n" if prev == kind == "list_item" else "\n\n") + text
+        out += ("\n" if prev == kind in ("list_item", "numbered_item") else "\n\n") + text
     path = folder / "book.md"
-    path.write_text(out + "\n", encoding="utf-8")
+    try:
+        path.write_text(out + "\n", encoding="utf-8")
+    except OSError as e:
+        if _blocked_by_antivirus(e):
+            raise RemovedByAntivirus(path) from e
+        raise
     write_report(folder, findings)
     return path
 
@@ -69,12 +111,28 @@ def read_report(folder: Path) -> list[Finding]:
     return [Finding(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
 
 
-def load_source(path: Path) -> BookSource:
+def read_book_md(folder: Path, just_written: bool = False) -> str:
+    """The text of the book.md of a book folder. A virus scanner can hold the file after eco wrote
+    it, which Windows reports as "Invalid argument", and then move it away: a book.md missing from
+    a folder eco has `just_written` is that too. In a folder of the user it is the usual error."""
+    path = folder / "book.md"
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError as e:
+        if just_written:
+            raise RemovedByAntivirus(path, "find") from e
+        raise
+    except OSError as e:
+        if _blocked_by_antivirus(e):
+            raise RemovedByAntivirus(path, "read") from e
+        raise
+
+
+def load_source(path: Path, just_written: bool = False) -> BookSource:
     if path.is_dir():
-        md_path, base_dir = path / "book.md", path
+        text, base_dir = read_book_md(path, just_written), path
     else:
-        md_path, base_dir = path, path.parent
-    text = md_path.read_text(encoding="utf-8-sig")
+        text, base_dir = path.read_text(encoding="utf-8-sig"), path.parent
     meta: dict[str, str] = {}
     if match := _FRONT_MATTER.match(text):
         meta = _parse_front_matter(match.group(1) or "")
@@ -98,7 +156,7 @@ def _parse_front_matter(raw: str) -> dict[str, str]:
     return meta
 
 
-def _render(block: Block) -> str:
+def _render(block: Block, delimiter: str = ".") -> str:
     if block.kind == "table":
         body = "\n".join(line for line in block.html.splitlines() if line.strip())
         return f"<!-- table-image: {block.image} -->\n{body}" if block.image else body
@@ -114,7 +172,8 @@ def _render(block: Block) -> str:
         title = _md(" ".join(block.text.split()), block.markdown)
         return "#" * min(max(block.level, 1), 6) + " " + title
     if block.kind == "list_item":
-        return "- " + _md(block.text, block.markdown).replace("\n", "\n  ")
+        start = "- " if block.number is None else f"{block.number}{delimiter} "
+        return start + _md(block.text, block.markdown).replace("\n", "\n" + " " * len(start))
     if block.kind == "code":
         return _fenced(block.text)
     return _md(block.text, block.markdown)  # paragraph, plus kinds the format does not list

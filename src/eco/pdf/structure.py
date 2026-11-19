@@ -11,6 +11,7 @@ from eco.pdf.pages import Bookmark
 _MIN_RATIO = 0.8
 _MAX_LEVEL = 6
 _CHAPTER = re.compile(r"^(Chapter|Bab|BAB)\s+\w+")
+_CHAPTER_LABEL = re.compile(r"^(?:chapter|bab)\s+(\d+)\s*[:.]?\s*")
 
 
 def assign_heading_levels(
@@ -52,13 +53,23 @@ def assign_heading_levels(
     return out, findings
 
 
+def _key(title: str) -> str:
+    """A title as it is compared. A book's bookmark often says "Chapter 3: Title" where the page
+    says "3 Title" (or the other way round), so a leading chapter label becomes its number."""
+    return _CHAPTER_LABEL.sub(r"\1 ", title.lower().strip()).strip()
+
+
 def _best_heading(blocks: list[Block], taken: dict[int, int], mark: Bookmark) -> int | None:
     candidates = [
-        (SequenceMatcher(None, block.text.lower(), mark.title.lower()).ratio(), -index)
+        (
+            SequenceMatcher(None, _key(block.text), _key(mark.title)).ratio(),
+            -abs(block.page - mark.page),
+            -index,
+        )
         for index, block in enumerate(blocks)
         if block.kind == "heading" and index not in taken and abs(block.page - mark.page) <= 1
     ]
-    ratio, negative_index = max(candidates, default=(0.0, 0))
+    ratio, _, negative_index = max(candidates, default=(0.0, 0, 0))
     return -negative_index if ratio >= _MIN_RATIO else None
 
 

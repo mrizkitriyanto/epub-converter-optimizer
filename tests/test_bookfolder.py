@@ -1,5 +1,11 @@
+import sys
+from pathlib import Path
+
+import pytest
+from markdown_it import MarkdownIt
+
 from eco.book import Block, Book
-from eco.bookfolder import load_source, read_report, write_book
+from eco.bookfolder import RemovedByAntivirus, load_source, read_report, write_book
 from eco.events import Finding
 
 
@@ -76,6 +82,32 @@ def test_escaping_keeps_pdf_text_from_becoming_markup(tmp_path):
     assert "1\\. not a list\n\\- nor this\n\\+ or this" in md
     assert "- one \\*two\\*\n- three" in md
     assert "## A \\# B" in md
+
+
+@pytest.mark.parametrize(
+    "numbers, markdown, lists",
+    [
+        ([3, 4, 5], "3. x\n4. x\n5. x", [(3, 3)]),
+        ([1, 2, 1, 2, 3], "1. x\n2. x\n1) x\n2) x\n3) x", [(1, 2), (1, 3)]),  # starts again
+        ([5, 7], "5. x\n7) x", [(5, 1), (7, 1)]),  # a number skipped
+        ([0, 1], "0. x\n1. x", [(0, 2)]),  # a list that starts at 0
+        ([2, 1, 2, 9], "2. x\n1) x\n2) x\n9. x", [(2, 1), (1, 2), (9, 1)]),
+    ],
+)
+def test_a_numbered_item_that_does_not_follow_on_starts_a_new_list(
+    tmp_path, numbers, markdown, lists
+):
+    """book.md is plain CommonMark: any renderer shows each item with its own number."""
+    blocks = [Block("list_item", "x", number=n, page=1) for n in numbers]
+    md = write_book(Book(title="T", blocks=blocks), tmp_path, []).read_text()
+    assert markdown in md
+    found = []  # (start, number of items) of each ordered list
+    for token in MarkdownIt("commonmark").parse(load_source(tmp_path).markdown):
+        if token.type == "ordered_list_open":
+            found.append((token.attrs.get("start", 1), 0))
+        elif token.type == "list_item_open":
+            found[-1] = (found[-1][0], found[-1][1] + 1)
+    assert found == lists
 
 
 def test_code_fence_choice(tmp_path):
@@ -167,3 +199,113 @@ def test_report_round_trip(tmp_path):
     findings = [Finding(3, "ocr", "warning", "low confidence"), Finding(0, "info", "info", "ü")]
     write_book(Book(title="T"), tmp_path, findings)
     assert read_report(tmp_path) == findings
+
+
+def failing_write(monkeypatch, error):
+    """book.md cannot be written: the write raises `error`, as when a virus scanner removes it."""
+    write_text = Path.write_text
+
+    def fake(self, *args, **kwargs):
+        if self.name == "book.md":
+            raise error
+        return write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fake)
+
+
+def blocked(winerror=None, errno=22):
+    error = OSError(errno, "Invalid argument", "book.md")
+    if winerror is not None:
+        error.winerror = winerror  # set by hand: the attribute exists only on Windows
+    return error
+
+
+@pytest.mark.parametrize("error", [blocked(), blocked(winerror=225, errno=13)])
+def test_book_md_that_antivirus_removed_gives_one_plain_error(tmp_path, monkeypatch, error):
+    monkeypatch.setattr(sys, "platform", "win32")
+    failing_write(monkeypatch, error)
+    with pytest.raises(RemovedByAntivirus) as caught:
+        write_book(Book(title="T"), tmp_path / "x.book", [])
+    message = str(caught.value)
+    assert str(tmp_path / "x.book" / "book.md") in message
+    assert "antivirus" in message.lower() and "look like malware" in message
+    assert "exclude eco's data folder" in message and "from scanning" in message
+    assert not any(word in message.lower() for word in ("disable", "turn off", "switch off"))
+    assert caught.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    "platform, error",
+    [("win32", blocked(errno=28)), ("linux", blocked()), ("darwin", blocked(winerror=225))],
+)
+def test_other_write_errors_pass_unchanged(tmp_path, monkeypatch, platform, error):
+    monkeypatch.setattr(sys, "platform", platform)
+    failing_write(monkeypatch, error)
+    with pytest.raises(OSError) as caught:
+        write_book(Book(title="T"), tmp_path / "x.book", [])
+    assert caught.value is error
+
+
+def failing_read(monkeypatch, error):
+    """book.md is there but cannot be read: the read raises `error`, as when a virus scanner holds
+    it after detecting a threat, before it moves the file away."""
+    read_text = Path.read_text
+
+    def fake(self, *args, **kwargs):
+        if self.name == "book.md":
+            raise error
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake)
+
+
+@pytest.mark.parametrize("error", [blocked(), blocked(winerror=225, errno=13)])
+def test_a_book_md_that_antivirus_holds_gives_one_plain_error_when_read(
+    tmp_path, monkeypatch, error
+):
+    folder = tmp_path / "x.book"
+    write_book(Book(title="T"), folder, [])
+    monkeypatch.setattr(sys, "platform", "win32")
+    failing_read(monkeypatch, error)
+    with pytest.raises(RemovedByAntivirus) as caught:
+        load_source(folder)
+    message = str(caught.value)
+    assert message.startswith(f"Could not read {folder / 'book.md'}. Antivirus software may")
+    assert message.endswith("You can exclude the folder that holds this file from scanning.")
+    assert "look like malware" in message and "data folder" not in message
+    assert not any(word in message.lower() for word in ("disable", "turn off", "switch off"))
+    assert caught.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    "platform, error",
+    [("win32", blocked(errno=13)), ("linux", blocked()), ("darwin", blocked(winerror=225))],
+)
+def test_other_read_errors_pass_unchanged(tmp_path, monkeypatch, platform, error):
+    folder = tmp_path / "x.book"
+    write_book(Book(title="T"), folder, [])
+    monkeypatch.setattr(sys, "platform", platform)
+    failing_read(monkeypatch, error)
+    with pytest.raises(OSError) as caught:
+        load_source(folder)
+    assert caught.value is error
+
+
+def test_a_book_md_missing_right_after_eco_wrote_it_gives_one_plain_error(tmp_path):
+    folder = tmp_path / "x.book"
+    write_book(Book(title="T"), folder, [])
+    (folder / "book.md").unlink()  # what a virus scanner that moved it away leaves
+    with pytest.raises(RemovedByAntivirus) as caught:
+        load_source(folder, just_written=True)
+    message = str(caught.value)
+    assert message.startswith(f"Could not find {folder / 'book.md'}. Antivirus software may")
+    assert message.endswith("You can exclude the folder that holds this file from scanning.")
+    assert not any(word in message.lower() for word in ("disable", "turn off", "switch off"))
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+
+
+def test_a_book_folder_of_the_user_without_book_md_is_the_normal_error(tmp_path):
+    folder = tmp_path / "mine.book"
+    folder.mkdir()
+    with pytest.raises(FileNotFoundError):
+        load_source(folder)

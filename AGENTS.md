@@ -66,7 +66,8 @@ src/eco/pdf/pages.py         PageInfo, inspect_pdf(), bookmarks(), pdf_metadata(
 src/eco/pdf/docling_adapter.py  extract_blocks()
 src/eco/pdf/reading_order.py fix_reading_order()
 src/eco/pdf/code.py          reextract_code(), fix_code_blocks()
-src/eco/pdf/regions.py       materialize_regions(), render_cover(), page_slices()
+src/eco/pdf/contents.py      rebuild_contents()
+src/eco/pdf/regions.py       leave_out_the_cover_page(), keep_picture_text_as_images(), materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
 src/eco/render/md2typst.py   to_typst(), VIEWS (the whole PageStyle, the progress bar, the image boxes)
@@ -77,7 +78,7 @@ src/eco/web/models_setup.py  ModelSetup (the one background model download, its 
 src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError, describe_pdf() and SECONDS_PER_PAGE (the rows of Select files)
 src/eco/web/strings.py       STRINGS: every English text of the GUI
 src/eco/web/templates/index.html  src/eco/web/static/app.css  src/eco/web/static/app.js (the workspace: setup gate, select and settings, processing, review)
-tests/conftest.py  tests/fixtures/make.py  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
+tests/conftest.py  tests/fixtures/{make.py,links.py}  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
 ```
 
 Every module in the map exists; later milestones add theirs to it. The core knows nothing about the

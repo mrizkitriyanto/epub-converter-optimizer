@@ -48,7 +48,9 @@ _CSS = "p.footnote{font-size:.8em}\nimg{max-width:100%;height:auto}\n"
 _PAGE = re.compile(r"<!--\s*page:\s*(\d+)\s*-->")
 _TWIN = re.compile(r"<!--\s*table-image:\s*(.*?)\s*-->")
 _NEWLINE = re.compile(r"\r\n?|\n")
-_NOT_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff]")
+# What XML 1.0 cannot hold: anything outside #x9, #xA, #xD, #x20-#xD7FF, #xE000-#xFFFD and
+# #x10000-#x10FFFF, so C0 controls, lone surrogates, U+FFFE and U+FFFF.
+_NOT_XML = re.compile("[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
 _ENTITY = re.compile(r"&(?:([A-Za-z][A-Za-z0-9]*);|#(?:[0-9]+|x[0-9A-Fa-f]+);)?")
 _VOID = re.compile(
     r"<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)"
@@ -69,6 +71,7 @@ class _Chapter:
     page: int = 0
     blocks: list[str] = field(default_factory=list)  # rendered XHTML, one string per block
     subs: list[tuple[str, str, int]] = field(default_factory=list)  # "##": title, id, block no.
+    replaced: int = 0  # characters XML cannot hold, replaced with U+FFFD
 
 
 def build_epub(src: BookSource, dst: Path, *, device: str) -> list[Finding]:
@@ -79,20 +82,32 @@ def build_epub(src: BookSource, dst: Path, *, device: str) -> list[Finding]:
 
 class _Builder:
     def __init__(self, src: BookSource, device: str):
-        self.meta = src.meta
-        self.title = src.meta["title"]
-        self.lang = _esc(src.meta.get("language") or "en")
+        self.findings: list[Finding] = []
+        self.page = 0
+        # Every XML file is made of the Markdown and the metadata, so this is where a character
+        # that XML cannot hold becomes U+FFFD, counted by line to name its chapter.
+        self.meta, replaced = {}, 0
+        for key, value in src.meta.items():
+            self.meta[key], n = _NOT_XML.subn("\ufffd", value)
+            replaced += n
+        if replaced:
+            self._note_replaced(replaced, "the book's metadata")
+        self.lines, self.replaced = [], {}  # line index -> characters replaced in it
+        for index, line in enumerate(_NEWLINE.split(src.markdown)):
+            line, n = _NOT_XML.subn("\ufffd", line)
+            self.lines.append(line)
+            if n:
+                self.replaced[index] = n
+        self.text = "\n".join(self.lines)
+        self.title = self.meta["title"]
+        self.lang = _esc(self.meta.get("language") or "en")
         self.screen = DEVICES[device]  # None for general e-readers
         self.base = src.base_dir.resolve()
-        self.text = _NOT_XML.sub("", src.markdown)
-        self.lines = _NEWLINE.split(self.text)
-        source = src.meta.get("source") or self.title
+        source = self.meta.get("source") or self.title
         self.uid = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, source)}"
-        self.findings: list[Finding] = []
         self.files: dict[str, bytes] = {}  # path inside OEBPS/ -> content
         self.images: dict[Path, str] = {}  # source file -> path inside OEBPS/
         self.env: dict = {}
-        self.page = 0
 
     def build(self) -> dict[str, bytes]:
         cover = self._cover()
@@ -108,6 +123,11 @@ class _Builder:
 
     def _note(self, kind: str, level: str, message: str) -> None:
         self.findings.append(Finding(self.page, kind, level, message))
+
+    def _note_replaced(self, n: int, where: str) -> None:
+        noun = "1 character" if n == 1 else f"{n} characters"
+        message = f"{noun} that XML cannot hold replaced with U+FFFD in {where}"
+        self._note("xml_char_replaced", "warning", message)
 
     def _chapters(self) -> list[_Chapter]:
         chapters = [_Chapter("front", self.title)]
@@ -130,9 +150,18 @@ class _Builder:
                     chapters.append(_Chapter(f"ch{len(chapters):03d}", title, self.page))
                 elif first.tag == "h2":
                     chapters[-1].subs.append((title, f"h-{headings}", len(chapters[-1].blocks)))
+            # the footnote block has no lines of its own, only the tokens inside it
+            lines = {i for token in block if token.map for i in range(*token.map)}
+            chapters[-1].replaced += sum(self.replaced.get(i, 0) for i in lines)
             if markup := self._render(block, twin):  # a dropped image can leave nothing
                 chapters[-1].blocks.append(markup)
             twin = ""
+        page = self.page
+        for ch in chapters:
+            if ch.replaced:
+                self.page = ch.page
+                self._note_replaced(ch.replaced, f"chapter {ch.title!r}")
+        self.page = page  # later findings must not take the page of the last chapter noted
         if not chapters[0].blocks and len(chapters) > 1:
             del chapters[0]
         return chapters
@@ -316,7 +345,7 @@ def _plain(inline: Token) -> str:
 
 
 def _esc(text: str) -> str:
-    return html.escape(_NOT_XML.sub("", text))
+    return html.escape(text)
 
 
 def _fix(markup: str) -> str:

@@ -51,6 +51,28 @@ def test_match_reaches_one_page_either_side_but_not_two(page, matched):
     assert (findings == []) is matched
 
 
+@pytest.mark.parametrize(
+    "mark, text",
+    [
+        ("Chapter 3: Quiet Harbors", "3 Quiet Harbors"),
+        ("Bab 2 Kebun Pagi", "2 Kebun Pagi"),
+        ("3 Quiet Harbors", "CHAPTER 3. QUIET HARBORS"),
+        ("Chapter 3", "3"),
+    ],
+)
+def test_a_chapter_label_in_one_title_and_a_bare_number_in_the_other_still_match(mark, text):
+    out, findings = assign_heading_levels([heading(text, page=5)], [Bookmark(mark, 0, 5)])
+    assert [(b.text, b.level) for b in out] == [(text, 1)]
+    assert findings == []
+
+
+def test_chapter_numbers_that_differ_do_not_match():
+    blocks = [heading("12", page=5)]
+    out, findings = assign_heading_levels(blocks, [Bookmark("Chapter 3", 0, 5)])
+    assert [(b.text, b.level) for b in out] == [("Chapter 3", 1), ("12", 2)]
+    assert [f.kind for f in findings] == ["heading_added"]
+
+
 def test_dissimilar_heading_does_not_match():
     blocks = [heading("Something else entirely", page=5), Block("paragraph", "x", page=7)]
     out, findings = assign_heading_levels(blocks, [Bookmark("Communication Breakdown", 0, 5)])
@@ -120,6 +142,13 @@ def test_one_heading_matches_one_bookmark_only():
 def test_best_scoring_heading_wins_among_candidates():
     blocks = [heading("Chapter Ten", page=2), heading("Chapter One", page=2)]
     out, findings = assign_heading_levels(blocks, [Bookmark("Chapter One", 0, 2)])
+    assert levels(out) == [2, 1]
+    assert findings == []
+
+
+def test_equal_heading_matches_choose_the_page_nearest_the_bookmark():
+    blocks = [heading("Shared title", page=4), heading("Shared title", page=5)]
+    out, findings = assign_heading_levels(blocks, [Bookmark("Shared title", 0, 5)])
     assert levels(out) == [2, 1]
     assert findings == []
 

@@ -57,6 +57,26 @@ def _open(path: Path) -> Iterator[pdfium.PdfDocument]:
         pdf.close()
 
 
+def image_bounds(page: pdfium.PdfPage) -> list[tuple[float, float, float, float]]:
+    """The raster images of a page, as (left, bottom, right, top) in PDF page coordinates.
+
+    PDFium gives an image inside a Form XObject its bounds without the matrix of the form object
+    around it (the `cm` before its `Do`), so the matrix of each form around the image is applied,
+    innermost first."""
+    boxes = []
+    for obj in page.get_objects(filter=[pdfium_raw.FPDF_PAGEOBJ_IMAGE]):
+        left, bottom, right, top = obj.get_bounds()
+        form = obj.container
+        while form is not None:
+            matrix = form.get_matrix()
+            corners = [matrix.on_point(x, y) for x in (left, right) for y in (bottom, top)]
+            xs, ys = [x for x, _ in corners], [y for _, y in corners]
+            left, bottom, right, top = min(xs), min(ys), max(xs), max(ys)
+            form = form.container
+        boxes.append((left, bottom, right, top))
+    return boxes
+
+
 def inspect_pdf(path: Path) -> list[PageInfo]:
     infos = []
     with _open(path) as pdf:
@@ -64,8 +84,7 @@ def inspect_pdf(path: Path) -> list[PageInfo]:
             width, height = page.get_width(), page.get_height()
             crop_x, crop_y, _, _ = page.get_cropbox()
             image_area = 0.0
-            for obj in page.get_objects(filter=[pdfium_raw.FPDF_PAGEOBJ_IMAGE]):
-                left, bottom, right, top = obj.get_bounds()
+            for left, bottom, right, top in image_bounds(page):
                 image_area += (right - left) * (top - bottom)
             textpage = page.get_textpage()
             infos.append(
