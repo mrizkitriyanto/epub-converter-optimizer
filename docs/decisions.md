@@ -697,3 +697,14 @@ error for either.
   but an `image_too_small` info finding now counts them, and an `<img>` of such an image is
   replaced by its alt text: "Press ![the power key](icon.png) to start." reads "Press the power
   key to start." Before, the image and its alt text went without a finding (spec section 5).
+
+## 2026-11-19: Optimizer: a zip bomb is refused, and so is an entry name with a drive or backslash
+
+- The optimizer refuses an EPUB with an entry that unpacks to more than 200 MB, or that unpacks to
+  more than 2000 MB in all, as "Not a readable EPUB", before it reads any entry: the whole book
+  is read into memory, and zipfile reads no more than the size each entry declares. No real book
+  comes near either cap; a comic book of full-page scans reaches a few hundred MB in all. This
+  matters once M2 accepts uploads.
+- An entry name with a drive (`C:/x`, `C:x`) or a backslash is skipped with the `unsafe_path`
+  warning, like a root or a ".." part. Python reads a backslash as "/" on Windows only, so on other
+  systems such a name reached the output.

@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from functools import partial
 from html.entities import html5
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import quote, unquote, unquote_to_bytes, urlsplit, urlunsplit
 
 from fontTools import subset
@@ -65,6 +65,10 @@ _TEXT = {".xhtml", ".html", ".htm", ".css", ".ncx", ".opf", ".xml", ".txt", ".js
 # ponytail: links to other parts add bytes after the cut. 5% of the limit leaves room for about
 # 150 of them per part; a part that still ends up over the limit is reported, not split again.
 _RELINK_SLACK = CHAPTER_LIMIT_BYTES // 20
+# No real book has an entry or a whole that unpacks to this much; a zip bomb does. A comic
+# book of full-page scans reaches a few hundred MB in all.
+_MAX_ENTRY = 200 * 10**6
+_MAX_TOTAL = 2000 * 10**6
 
 
 class DRMError(Exception):
@@ -154,6 +158,17 @@ def _relative(owner: str, target: str, ref: str) -> str:
     """`ref` pointed at `target` instead; its query and fragment stay."""
     parts = urlsplit(ref)
     return urlunsplit(("", "", _rel(owner, target), parts.query, parts.fragment))
+
+
+def _unsafe_name(name: str) -> bool:
+    """True for a zip entry name that could land outside the folder it is unpacked into: a root, a
+    drive, a backslash (Python reads it as "/" on Windows only) or a ".." part."""
+    return (
+        name.startswith("/")
+        or "\\" in name
+        or bool(PureWindowsPath(name).drive)
+        or ".." in name.split("/")
+    )
 
 
 def _prune(parent: ET.Element, drop: Callable[[ET.Element], bool]) -> int:
@@ -277,9 +292,18 @@ class _Package:
         try:
             with zipfile.ZipFile(src) as z:
                 infos = [info for info in z.infolist() if not info.is_dir()]
+                # zipfile reads no more than the size an entry declares, so this bounds memory
+                big = max((info.file_size for info in infos), default=0) > _MAX_ENTRY
+                if big or sum(info.file_size for info in infos) > _MAX_TOTAL:
+                    what = "an entry of it" if big else "it"
+                    limit = _MAX_ENTRY if big else _MAX_TOTAL
+                    raise ValueError(
+                        f"Not a readable EPUB: {self.name}: {what} unpacks to more than "
+                        f"{limit // 10**6} MB"
+                    )
                 self.before = _sizes(infos)
                 for info in infos:
-                    if info.filename.startswith("/") or ".." in info.filename.split("/"):
+                    if _unsafe_name(info.filename):
                         unsafe += 1
                     else:
                         self.files[info.filename] = z.read(info)

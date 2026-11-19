@@ -15,7 +15,7 @@ from PIL import Image
 
 from eco.bookfolder import load_source
 from eco.epub.builder import build_epub
-from eco.epub.optimizer import DRMError, OptimizeReport, optimize_epub
+from eco.epub.optimizer import DRMError, OptimizeReport, _unsafe_name, optimize_epub
 from eco.options import CHAPTER_LIMIT_BYTES, Options
 
 NS = {
@@ -774,6 +774,40 @@ def test_unsafe_zip_entries_and_os_junk_are_not_copied(tmp_path):
     assert "__MACOSX/OEBPS/._c.xhtml" not in z.namelist()
     [finding] = [f for f in rep.findings if f.kind == "unsafe_path"]
     assert finding.level == "warning" and "3" in finding.message
+
+
+def test_a_zip_entry_with_a_drive_is_not_copied(tmp_path):
+    raw = {"C:/evil.txt": b"x", "D:evil.txt": b"x"}
+    z, rep = run(tmp_path, package(tmp_path, {"c": "<p>x</p>"}, raw=raw), GENERAL)
+    assert not [n for n in z.namelist() if "evil" in n]
+    [finding] = [f for f in rep.findings if f.kind == "unsafe_path"]
+    assert "2 zip entries" in finding.message
+
+
+@pytest.mark.parametrize(
+    "name, unsafe",
+    [
+        ("OEBPS/text/c.xhtml", False),
+        ("/abs.txt", True),
+        ("OEBPS/../../up.txt", True),
+        ("C:/evil.txt", True),
+        ("C:evil.txt", True),
+        # Python reads a backslash as "/" on Windows only; elsewhere it reaches the name
+        ("OEBPS\\evil.txt", True),
+        ("\\\\host\\share\\evil.txt", True),
+    ],
+)
+def test_which_zip_entry_names_are_unsafe(name, unsafe):
+    assert _unsafe_name(name) is unsafe
+
+
+@pytest.mark.parametrize("cap", ["_MAX_ENTRY", "_MAX_TOTAL"])
+def test_an_epub_that_unpacks_past_the_size_cap_is_refused(tmp_path, monkeypatch, cap):
+    src = package(tmp_path, {"c": "<p>x</p>"}, raw={"OEBPS/big.txt": b"x" * 5000})
+    monkeypatch.setattr(f"eco.epub.optimizer.{cap}", 4000)
+    with pytest.raises(ValueError, match="Not a readable EPUB: in.epub.*unpacks to more than"):
+        optimize_epub(src, tmp_path / "o.epub", GENERAL)
+    assert not (tmp_path / "o.epub").exists()
 
 
 def test_named_entities_become_characters_and_bad_xml_is_left_unchanged(tmp_path):
