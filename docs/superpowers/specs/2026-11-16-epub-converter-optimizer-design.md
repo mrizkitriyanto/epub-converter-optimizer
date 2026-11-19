@@ -165,6 +165,7 @@ Setiap milestone menghasilkan sesuatu yang bisa langsung dipakai. Setiap milesto
 2. **M2: GUI web + preview.** Termasuk renderer halaman Typst (gambar PNG seukuran layar) untuk preview EPUB perkiraan dengan pemilih "View as" (Stock / CrossPoint / CrossInk), serta mekanisme live preview (§8.18).
 3. **M3: Output XTC/XTCH.** Kuantisasi 1-bit/2-bit, encoder + decoder XTC/XTCH, preview XTC yang identik di GUI, dan panel gaya halaman XTC lengkap dengan live preview (§8.18).
 4. **M4: Docker + rilis** (image GHCR, catatan rilis).
+5. **M5: Gaya membaca.** Focus Mode, kontrol tata letak tambahan, pustaka font bersama, gaya tersimpan dan default, serta peringatan karakter font (§8.18).
 
 Pemilik memutuskan GUI dikerjakan sebelum XTC, karena GUI dan preview yang paling diutamakan.
 
@@ -551,8 +552,10 @@ Disetujui pemilik. Fitur ini setara dengan pengaturan di [xtctool.com](https://x
 | | ukuran (px) | 32 |
 | | ketebalan, sesuai instance statis yang tersedia (400/500/600/700) | 400 |
 | | jarak baris (%) | 135 |
-| | margin (px) | 16 |
-| | perataan: rata kiri-kanan atau rata kiri | rata kiri-kanan |
+| | margin kiri/kanan dan atas/bawah (px) | 16, 16 |
+| | jarak paragraf dan inden baris pertama (% ukuran font) | 120, 0 |
+| | perataan: rata kiri-kanan, rata kiri, atau tengah | rata kiri-kanan |
+| | Focus Mode (awal kata ditebalkan), kekuatan rendah/sedang/tinggi | mati, sedang |
 | | pemenggalan kata | aktif |
 | | bahasa teks: otomatis dari buku atau pilih sendiri | otomatis |
 | Gambar dan warna | mode: XTH (4 abu-abu) atau XTG (hitam-putih) | XTH |
@@ -570,11 +573,12 @@ Disetujui pemilik. Fitur ini setara dengan pengaturan di [xtctool.com](https://x
 - Untuk XTC, preview melewati kuantisasi yang sama dengan file, jadi hasilnya identik. Nomor halaman di bilah status bisa berbeda sampai render penuh selesai.
 - Untuk EPUB, live preview mencakup simulasi ukuran huruf device dan efek preset ukuran file pada gambar, dan diberi label "perkiraan".
 
-**CLI:** `--style FILE.json` untuk semua pengaturan, serta flag `--font` dan `--font-size`. GUI menampilkan gaya yang sedang aktif sebagai JSON yang bisa disalin untuk dipakai di CLI.
+**CLI:** `--style FILE.json` atau `--style NAMA` untuk semua pengaturan, serta flag `--font` dan `--font-size`. `eco styles list` menampilkan gaya tersimpan; gaya default dipakai otomatis oleh `eco convert`. GUI menampilkan gaya yang sedang aktif sebagai JSON yang bisa disalin untuk dipakai di CLI.
 
 **Font:**
 - Hanya font berlisensi OFL dengan instance statis. File font dan `OFL.txt` disimpan di `src/eco/fonts/`, dengan total ≤ 6 MB.
-- Font unggahan disimpan di folder job saja dan ikut terhapus bersama job.
+- Font unggahan disimpan di pustaka `<data>/fonts/` dan tersedia bagi semua job. Font lama di folder job tetap dapat dibaca. Pustaka dikelola lewat `eco fonts` atau bagian Fonts di Settings.
+- Font yang sudah dihapus membuat gaya tersimpan dan job lama memakai Literata, dengan temuan `font_missing`. Karakter tubuh buku yang tidak tersedia pada font pilihan menghasilkan temuan `font_fallback`.
 
 ## 9. Kriteria penerimaan
 

@@ -3,7 +3,10 @@ import { apply, findingParts, isConverted } from './job.js';
 
 const STYLE_IDS = {
   font: 'font', font_size: 'style-font-size', font_weight: 'font-weight', line_height: 'line-height',
-  margin: 'margin', align: 'align', hyphenate: 'hyphenate', lang: 'style-lang', mode: 'color-mode',
+  margin_x: 'margin-x', margin_y: 'margin-y', paragraph_spacing: 'paragraph-spacing',
+  first_line_indent: 'first-line-indent', align: 'align', hyphenate: 'hyphenate',
+  focus_mode: 'focus-mode', focus_strength: 'focus-strength',
+  lang: 'style-lang', mode: 'color-mode',
   dither: 'dither', dither_strength: 'dither-strength', negative: 'negative', bar_position: 'bar-position',
   bar_line: 'bar-line', bar_page: 'bar-page', bar_book_percent: 'bar-book-percent',
   bar_chapter_page: 'bar-chapter-page', bar_chapter_percent: 'bar-chapter-percent',
@@ -12,11 +15,12 @@ const STYLE_IDS = {
   bar_side_margin: 'bar-side-margin', orientation: 'orientation',
 };
 const STYLE_FLAGS = new Set([
-  'hyphenate', 'dither', 'negative', 'bar_line', 'bar_page', 'bar_book_percent',
+  'hyphenate', 'focus_mode', 'dither', 'negative', 'bar_line', 'bar_page', 'bar_book_percent',
   'bar_chapter_page', 'bar_chapter_percent', 'bar_chapter_title', 'bar_chapter_marks', 'bar_full_width',
 ]);
 const STYLE_NUMBERS = new Set([
-  'font_size', 'font_weight', 'line_height', 'margin', 'dither_strength', 'bar_font_size',
+  'font_size', 'font_weight', 'line_height', 'margin_x', 'margin_y', 'paragraph_spacing',
+  'first_line_indent', 'dither_strength', 'bar_font_size',
   'bar_edge_margin', 'bar_side_margin', 'orientation',
 ]);
 
@@ -101,6 +105,7 @@ export function renderReview() {
   xtcToggle.disabled = !xtc;
   (review.format === 'epub' ? epubToggle : xtcToggle).checked = true;
   document.querySelector('.approx').hidden = review.format !== 'epub';
+  $('focus-controls').hidden = review.format === 'epub';
   $('change-settings').hidden = !converted;
   $('try-again').hidden = job.files.some(isConverted); // with nothing converted, trying again is the one action
   renderFilePick(job);
@@ -414,7 +419,7 @@ export async function requestLive() {
     const shown = Number(response.headers.get('X-Excerpt-Index')) + 1;
     const pages = Number(response.headers.get('X-Excerpt-Pages'));
     setText($('device-caption'), t('live_caption', { page: shown, pages }));
-    setText($('device-status'), '');
+    setText($('device-status'), decodeURIComponent(response.headers.get('X-Font-Fallback') || ''));
   } catch (error) {
     if (error.name !== 'AbortError' && state.review === review) setText($('device-status'), error.message);
   }
@@ -448,6 +453,15 @@ export function syncWeights(preferred) {
   );
   const wanted = Number(preferred);
   $('font-weight').value = String(weights.includes(wanted) ? wanted : weights[0]);
+  updateFocusAvailability();
+}
+
+export function updateFocusAvailability() {
+  const found = state.review.fonts.find((item) => item.family === $('font').value);
+  const available = Boolean(found?.weights.some((weight) => weight > Number($('font-weight').value)));
+  $('focus-mode').disabled = !available;
+  $('focus-unavailable').hidden = available;
+  if (!available) $('focus-mode').checked = false;
 }
 
 export async function loadFonts() {
@@ -458,6 +472,12 @@ export async function loadFonts() {
       ...review.fonts.map((item) => h('option', { value: item.family }, item.family)),
       h('option', { value: '__upload__' }, t('font_upload')),
     );
+    const wanted = review.live.style.font;
+    if (!review.fonts.some((item) => item.family === wanted)) {
+      review.live.style.font = 'Literata';
+      setText($('panel-error'), t('font_missing_panel', { name: wanted }));
+      $('panel-error').hidden = false;
+    }
     $('font').value = review.live.style.font;
     syncWeights(review.live.style.font_weight);
   } catch (error) {
@@ -479,8 +499,81 @@ export async function openPanel() {
   $('panel-error').hidden = true;
   setText($('copy-status'), '');
   await loadFonts();
+  await loadSavedStyles();
   updateApply();
   $('font').focus();
+}
+
+async function loadSavedStyles() {
+  const entries = await getJson('/api/styles');
+  $('saved-style').replaceChildren(
+    h('option', { value: '' }, t('built_in_style')),
+    ...entries.filter((item) => !item.error).map((item) =>
+      h('option', { value: item.name }, `${item.name}${item.default ? ' (default)' : ''}`)),
+  );
+}
+
+export async function chooseSavedStyle() {
+  const name = $('saved-style').value;
+  if (!name) return;
+  try {
+    const response = await request(`/api/styles/${encodeURIComponent(name)}`);
+    const style = await response.json();
+    writeStyle(style);
+    syncWeights(style.font_weight);
+    const findings = decodeURIComponent(response.headers.get('X-Style-Findings') || '');
+    setText($('panel-error'), findings);
+    $('panel-error').hidden = !findings;
+    onLiveChange();
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function saveSavedStyle() {
+  const name = window.prompt(t('save_style'));
+  if (!name) return;
+  try {
+    let url = `/api/styles/${encodeURIComponent(name)}`;
+    const init = { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(readStyle()) };
+    try {
+      await request(url, init);
+    } catch (error) {
+      if (error.status !== 409 || !window.confirm(t('overwrite_style', { name }))) throw error;
+      await request(`${url}?overwrite=true`, init);
+    }
+    await loadSavedStyles();
+    $('saved-style').value = name;
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function makeSavedDefault() {
+  const name = $('saved-style').value;
+  if (!name) return;
+  try {
+    await getJson(`/api/styles/${encodeURIComponent(name)}/default`, { method: 'PUT' });
+    await loadSavedStyles();
+    $('saved-style').value = name;
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function deleteSavedStyle() {
+  const name = $('saved-style').value;
+  if (!name || !window.confirm(t('delete_style_confirm', { name }))) return;
+  try {
+    await request(`/api/styles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await loadSavedStyles();
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
 }
 
 export function hidePanel() {
@@ -504,6 +597,7 @@ export function updateApply() {
 
 export function onLiveChange() {
   const review = state.review;
+  if (document.activeElement === $('font-weight')) updateFocusAvailability();
   review.live = { style: readStyle(), size: $('live-size').value };
   updateApply();
   if (review.pages && review.pages.device_pages > 0) refreshDevice();
@@ -524,14 +618,16 @@ export async function onFontUpload() {
   $('font-upload').value = '';
   if (!file) return;
   const form = new FormData();
-  form.append('file', file, file.name);
+  form.append('files', file, file.name);
   try {
-    const uploaded = await getJson(URLS.fontUpload(state.job.id), { method: 'POST', body: form });
+    const [uploaded] = await getJson(URLS.fontUpload(), { method: 'POST', body: form });
     const existing = state.review.fonts.find((item) => item.family === uploaded.family);
     if (existing) existing.weights = [...new Set([...existing.weights, ...uploaded.weights])].sort((a, b) => a - b);
     else state.review.fonts.push(uploaded);
     const uploadOption = $('font').querySelector('option[value="__upload__"]');
-    $('font').insertBefore(h('option', { value: uploaded.family }, uploaded.family), uploadOption);
+    if (![...$('font').options].some((option) => option.value === uploaded.family)) {
+      $('font').insertBefore(h('option', { value: uploaded.family }, uploaded.family), uploadOption);
+    }
     $('font').value = uploaded.family;
     syncWeights(uploaded.weights[0]);
     onLiveChange();

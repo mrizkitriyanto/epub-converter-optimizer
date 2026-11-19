@@ -142,7 +142,7 @@ export const URLS = {
   cancel: (id) => `/api/jobs/${id}/cancel`,
   rebuild: (id) => `/api/jobs/${id}/rebuild`,
   fonts: (id) => `/api/fonts?job=${id}`,
-  fontUpload: (id) => `/api/jobs/${id}/fonts`,
+  fontUpload: () => '/api/fonts',
   fileDownload: (id, n, format) => `/api/jobs/${id}/files/${n}/download/${format}`,
   pages: (id, n, format, view) => `/api/jobs/${id}/files/${n}/pages?format=${format}&view=${view}`,
   source: (id, n, page) => `/api/jobs/${id}/files/${n}/source/${page}.png`,

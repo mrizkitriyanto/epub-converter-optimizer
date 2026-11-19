@@ -73,6 +73,10 @@ Options of `eco convert INPUT...`:
 - `--mode auto|reflow|pages`: reflow the text or keep fixed pages.
 - `--ocr auto|force|off`: OCR for scanned pages.
 
+For XTC or XTCH, use `--style NAME` to apply a saved page style, or `--style FILE.json` for a style file. `--font NAME` and `--font-size N` override that style. `eco styles list` shows saved styles and marks the default. Without `--style`, conversions use the default style when one is set.
+
+Add reusable `.ttf` or `.otf` fonts with `eco fonts add FILE...`; inspect them with `eco fonts list` and remove a family with `eco fonts remove FAMILY`. The data folder holds both fonts and saved styles.
+
 Extract a PDF to an editable Markdown book folder (`book.book/`) without building an EPUB:
 
 ```bash
@@ -86,6 +90,8 @@ eco web
 ```
 
 This starts a local server and opens `http://127.0.0.1:8000/` in your browser. Add PDF, Markdown or EPUB files (up to 200 per upload), choose the device and the settings, and start. Progress shows the stage and the page, and you can cancel a running conversion. Review shows the findings next to the original page and a preview of the e-reader page. A click on a finding moves both. "Change settings" converts again with other settings; a PDF is not read again. Then download the EPUBs. Everything is processed on this computer. The page is in English only.
+
+In Review, Page style controls alignment, margins, paragraph spacing, indent, and Focus Mode for XTC. Save a named style, make it the default, or delete it there. Settings on the Select files page has a Fonts section for shared font uploads and removal. A missing font uses Literata and reports a finding; missing characters in the chosen font also appear as a finding and in live preview.
 
 Options of `eco web`:
 

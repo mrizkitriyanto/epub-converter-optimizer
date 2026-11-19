@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from eco.events import PageEvent, StageEvent
+from eco.events import FindingEvent, PageEvent, StageEvent
 from eco.options import Options, options_from_dict, upgrade_options
 
 if os.name == "nt":
@@ -249,7 +249,9 @@ class JobStore:
     ) -> JobInfo:
         job = job or self.reserve()
         try:
-            info = JobInfo(job.name, "queued", time.time(), asdict(options), fill(job / "input"), 0)
+            stored_options = asdict(options)
+            stored_options["style"] = options.style.to_json()
+            info = JobInfo(job.name, "queued", time.time(), stored_options, fill(job / "input"), 0)
             self.save(info)
         except BaseException:
             shutil.rmtree(job, ignore_errors=True)
@@ -401,8 +403,12 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
     (job / "tmp").mkdir(exist_ok=True)
     tempfile.tempdir = str(job / "tmp")  # what a killed worker leaves there, the runner deletes
     font_dir = job / "fonts"
-    font_dirs = (font_dir,) if font_dir.is_dir() else ()
-    opts = options_from_dict(options, font_dirs)
+    library = Path(data_dir) / "fonts"
+    font_dirs = tuple(folder for folder in (library, font_dir) if folder.is_dir())
+    style_findings = []
+    opts = options_from_dict(options, font_dirs, style_findings)
+    for finding in style_findings:
+        q.put(_event(FindingEvent(finding)))
     written: list[Path] = []
     for i, file in enumerate(files):
         q.put({"type": "file", "index": i, "status": "started"})

@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from functools import lru_cache
 from pathlib import Path
+
+from eco.events import Finding
 
 FONTS_DIR = Path(__file__).parent / "fonts"
 TYPST_FAMILY = "Libertinus Serif"  # the one Typst embeds
@@ -31,13 +33,18 @@ RANGES: dict[str, tuple[int, int]] = {
     "font_size": (16, 64),
     "line_height": (100, 250),  # percent
     "margin": (0, 80),
+    "margin_x": (0, 80),
+    "margin_y": (0, 80),
+    "paragraph_spacing": (0, 300),
+    "first_line_indent": (0, 400),
     "dither_strength": (0, 100),
     "bar_font_size": (8, 32),
     "bar_edge_margin": (0, 40),
     "bar_side_margin": (0, 80),
 }
 CHOICES: dict[str, tuple] = {
-    "align": ("justify", "left"),
+    "align": ("justify", "left", "center"),
+    "focus_strength": ("low", "medium", "high"),
     "mode": ("xth", "xtg"),
     "bar_position": ("bottom", "top", "off"),
     "orientation": (0, 90, 180, 270),
@@ -55,7 +62,13 @@ class PageStyle:
     font_size: int = 32
     font_weight: int = 400
     line_height: int = 135
-    margin: int = 16
+    margin: int = field(default=16, compare=False)  # legacy constructor input
+    margin_x: int = 16
+    margin_y: int = 16
+    paragraph_spacing: int = 120
+    first_line_indent: int = 0
+    focus_mode: bool = False
+    focus_strength: str = "medium"
     align: str = "justify"
     hyphenate: bool = True
     lang: str = "auto"
@@ -80,6 +93,9 @@ class PageStyle:
     def __post_init__(self):
         """Everything but the family and its weights: those depend on the uploaded fonts of the
         job, so `from_json` takes them."""
+        if self.margin != 16 and self.margin_x == self.margin_y == 16:
+            object.__setattr__(self, "margin_x", self.margin)
+            object.__setattr__(self, "margin_y", self.margin)
         for f in fields(self):
             value, name = getattr(self, f.name), f.name
             if name in RANGES:
@@ -96,12 +112,29 @@ class PageStyle:
                 raise ValueError(f"{name} must be true or false")
 
     @classmethod
-    def from_json(cls, d: dict, extra_dirs: Sequence[Path] = ()) -> PageStyle:
+    def from_json(
+        cls,
+        d: dict,
+        extra_dirs: Sequence[Path] = (),
+        *,
+        lenient: bool = False,
+        findings: list[Finding] | None = None,
+    ) -> PageStyle:
         """A style from an object that may hold some of the fields. `extra_dirs` are the folders
         of uploaded fonts, whose families are then known. ValueError for anything that is not
         right."""
         if not isinstance(d, dict):
             raise ValueError("style must be an object")  # noqa: TRY004
+        if "margin" in d:
+            low, high = RANGES["margin"]
+            if not (_whole(d["margin"]) and low <= d["margin"] <= high):
+                raise ValueError(f"margin must be a whole number from {low} to {high}")
+            d = {
+                **d,
+                "margin_x": d.get("margin_x", d["margin"]),
+                "margin_y": d.get("margin_y", d["margin"]),
+            }
+            del d["margin"]
         names = {f.name for f in fields(cls)}
         for key in d:
             if key not in names:
@@ -109,13 +142,51 @@ class PageStyle:
         style = cls(**d)
         weights = available_weights(style.font, extra_dirs) if isinstance(style.font, str) else []
         if not weights:
-            raise ValueError("font must be a bundled font, Libertinus Serif or an uploaded font")
+            if not lenient or not isinstance(style.font, str):
+                raise ValueError(
+                    "font must be a bundled font, Libertinus Serif or an uploaded font"
+                )
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0, "font_missing", "warning", f"Font missing: {style.font}; using Literata."
+                    )
+                )
+            style = replace(style, font="Literata")
+            weights = available_weights(style.font)
         if not (_whole(style.font_weight) and style.font_weight in weights):
-            raise ValueError(f"font_weight must be one of: {', '.join(map(str, weights))}")
+            if not lenient or not _whole(style.font_weight):
+                raise ValueError(f"font_weight must be one of: {', '.join(map(str, weights))}")
+            replacement = min(weights, key=lambda weight: (abs(weight - style.font_weight), weight))
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0,
+                        "font_weight_missing",
+                        "warning",
+                        f"Font weight {style.font_weight} unavailable; using {replacement}.",
+                    )
+                )
+            style = replace(style, font_weight=replacement)
+        if style.focus_mode and not any(weight > style.font_weight for weight in weights):
+            if not lenient:
+                raise ValueError(f"This font has no heavier weight: {style.font}")
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0,
+                        "focus_unavailable",
+                        "warning",
+                        f"Focus Mode unavailable for {style.font} at {style.font_weight}.",
+                    )
+                )
+            style = replace(style, focus_mode=False)
         return style
 
     def to_json(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        del result["margin"]
+        return result
 
 
 @lru_cache(maxsize=1)

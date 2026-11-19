@@ -4,6 +4,7 @@ from pathlib import Path
 
 import platformdirs
 
+from eco.events import Finding
 from eco.style import RANGES, PageStyle
 
 DEVICES: dict[str, tuple[int, int] | None] = {
@@ -66,13 +67,17 @@ def upgrade_options(options: dict) -> dict:
     return options
 
 
-def options_from_dict(options: dict, font_extra_dirs: tuple[Path, ...] = ()) -> Options:
+def options_from_dict(
+    options: dict, font_extra_dirs: tuple[Path, ...] = (), findings: list[Finding] | None = None
+) -> Options:
     """`Options` from `asdict(Options)` after a trip through JSON."""
     return Options(
         **{
             **options,
             "formats": tuple(options["formats"]),
-            "style": PageStyle.from_json(options["style"], font_extra_dirs),
+            "style": PageStyle.from_json(
+                options["style"], font_extra_dirs, lenient=True, findings=findings
+            ),
         }
     )
 

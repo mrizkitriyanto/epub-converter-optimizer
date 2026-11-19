@@ -73,6 +73,10 @@ Opsi `eco convert INPUT...`:
 - `--mode auto|reflow|pages`: alirkan ulang teks atau pertahankan halaman tetap.
 - `--ocr auto|force|off`: OCR untuk halaman hasil pindai.
 
+Untuk XTC atau XTCH, gunakan `--style NAMA` untuk gaya halaman tersimpan, atau `--style FILE.json` untuk berkas gaya. `--font NAMA` dan `--font-size N` menimpa pengaturan gaya itu. `eco styles list` menampilkan gaya tersimpan dan penanda default. Tanpa `--style`, konversi memakai gaya default bila tersedia.
+
+Tambahkan font `.ttf` atau `.otf` yang dapat dipakai ulang dengan `eco fonts add FILE...`; lihat dengan `eco fonts list` dan hapus satu keluarga dengan `eco fonts remove FAMILY`. Folder data menyimpan font dan gaya tersimpan.
+
 Ekstrak PDF ke folder buku Markdown yang bisa diedit (`buku.book/`), tanpa membuat EPUB:
 
 ```bash
@@ -86,6 +90,8 @@ eco web
 ```
 
 Perintah ini menjalankan server lokal dan membuka `http://127.0.0.1:8000/` di browser Anda. Tambahkan file PDF, Markdown, atau EPUB (sampai 200 file per unggahan), pilih device dan pengaturan, lalu mulai. Kemajuan menampilkan tahap dan halaman, dan Anda bisa membatalkan konversi yang sedang berjalan. Tinjauan menampilkan temuan di samping halaman asli dan pratinjau halaman e-reader. Satu klik pada temuan menggerakkan keduanya. "Change settings" mengubah lagi dengan pengaturan lain; PDF tidak dibaca ulang. Setelah itu unduh EPUB-nya. Semuanya diproses di komputer ini. Halamannya hanya berbahasa Inggris, jadi nama tombol dan label di sini ditulis dalam bahasa Inggris.
+
+Di Review, Page style mengatur perataan, margin, jarak paragraf, inden, dan Focus Mode untuk XTC. Anda dapat menyimpan gaya bernama, menjadikannya default, atau menghapusnya. Settings pada halaman Select files memiliki bagian Fonts untuk mengunggah dan menghapus font bersama. Jika font hilang, eco memakai Literata dan mencatat temuan; karakter yang tidak ada pada font pilihan juga ditampilkan sebagai temuan dan dalam live preview.
 
 Opsi `eco web`:
 

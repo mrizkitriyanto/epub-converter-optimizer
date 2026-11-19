@@ -136,6 +136,15 @@
           </div>
         </details>
 
+        <details id="font-library" class="advanced">
+          <summary>{{ strings.font_library_title }}</summary>
+          <p class="hint">{{ strings.font_library_hint }}</p>
+          <ul id="library-font-list"></ul>
+          <label class="secondary" for="library-font-upload">{{ strings.font_upload }}</label>
+          <input id="library-font-upload" type="file" accept=".ttf,.otf" multiple>
+          <p id="library-font-status" role="status"></p>
+        </details>
+
         <div class="actions">
           <button id="start" type="button" class="primary" disabled></button>
         </div>
@@ -239,6 +248,12 @@
 
       <aside id="settings-panel" class="panel" aria-labelledby="settings-panel-title" hidden>
         <h3 id="settings-panel-title">{{ strings.change_settings }}</h3>
+        <div class="field stack"><label for="saved-style">{{ strings.saved_style_label }}</label><select id="saved-style"><option value="">{{ strings.built_in_style }}</option></select></div>
+        <div class="actions">
+          <button id="save-style" type="button" class="secondary">{{ strings.save_style }}</button>
+          <button id="default-style" type="button" class="secondary">{{ strings.make_default }}</button>
+          <button id="delete-style" type="button" class="secondary">{{ strings.delete_style }}</button>
+        </div>
         <div id="page-style">
           <fieldset class="style-group">
             <legend>{{ strings.style_text }}</legend>
@@ -246,8 +261,16 @@
             <div class="field stack"><label for="font-weight">{{ strings.font_weight_label }}</label><select id="font-weight"></select></div>
             <div class="field stack"><label for="style-font-size">{{ strings.live_font_label }}</label><input id="style-font-size" type="number" min="16" max="64" step="1"></div>
             <div class="field stack"><label for="line-height">{{ strings.line_height_label }}</label><input id="line-height" type="number" min="100" max="250" step="1"></div>
-            <div class="field stack"><label for="margin">{{ strings.margin_label }}</label><input id="margin" type="number" min="0" max="80" step="1"></div>
-            <div class="field stack"><label for="align">{{ strings.align_label }}</label><select id="align">{{ choices([("justify", strings.align_justify), ("left", strings.align_left)]) }}</select></div>
+            <div class="field stack"><label for="margin-x">{{ strings.margin_x_label }}</label><input id="margin-x" type="number" min="0" max="80" step="1"></div>
+            <div class="field stack"><label for="margin-y">{{ strings.margin_y_label }}</label><input id="margin-y" type="number" min="0" max="80" step="1"></div>
+            <div class="field stack"><label for="paragraph-spacing">{{ strings.paragraph_spacing_label }}</label><input id="paragraph-spacing" type="number" min="0" max="300" step="1"></div>
+            <div class="field stack"><label for="first-line-indent">{{ strings.first_line_indent_label }}</label><input id="first-line-indent" type="number" min="0" max="400" step="1"></div>
+            <div class="field stack"><label for="align">{{ strings.align_label }}</label><select id="align">{{ choices([("justify", strings.align_justify), ("left", strings.align_left), ("center", strings.align_center)]) }}</select></div>
+            <div id="focus-controls">
+              <label class="check"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
+              <p id="focus-unavailable" class="hint" hidden>{{ strings.focus_unavailable }}</p>
+              <div class="field stack"><label for="focus-strength">{{ strings.focus_strength_label }}</label><select id="focus-strength">{{ choices([("low", strings.focus_low), ("medium", strings.focus_medium), ("high", strings.focus_high)]) }}</select></div>
+            </div>
             <label class="check"><input id="hyphenate" type="checkbox"> {{ strings.hyphenate_label }}</label>
             <div class="field stack"><label for="style-lang">{{ strings.style_lang_label }}</label><input id="style-lang" type="text" maxlength="3" autocomplete="off"></div>
           </fieldset>

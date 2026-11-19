@@ -14,6 +14,7 @@ import platformdirs
 
 from eco import __version__, models
 from eco.events import Finding, FindingEvent, PageEvent, StageEvent
+from eco.font_library import MAX_FONT_BYTES, add_font, list_fonts, remove_font
 from eco.options import (
     DEVICES,
     FIRMWARES,
@@ -24,7 +25,8 @@ from eco.options import (
     Options,
     resolve_data_dir,
 )
-from eco.style import PageStyle
+from eco.saved_styles import get_default, list_styles, load_style
+from eco.style import BUNDLED_FONTS, TYPST_FAMILY, PageStyle
 
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
@@ -131,21 +133,47 @@ def _font_family(path: Path) -> str:
     return families.pop()
 
 
-def _page_style(args: argparse.Namespace) -> tuple[PageStyle, tuple[Path, ...]]:
+def _page_style(args: argparse.Namespace, data_dir: Path) -> tuple[PageStyle, tuple[Path, ...]]:
     values = {}
+    style_findings: list[Finding] = []
     if args.style:
-        values = json.loads(Path(args.style).expanduser().read_text(encoding="utf-8"))
-    extra_dirs = ()
+        path = Path(args.style).expanduser()
+        if path.is_file():
+            values = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            try:
+                values = load_style(data_dir, args.style, findings=style_findings).to_json()
+            except ValueError as error:
+                if not str(error).startswith("Style not found:"):
+                    raise
+                names = ", ".join(item["name"] for item in list_styles(data_dir)) or "none"
+                raise ValueError(f"{error}. Available styles: {names}") from None
+        print(f"Style: {args.style}")
+    elif default := get_default(data_dir):
+        values = load_style(data_dir, default, findings=style_findings).to_json()
+        print(f"Style: {default} (default)")
+    library = data_dir / "fonts"
+    extra_dirs = (library,) if library.is_dir() else ()
     if args.font:
         font = Path(args.font).expanduser()
         if font.suffix.lower() in (".ttf", ".otf"):
             values = {**values, "font": _font_family(font)}
-            extra_dirs = (font.parent,)
+            extra_dirs = (*extra_dirs, font.parent)
         else:
+            families = (
+                *BUNDLED_FONTS,
+                TYPST_FAMILY,
+                *(item["family"] for item in list_fonts(data_dir)),
+            )
+            if args.font not in families:
+                names = ", ".join(families)
+                raise ValueError(f"Unknown font: {args.font}. Available families: {names}")
             values = {**values, "font": args.font}
     style = PageStyle.from_json(values, extra_dirs)
     if args.font_size is not None:
         style = PageStyle.from_json({**style.to_json(), "font_size": args.font_size}, extra_dirs)
+    if style_findings:
+        _print_findings(style_findings)
     return style, extra_dirs
 
 
@@ -153,7 +181,7 @@ def _convert(args: argparse.Namespace) -> int:
     from eco.pipeline import convert_file  # imported late: it loads Docling
 
     data = _writable_data_dir(args.data)
-    style, font_extra_dirs = _page_style(args)
+    style, font_extra_dirs = _page_style(args, data)
     options = Options(
         device=args.device,
         firmware=args.firmware,
@@ -198,6 +226,32 @@ def _convert(args: argparse.Namespace) -> int:
             + (f", {len(failed)} failed: {', '.join(failed)}" if failed else "")
         )
     return 1 if failed else 0
+
+
+def _fonts_cli(args: argparse.Namespace) -> int:
+    data = _writable_data_dir(args.data)
+    if args.font_command == "list":
+        for entry in list_fonts(data):
+            print(f"{entry['family']}: {', '.join(map(str, entry['weights']))}")
+    elif args.font_command == "add":
+        for raw in args.files:
+            path = Path(raw).expanduser()
+            if path.stat().st_size > MAX_FONT_BYTES:
+                raise ValueError(f"Not a usable font file: {path.name}")
+            result = add_font(data, path.name, path.read_bytes())
+            print(f"{result['family']}: {result['status']}")
+    elif not remove_font(data, args.family):
+        raise ValueError(f"Font not found: {args.family}")
+    return 0
+
+
+def _styles_cli(args: argparse.Namespace) -> int:
+    for entry in list_styles(_writable_data_dir(args.data)):
+        suffix = " (default)" if entry["default"] else ""
+        if "error" in entry:
+            suffix += f" (broken: {entry['error']})"
+        print(entry["name"] + suffix)
+    return 0
 
 
 def _extract(args: argparse.Namespace) -> int:
@@ -334,6 +388,15 @@ def _parser() -> argparse.ArgumentParser:
     setup.add_argument("--yes", action="store_true", help="download without asking")
     setup.add_argument("--ipv4", action="store_true", help="connect over IPv4 only")
 
+    fonts = commands.add_parser("fonts", parents=[common], help="manage the shared font library")
+    font_commands = fonts.add_subparsers(dest="font_command", required=True)
+    font_commands.add_parser("list")
+    font_commands.add_parser("add").add_argument("files", nargs="+", metavar="FILE")
+    font_commands.add_parser("remove").add_argument("family", metavar="FAMILY")
+
+    styles = commands.add_parser("styles", parents=[common], help="list saved reading styles")
+    styles.add_subparsers(dest="style_command", required=True).add_parser("list")
+
     convert = commands.add_parser("convert", parents=[common], help="convert files to EPUB")
     convert.add_argument("inputs", nargs="+", metavar="INPUT", help="PDF, Markdown, EPUB or folder")
     convert.add_argument(
@@ -398,13 +461,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"eco {__version__}")
             return 0
         if args.command is None:
-            parser.error("a command is required: setup, convert, extract or web")
+            parser.error("a command is required: setup, convert, extract, fonts or web")
         if args.command == "convert" and args.landscape and args.device == "general":
             parser.error("--landscape needs an Xteink device, not --device general")
     except SystemExit as e:  # argparse exits on a usage error; main returns the code instead
         return e.code
     try:
-        commands = {"setup": _setup, "convert": _convert, "extract": _extract, "web": _web}
+        commands = {
+            "setup": _setup,
+            "convert": _convert,
+            "extract": _extract,
+            "web": _web,
+            "fonts": _fonts_cli,
+            "styles": _styles_cli,
+        }
         return commands[args.command](args)
     except Exception as e:  # noqa: BLE001  every failure ends as one error line
         _error(e)

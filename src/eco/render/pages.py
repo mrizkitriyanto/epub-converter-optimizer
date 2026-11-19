@@ -79,7 +79,14 @@ def render_book(
     folder made again."""
     if cache_dir is not None and (cached := _read_cache(cache_dir)) is not None:
         return cached
-    files = to_typst(src, device=device, style=style, view=view, image_profile=image_profile)
+    files = to_typst(
+        src,
+        device=device,
+        style=style,
+        view=view,
+        image_profile=image_profile,
+        font_extra_dirs=font_extra_dirs,
+    )
     if cache_dir is None:
         return _compile(files, style, font_extra_dirs).rendered
     _clear_cache(cache_dir)
@@ -123,6 +130,7 @@ def render_chapter(
         view,
         image_profile,
         defer_images=True,
+        font_extra_dirs=font_extra_dirs,
     )
     main = mapped["main.typ"].decode()
     head, chunk = _chapter(main, source_page, chapter)
@@ -139,6 +147,7 @@ def render_chapter(
         view,
         image_profile,
         selected_images=selected,
+        font_extra_dirs=font_extra_dirs,
     )
     main = files["main.typ"].decode()
     head, chunk = _chapter(main, source_page, chapter)

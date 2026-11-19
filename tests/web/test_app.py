@@ -555,7 +555,7 @@ def test_the_font_size_limits_of_the_page_are_the_servers(tmp_path):
 def test_the_page_keeps_the_font_size_in_the_style_of_the_options(tmp_path):
     js = source("app.js")
     assert "options.font_size" not in js  # M2's key
-    assert "style: { font_size: wholeFontSize($('font-size').value) }" in js  # an upload
+    assert "style: { font_size: wholeFontSize($('font-size').value) }" in js  # an edited upload
     assert "style: review.live.style" in js  # a rebuild keeps every page-style field
 
 
