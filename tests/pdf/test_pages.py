@@ -1,6 +1,9 @@
 import shutil
 
+import pypdfium2 as pdfium
 import pytest
+from fixtures.make import form_image_pdf
+from PIL import ImageOps
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, TextStringObject
 
@@ -8,11 +11,36 @@ from eco.pdf.pages import (
     PdfOpenError,
     bookmarks,
     crop,
+    image_bounds,
     inspect_pdf,
     pdf_metadata,
     render_page,
     to_pdfium_rect,
 )
+
+IDENTITY = "1 0 0 1 0 0"
+
+
+@pytest.mark.parametrize(
+    "forms",
+    [
+        [(IDENTITY, IDENTITY)],
+        [("1 0 0 1 200 300", IDENTITY)],  # moved by the cm before the form's Do
+        [("1 0 0 1 200 300", "2 0 0 2 50 100")],  # and by the form's own matrix
+        [("0 1 -1 0 300 300", IDENTITY)],  # turned a quarter
+        [("1 0 0 1 200 300", "2 0 0 2 50 100"), ("1 0 0 1 10 20", "1 0 0 1 5 5")],  # two deep
+    ],
+)
+def test_an_image_inside_a_form_xobject_has_its_box_on_the_page(tmp_path, forms):
+    path = form_image_pdf(tmp_path / "form.pdf", forms)
+    with pdfium.PdfDocument(path) as pdf:
+        (box,) = image_bounds(pdf[0])
+        ink = ImageOps.invert(pdf[0].render(scale=1).to_pil().convert("L")).getbbox()
+    left, top, right, bottom = ink  # pixels at scale 1 are points, top-left origin
+    assert [round(v) for v in box] == [left, 792 - bottom, right, 792 - top]
+    [info] = inspect_pdf(path)
+    width, height = box[2] - box[0], box[3] - box[1]
+    assert info.image_ratio == pytest.approx(width * height / (612 * 792))
 
 
 def test_inspect(fixtures_dir):

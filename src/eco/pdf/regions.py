@@ -7,13 +7,12 @@ from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
-import pypdfium2.raw as pdfium_raw
 from PIL import Image, ImageOps
 
 from eco.book import Block
 from eco.epub.images import _is_line_art
 from eco.events import Finding
-from eco.pdf.pages import Bbox, PageInfo, _open, crop, render_page, to_pdfium_rect
+from eco.pdf.pages import Bbox, PageInfo, _open, crop, image_bounds, render_page, to_pdfium_rect
 
 _PAGE_IMAGE_AREA = 0.8
 _PAGE_IMAGE_MAX_CHARS = 200
@@ -22,6 +21,10 @@ _COVER_QUALITY = 90
 _OVERLAP = 0.05
 _TEXT_KINDS = ("paragraph", "heading", "list_item", "table", "footnote", "code")
 _SLACK = 2.0  # pt: a block whose centre is this close to a picture is in it
+# Share of an area that counts as all of it: a Docling picture that covers this much of a raster
+# shows that raster, and one that lies this much inside a raster is part of it. Docling's boxes
+# are predicted and miss an edge by a few points (200 x 100 pt short by 3 pt on two sides: 0.95).
+_MOST = 0.9
 
 
 def _save_png(im: Image.Image, images_dir: Path, stem: str) -> str:
@@ -69,8 +72,7 @@ def leave_out_the_cover_page(
 def _picture_boxes(document, info: PageInfo) -> list[Bbox]:
     """The raster pictures of a page, as CropBox-relative top-left boxes."""
     boxes = []
-    for obj in document[info.number - 1].get_objects(filter=[pdfium_raw.FPDF_PAGEOBJ_IMAGE]):
-        left, bottom, right, top = obj.get_bounds()
+    for left, bottom, right, top in image_bounds(document[info.number - 1]):
         top_edge, bottom_edge = info.crop_y + info.height - top, info.crop_y + info.height - bottom
         boxes.append((left - info.crop_x, top_edge, right - info.crop_x, bottom_edge))
     return boxes
@@ -80,6 +82,43 @@ def _words(text: str) -> list[str]:
     return re.findall(r"\w+", re.sub(r"<[^>]*>", " ", text).lower())
 
 
+def _layer_words(textpage, info: PageInfo, box: Bbox) -> list[str]:
+    """The words of the PDF text layer inside `box`."""
+    return _words(textpage.get_text_bounded(*to_pdfium_rect(info, box)))
+
+
+def _area(box: Bbox) -> float:
+    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+
+
+def _share_inside(box: Bbox, frame: Bbox) -> float:
+    """The share of the area of `box` that lies inside `frame`."""
+    meet = (
+        max(box[0], frame[0]),
+        max(box[1], frame[1]),
+        min(box[2], frame[2]),
+        min(box[3], frame[3]),
+    )
+    return _area(meet) / _area(box) if _area(box) else 0.0
+
+
+def _grow(box: Bbox, by: float) -> Bbox:
+    return (box[0] - by, box[1] - by, box[2] + by, box[3] + by)
+
+
+def _outside(box: Bbox, frame: Bbox) -> list[Bbox]:
+    """The parts of `box` outside `frame`: above, below, left and right of it."""
+    x0, y0, x1, y1 = box
+    top, bottom = max(y0, frame[1]), min(y1, frame[3])
+    parts = [
+        (x0, y0, x1, min(y1, frame[1])),
+        (x0, max(y0, frame[3]), x1, y1),
+        (x0, top, min(x1, frame[0]), bottom),
+        (max(x0, frame[2]), top, x1, bottom),
+    ]
+    return [p for p in parts if p[2] > p[0] and p[3] > p[1]]
+
+
 def keep_picture_text_as_images(
     pdf: Path, blocks: list[Block], pages: dict[int, PageInfo], ocr: str
 ) -> tuple[list[Block], list[Finding]]:
@@ -87,11 +126,14 @@ def keep_picture_text_as_images(
     picture (agent decision Q-22): OCR text carries reading errors and an invented structure
     (headings in the book's outline, a guessed table), while the picture is exact.
 
-    A block is such text when its centre lies in a raster picture of the page and most of its
-    words are missing from the text layer inside its box. The blocks of one picture become one
-    `picture` block with the picture's box, in the place of the first, which the region pass then
-    crops; none is added when Docling already gave that picture a block. Scanned pages keep their
-    OCR text, and so does `--ocr force`, which asks for it."""
+    A block is such text when its centre lies in a raster picture of the page, most of its words
+    are missing from the text layer inside its box, and the part of its box outside the picture
+    holds no text-layer word, which a crop of the picture would lose. The blocks of one picture
+    become one `picture` block with the whole picture's box, in the place of the first, which the
+    region pass then crops. A Docling picture that lies inside it is part of it: it goes, and its
+    caption moves to the new block. A Docling picture that covers most of it already shows it: no
+    block is added, and that picture grows to the whole picture's box. Scanned pages keep their OCR
+    text, and so does `--ocr force`, which asks for it."""
     if ocr != "auto":
         return blocks, []
     owner: dict[int, tuple[int, int]] = {}  # block index -> (page, picture index)
@@ -117,10 +159,14 @@ def keep_picture_text_as_images(
                 words = _words(block.text or block.html)
                 if not inside or not words:
                     continue
-                layer = set(_words(textpage.get_text_bounded(*to_pdfium_rect(info, block.bbox))))
-                if 2 * sum(word in layer for word in words) < len(words):
-                    owner[index] = (number, inside[0])
-                    boxes[(number, inside[0])] = pictures[inside[0]]
+                layer = set(_layer_words(textpage, info, block.bbox))
+                if 2 * sum(word in layer for word in words) >= len(words):
+                    continue
+                frame = _grow(pictures[inside[0]], _SLACK)
+                if any(_layer_words(textpage, info, p) for p in _outside(block.bbox, frame)):
+                    continue
+                owner[index] = (number, inside[0])
+                boxes[(number, inside[0])] = pictures[inside[0]]
     if not owner:
         return blocks, []
 
@@ -133,26 +179,50 @@ def keep_picture_text_as_images(
             min(info.height, box[3]),
         )
 
-    def drawn(page: int, box: Bbox) -> bool:  # Docling already has a picture block for it
-        return any(
-            b.kind == "picture"
-            and b.page == page
-            and b.bbox is not None
-            and box[0] - _SLACK <= (b.bbox[0] + b.bbox[2]) / 2 <= box[2] + _SLACK
-            and box[1] - _SLACK <= (b.bbox[1] + b.bbox[3]) / 2 <= box[3] + _SLACK
-            for b in blocks
-        )
+    def docling_pictures(page: int) -> list[int]:
+        return [
+            i
+            for i, b in enumerate(blocks)
+            if b.kind == "picture" and b.page == page and b.bbox is not None
+        ]
+
+    grown: dict[int, Bbox] = {}  # a Docling picture that shows a raster -> its new box
+    added: dict[tuple[int, int], Block] = {}  # a raster no Docling picture shows -> its block
+    gone: set[int] = set()  # Docling pictures inside an added one
+    for key in dict.fromkeys(owner.values()):
+        page, box = key[0], clip(key[0], boxes[key])
+        shown = [i for i in docling_pictures(page) if _share_inside(box, blocks[i].bbox) >= _MOST]
+        if shown:
+            b = grown.get(shown[0], blocks[shown[0]].bbox)
+            grown[shown[0]] = (
+                min(b[0], box[0]),
+                min(b[1], box[1]),
+                max(b[2], box[2]),
+                max(b[3], box[3]),
+            )
+            continue
+        frame = _grow(box, _SLACK)
+        parts = [
+            i
+            for i in docling_pictures(page)
+            if i not in gone and _share_inside(blocks[i].bbox, frame) >= _MOST
+        ]
+        gone.update(parts)
+        caption = " ".join(blocks[i].caption for i in parts if blocks[i].caption)
+        added[key] = Block("picture", page=page, bbox=box, caption=caption)
 
     out: list[Block] = []
     done: set[tuple[int, int]] = set()
     for index, block in enumerate(blocks):
         key = owner.get(index)
-        if key is None:
+        if index in grown:
+            out.append(replace(block, bbox=grown[index]))
+        elif key is None and index not in gone:
             out.append(block)
-        elif key not in done:
+        elif key is not None and key not in done:
             done.add(key)
-            if not drawn(key[0], boxes[key]):
-                out.append(Block("picture", page=key[0], bbox=clip(key[0], boxes[key])))
+            if key in added:
+                out.append(added[key])
     per_page = Counter(page for page, _ in done)
     findings = [
         Finding(

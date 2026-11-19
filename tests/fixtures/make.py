@@ -204,6 +204,49 @@ def picture_text_pdf(directory: Path) -> Path:
     return _write(directory, "picture_text.pdf", data)
 
 
+def form_image_pdf(path: Path, forms: list[tuple[str, str]]) -> Path:
+    """A 612 x 792 pt page with one 2 x 2 px image, drawn 100 x 50 pt at the origin of the
+    innermost of the nested Form XObjects `forms`: each is (the `cm` before its `Do`, its
+    `/Matrix`), outermost first. Written byte by byte, so the nesting is exactly as given."""
+
+    def stream(head: str, body: str | bytes) -> bytes:
+        data = body.encode() if isinstance(body, str) else body
+        return f"<< {head} /Length {len(data)} >>\nstream\n".encode() + data + b"\nendstream"
+
+    n = len(forms)
+    page = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        page + "/Resources << /XObject << /X0 5 0 R >> >> /Contents 4 0 R >>",
+        stream("", f"q {forms[0][0]} cm /X0 Do Q"),
+    ]
+    for k, (_, matrix) in enumerate(forms):
+        if k + 1 < n:
+            inner, draw = f"/X{k + 1}", f"q {forms[k + 1][0]} cm /X{k + 1} Do Q"
+        else:
+            inner, draw = "/Im", "q 100 0 0 50 0 0 cm /Im Do Q"
+        head = (
+            f"/Type /XObject /Subtype /Form /BBox [0 0 612 792] /Matrix [{matrix}] "
+            f"/Resources << /XObject << {inner} {6 + k} 0 R >> >>"
+        )
+        objects.append(stream(head, draw))
+    image = "/Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB "
+    objects.append(stream(image + "/BitsPerComponent 8", bytes(12)))
+    out, offsets = b"%PDF-1.7\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        data = body.encode() if isinstance(body, str) else body
+        out += f"{number} 0 obj\n".encode() + data + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets)
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n".encode()
+    out += f"startxref\n{xref}\n%%EOF\n".encode()
+    path.write_bytes(out)
+    return path
+
+
 def build_all(directory: Path) -> dict:
     return {
         "two_column": two_column_pdf(directory),

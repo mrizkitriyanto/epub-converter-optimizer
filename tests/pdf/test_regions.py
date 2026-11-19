@@ -2,6 +2,7 @@ from itertools import pairwise
 
 import pytest
 import typst
+from fixtures.make import form_image_pdf
 from PIL import Image, ImageChops
 
 from eco.book import Block
@@ -248,6 +249,65 @@ def test_text_read_from_a_picture_on_a_text_layer_page_becomes_the_picture(fixtu
     assert [round(v) for v in picture.bbox] == [100, 150, 300, 250]  # the whole picture
     assert out[2:] == blocks[3:]
     assert [(f.page, f.kind, f.level) for f in findings] == [(1, "picture_text_as_image", "info")]
+
+
+PICTURE_1 = [100, 150, 300, 250]
+
+
+@pytest.mark.parametrize(
+    "docling, kept",
+    [
+        # a logo Docling found inside the picture: the whole picture replaces it, with its caption
+        (
+            Block("picture", page=1, bbox=(260, 215, 290, 245), caption="Logo"),
+            [("picture", PICTURE_1, "Logo")],
+        ),
+        # Docling's picture covers most of it: it stays, grown to the whole picture
+        (Block("picture", page=1, bbox=(104, 152, 300, 250)), [("picture", PICTURE_1, "")]),
+    ],
+)
+def test_the_whole_picture_is_kept_whatever_picture_docling_found_in_it(
+    fixtures_dir, docling, kept
+):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    blocks = picture_text_blocks()
+    blocks.insert(3, docling)
+    out, findings = keep_picture_text_as_images(pdf, blocks, pages, "auto")
+    pictures = [(b.kind, [round(v) for v in b.bbox], b.caption) for b in out if b.kind == "picture"]
+    assert pictures == kept
+    assert [b.text for b in out if b.kind != "picture"] == [
+        "Ordinary text that the text layer holds.",
+        "Figure 1 - a caption in the text layer",
+        "Overlay label",
+        "Words nowhere at all",
+    ]
+    assert [(f.page, f.kind) for f in findings] == [(1, "picture_text_as_image")]
+
+
+def test_a_block_that_holds_text_layer_words_outside_the_picture_keeps_its_text(fixtures_dir):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    # its centre is in picture 1 and most of its words are OCR, but it reaches down over the
+    # caption, which is in the text layer
+    block = Block(
+        "paragraph",
+        "Pictured words inside a figure zzz yyy Figure",
+        page=1,
+        bbox=(100, 150, 330, 272),
+    )
+    assert keep_picture_text_as_images(pdf, [block], pages, "auto") == ([block], [])
+
+
+def test_a_picture_inside_a_form_xobject_is_found_where_it_is_drawn(tmp_path):
+    # drawn at (200, 300)-(300, 350) in PDF space: (200, 442)-(300, 492) from the top left
+    pdf = form_image_pdf(tmp_path / "form.pdf", [("1 0 0 1 200 300", "1 0 0 1 0 0")])
+    block = Block("paragraph", "Read from the picture", page=1, bbox=(205, 445, 295, 490))
+    out, findings = keep_picture_text_as_images(pdf, [block], _pages(pdf), "auto")
+    assert [(b.kind, [round(v) for v in b.bbox]) for b in out] == [
+        ("picture", [200, 442, 300, 492])
+    ]
+    assert [f.kind for f in findings] == ["picture_text_as_image"]
 
 
 def test_ocr_force_and_ocr_off_keep_the_text(fixtures_dir):

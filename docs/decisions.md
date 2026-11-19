@@ -556,6 +556,14 @@ error for either.
 - Scanned pages and `--ocr force` keep their OCR text, and Docling's OCR mode stays its default
   (spec section 8.3).
 - If it turns out wrong: drop the pass from the fix stage.
+- 2026-11-19, fix round: the picture rule is now this. A Docling picture shows a raster only when it
+  covers at least 90% of the raster's box; it then grows to the whole box. Otherwise the pass adds
+  a picture with the whole box, and a Docling picture that lies at least 90% inside it (a logo in
+  a sample document) goes, its caption moving to the new picture. Before, a small Docling picture
+  anywhere in the raster counted as showing it, so the text went and only the logo stayed. A block
+  whose box holds text-layer words outside the picture keeps its text, since the crop would lose
+  them. A raster inside a Form XObject gets its box on the page: PDFium leaves out the matrix of
+  the form object around it, so `image_bounds` applies it (the page's image share uses it too).
 
 ## 2026-11-19: A picture page 1 of a digital book is only the cover (T19 proposal P3)
 
