@@ -1,3 +1,4 @@
+import typst
 from PIL import Image
 
 from eco.book import Block
@@ -10,6 +11,19 @@ def test_reextract_with_cropbox_offset(fixtures_dir):
     path, lines, bbox = fixtures_dir["code"]
     info = inspect_pdf(path)[0]
     assert reextract_code(path, info, bbox).splitlines() == lines
+
+
+def test_a_hyphen_that_ends_a_code_line_stays_a_hyphen(tmp_path):
+    # PDFium marks a hyphen at a line end that follows a letter as U+FFFE (R-90)
+    lines = ["cat dump.bin | xxd | head -", "MIIEpAIBAAKCAQEA3x-", "abc"]
+    source = (
+        "#set page(width: 612pt, height: 792pt, margin: 0pt)\n"
+        '#show raw: set text(font: "DejaVu Sans Mono", size: 10pt)\n'
+        "#place(top + left, dx: 72pt, dy: 100pt)[```\n" + "\n".join(lines) + "\n```]\n"
+    )
+    pdf = tmp_path / "code.pdf"
+    pdf.write_bytes(typst.compile(source.encode(), ignore_system_fonts=True))
+    assert reextract_code(pdf, inspect_pdf(pdf)[0], (60.0, 90.0, 400.0, 150.0)).split("\n") == lines
 
 
 def test_reextract_returns_none_without_chars(fixtures_dir):

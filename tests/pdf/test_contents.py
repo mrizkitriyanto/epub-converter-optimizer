@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from eco.book import Block
-from eco.pdf import contents
+from eco.pdf import code, contents, pages, regions
 from eco.pdf.contents import _entry, _Run, rebuild_contents
 from eco.pdf.pages import PageInfo, inspect_pdf
 
@@ -294,9 +294,11 @@ def test_a_plain_one_column_read_is_info(fixtures_dir):
     assert levels(fixtures_dir["column_layouts"], 3, (62, 92, 548, 182)) == info
 
 
-def test_contents_py_holds_no_invisible_character():
-    # a literal U+FFFE that an editor drops would make `.replace("", "-")` of the hyphen marker
-    source = Path(contents.__file__).read_text(encoding="utf-8")
+@pytest.mark.parametrize("module", [contents, pages, code, regions])
+def test_the_modules_that_read_the_text_layer_hold_no_invisible_character(module):
+    # a literal U+FFFE that an editor drops would make `.replace("", "-")` of the hyphen marker,
+    # and one an editor keeps works but cannot be seen: the hyphen table uses escapes (R-90)
+    source = Path(module.__file__).read_text(encoding="utf-8")
     hidden = {c for c in source if unicodedata.category(c) in ("Cc", "Cf", "Cn", "Co", "Cs")}
     assert hidden <= {"\n"}
 

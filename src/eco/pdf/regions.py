@@ -12,7 +12,16 @@ from PIL import Image, ImageOps
 from eco.book import Block
 from eco.epub.images import _is_line_art
 from eco.events import Finding
-from eco.pdf.pages import Bbox, PageInfo, _open, crop, image_bounds, render_page, to_pdfium_rect
+from eco.pdf.pages import (
+    HYPHEN_MARKS,
+    Bbox,
+    PageInfo,
+    _open,
+    crop,
+    image_bounds,
+    render_page,
+    to_pdfium_rect,
+)
 
 _PAGE_IMAGE_AREA = 0.8
 _PAGE_IMAGE_MAX_CHARS = 200
@@ -84,7 +93,8 @@ def _words(text: str) -> list[str]:
 
 def _layer_words(textpage, info: PageInfo, box: Bbox) -> list[str]:
     """The words of the PDF text layer inside `box`."""
-    return _words(textpage.get_text_bounded(*to_pdfium_rect(info, box)))
+    text = textpage.get_text_bounded(*to_pdfium_rect(info, box))
+    return _words(text.translate(HYPHEN_MARKS))
 
 
 def _area(box: Bbox) -> float:

@@ -7,7 +7,7 @@ from statistics import median
 
 from eco.book import Block
 from eco.events import Finding
-from eco.pdf.pages import Bbox, PageInfo, _open, crop, to_pdfium_rect
+from eco.pdf.pages import HYPHEN_MARKS, Bbox, PageInfo, _open, crop, to_pdfium_rect
 
 _PAD = 2.0
 _LINE_TOLERANCE = 2.0
@@ -25,7 +25,7 @@ def reextract_code(pdf: Path, info: PageInfo, bbox: Bbox) -> str | None:
         textpage = document[info.number - 1].get_textpage()
         chars = []  # (x0, x1, top, char)
         for index in range(textpage.count_chars()):
-            char = textpage.get_text_range(index, 1)
+            char = textpage.get_text_range(index, 1).translate(HYPHEN_MARKS)
             if not char.strip():
                 continue
             x0, y0, x1, y1 = textpage.get_charbox(index, loose=True)

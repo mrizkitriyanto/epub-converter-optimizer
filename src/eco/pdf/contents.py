@@ -18,7 +18,7 @@ from typing import NamedTuple
 
 from eco.book import Block
 from eco.events import Finding
-from eco.pdf.pages import Bbox, PageInfo, _open, to_pdfium_rect
+from eco.pdf.pages import HYPHEN_MARKS, Bbox, PageInfo, _open, to_pdfium_rect
 
 _PAD = 2.0
 # pt: a run that starts this close left of a column's edge starts at it. A larger letter heading
@@ -37,7 +37,6 @@ _NUMBER_AFTER_LEADER = re.compile(rf"(.*?\w.*?)\s*{_LEADER}(\d+|[ivxlcdm]+)")
 _ENDS_IN_LEADER = re.compile(rf"\s*{_LEADER}$")
 _LEADER_RUN = re.compile(_LEADER)
 _CLOSING = ",;:)]"  # punctuation that belongs to the word before it
-_HYPHEN_MARKS = str.maketrans({"\ufffe": "-", "\x02": "-"})
 
 
 class _Run(NamedTuple):
@@ -71,7 +70,7 @@ def _runs(pdf: Path, info: PageInfo, bbox: Bbox) -> list[_Run]:
                 continue
             # PDFium marks a hyphen at a line end: U+FFFE in a range of the text, "\x02" in a
             # bounded text. Keep it as a hyphen.
-            text = textpage.get_text_bounded(x0, y0, x1, y1).translate(_HYPHEN_MARKS)
+            text = textpage.get_text_bounded(x0, y0, x1, y1).translate(HYPHEN_MARKS)
             if text.strip():
                 runs.append(_Run(-y1, -y0, x0, x1, " ".join(text.split())))
     return runs

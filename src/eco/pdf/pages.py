@@ -12,6 +12,9 @@ from PIL import Image, ImageOps
 
 Bbox = tuple[float, float, float, float]
 _INK_SCALE = 0.2  # the blank pages of the sample books render pure white at this scale
+# PDFium marks a hyphen at a line end as U+FFFE in a range of the text layer and as "\x02" in a
+# bounded text (R-90); text read from the layer maps both back to a hyphen with this table
+HYPHEN_MARKS = str.maketrans({"\ufffe": "-", "\x02": "-"})
 
 
 class PdfOpenError(Exception):
