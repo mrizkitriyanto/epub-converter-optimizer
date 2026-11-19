@@ -185,6 +185,54 @@ def contents_pdf(directory: Path) -> Path:
     return _write(directory, "contents.pdf", _compile(source))
 
 
+def contents_layouts_pdf(directory: Path) -> Path:
+    """Four pages with the layouts `contents_pdf` does not have. Page 1: one column of contents
+    whose page numbers are runs of their own at the right margin, with lines that end in a word
+    that looks like a number. Page 2: two columns whose page numbers are runs of their own at the
+    right edge of each column (280 and 540 pt), and a short part title centred over the gutter.
+    Page 3: text. Page 4: an index whose commas are runs of their own. Text is set as Typst
+    strings, so "..." stays three dots."""
+
+    def at(x: float, y: float, text: str, size: int = 11) -> str:
+        return f'#place(top + left, dx: {x}pt, dy: {y}pt)[#text(size: {size}pt, "{text}")]\n'
+
+    def ending_at(x: float, y: float, text: str) -> str:
+        return f'#place(top + right, dx: {x - 612}pt, dy: {y}pt)[#text(size: 11pt, "{text}")]\n'
+
+    one = at(72, 100, "Part One: Basics of the work", 14)
+    for n, (x, title, number) in enumerate(
+        [
+            (72, "Preface", "xi"),
+            (72, "Hunting on Windows 10", "45"),
+            (72, "Lab mix", "50"),
+            (72, "Editing with vi", ""),  # the first line of an entry of two lines
+            (84, "and other tools", "52"),
+            (72, "What next...", ""),
+            (72, "Chapter Two Is A Long Title That Runs Across", "60"),
+            (72, "Chapter 3 Basics ........ 117", ""),  # the number in the run, after a leader
+        ]
+    ):
+        one += at(x, 130 + 16 * n, title) + (ending_at(540, 130 + 16 * n, number) if number else "")
+    two = at(72, 100, "Part One: Getting Ready for the Long Walk", 16)
+    rows = [
+        (130, ("Alpha steps", "3"), ("Delta notes", "20")),
+        (146, ("Beta steps", "5"), ("Epsilon notes", "22")),
+        (162, ("Gamma steps", "8"), ("Zeta notes", "25")),
+        (220, ("Eta work", "31"), ("Iota work", "35")),
+        (236, ("Theta work", "33"), ("Kappa work", "37")),
+    ]
+    for y, (left, left_number), (right, right_number) in rows:
+        two += at(72, y, left) + ending_at(280, y, left_number)
+        two += at(330, y, right) + ending_at(540, y, right_number)
+    two += '#place(top + center, dy: 190pt)[#text(size: 14pt, "Part Two")]\n'
+    # the comma touches "116", and its glyph box sits 6 pt below the top of the line
+    index = at(72, 50, "Index", 18) + at(72, 100, "protecting 116") + at(136.3, 100, ",")
+    index += at(141, 100, "117") + at(72, 114, "pyramid 3") + at(80, 128, "of pain 5")
+    source = PAGE + SERIF + one + "#pagebreak()\n" + two + "#pagebreak()\n"
+    source += at(72, 72, "A page of ordinary text.") + "#pagebreak()\n" + index
+    return _write(directory, "contents_layouts.pdf", _compile(source))
+
+
 def picture_text_pdf(directory: Path) -> Path:
     """A page with a text layer and two raster pictures of text, each 200 x 100 pt: the first at
     (100, 150), with a caption under it in the text layer; the second at (100, 320), with a label
@@ -259,6 +307,7 @@ def build_all(directory: Path) -> dict:
         "photo": photo_pdf(directory),
         "shapes": shapes_pdf(directory),
         "contents": contents_pdf(directory),
+        "contents_layouts": contents_layouts_pdf(directory),
         "picture_text": picture_text_pdf(directory),
     }
 

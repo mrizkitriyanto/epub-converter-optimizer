@@ -539,6 +539,26 @@ error for either.
 - Docling labelled Threat Hunting's contents pages 10-13 `document_index`, but pages 14 and 15
   `table`, with the chapter titles between them as headings; those two pages are not covered.
 - If it turns out wrong: map `document_index` to a table again.
+- 2026-11-19, fix round: every run left of the box's middle used to be the left column, so a
+  one-column contents whose page numbers are runs of their own came out as all titles, then all
+  numbers; and the last word of any line was dropped when it looked like a number ("Lab mix" lost
+  "mix"). Now:
+  - Lines: runs are grouped by their height on the page (a run whose middle lies within the
+    tallest run of the line, or that overlaps half the lower height), so a comma whose glyph box
+    sits low stays in its line.
+  - Columns: the page is read in columns only where its text has a gutter: a band one line high
+    that fewer lines cross than either column has, with two lines or more starting at its right
+    edge and two or more left of it, the narrower column at least 0.4 of the wider. Page numbers
+    and leaders start no line, so a column of page numbers is no column, and a column of labels
+    beside their titles is too narrow to be one. A line that reaches into the gutter, or starts in
+    the right half of the left column (a short title centred over the gutter), is full-width and
+    ends the columns above it. Without a gutter the lines are read top to bottom, left to right.
+  - Page numbers: a number (arabic, or a valid lowercase roman numeral) goes only when it is a run
+    of its own after a gap of half its height or after a dot leader (four dots or more), or ends a
+    run after a leader. Otherwise the line keeps it: a page number kept costs nothing, a title word
+    lost is a failure (spec section 5). A caption of the block is a paragraph before the entries.
+  - Not covered: Threat Hunting puts each chapter's number and title in the left column only, so
+    its pages 11-13 read the left column of several chapters before their right column.
 
 ## 2026-11-19: Text read by OCR from a picture on a digital page is kept as the picture (Q-22)
 

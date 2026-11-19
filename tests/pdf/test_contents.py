@@ -1,8 +1,43 @@
+import pytest
+
 from eco.book import Block
-from eco.pdf.contents import rebuild_contents
+from eco.pdf.contents import _entry, _Run, rebuild_contents
 from eco.pdf.pages import PageInfo, inspect_pdf
 
 TABLE = "<table><tr><td>x</td></tr></table>"
+
+
+def line(*runs):
+    """A line of 11 pt runs: (left, right, text) each; digits are 7 pt high, the rest 10 pt."""
+    return [
+        _Run(100.0, 107.0 if text.isdigit() else 110.0, left, right, text)
+        for left, right, text in runs
+    ]
+
+
+@pytest.mark.parametrize(
+    "runs, entry",
+    [
+        # no page number: every word stays
+        (line((72, 140, "Editing with vi")), "Editing with vi"),
+        (line((72, 110, "Lab mix")), "Lab mix"),
+        (line((72, 180, "Hunting on Windows 10")), "Hunting on Windows 10"),
+        (line((72, 130, "What next...")), "What next..."),
+        (line((72, 165, "Hunting on Windows"), (167, 177, "10")), "Hunting on Windows 10"),
+        (line((72, 160, "Index .......... ic")), "Index .......... ic"),  # no roman numeral
+        # a page number: it goes, and its leader with it
+        (line((72, 160, "Preface .......... xi")), "Preface"),
+        (line((72, 180, "Hunting on Windows 10"), (530, 540, "45")), "Hunting on Windows 10"),
+        (line((72, 200, "Chapter 3 Basics ........ 117")), "Chapter 3 Basics"),
+        (line((72, 110, "Preface"), (112, 300, ". . . . . . . ."), (530, 540, "xi")), "Preface"),
+        (line((72, 110, "Preface"), (112, 540, ". . . . . . . . 45")), "Preface"),
+        (line((72, 300, "Preface . . . . . . . ."), (302, 312, "45")), "Preface"),
+        # a line that is only a number stays
+        (line((72, 80, "1")), "1"),
+    ],
+)
+def test_a_contents_line_loses_only_a_number_that_is_clearly_its_page_number(runs, entry):
+    assert _entry(runs) == entry
 
 
 def pages_of(pdf):
@@ -15,21 +50,82 @@ def test_contents_are_rebuilt_in_reading_order_without_print_page_numbers(fixtur
     out, findings = rebuild_contents(
         pdf, [Block("heading", "Contents", page=1), block], pages_of(pdf)
     )
+    # A number after a leader goes. A number in the same run after one space is not clearly a
+    # page number ("Hunting on Windows 10"), so it stays: a title word lost would be a failure.
     assert [(b.kind, b.text) for b in out] == [
         ("heading", "Contents"),
         ("paragraph", "Part One: Getting Ready for the Long Walk"),
         ("paragraph", "Alpha steps"),
         ("paragraph", "Beta steps"),
         ("paragraph", "Preface"),
-        ("paragraph", "Delta notes"),
-        ("paragraph", "Epsilon notes"),
-        ("paragraph", "Zeta notes"),
+        ("paragraph", "Delta notes 20"),
+        ("paragraph", "Epsilon notes 21"),
+        ("paragraph", "Zeta notes 22"),
         ("paragraph", "Part Two: Coming Home Again Much Later"),
-        ("paragraph", "Eta work"),
-        ("paragraph", "Iota work"),
+        ("paragraph", "Eta work 31"),
+        ("paragraph", "Iota work 35"),
     ]
     assert all(b.page == 1 for b in out)
     assert [(f.page, f.kind, f.level) for f in findings] == [(1, "contents_rebuilt", "info")]
+
+
+def rebuilt(pdf, page, bbox, caption=""):
+    block = Block("contents", page=page, bbox=bbox, html=TABLE, caption=caption)
+    out, findings = rebuild_contents(pdf, [block], pages_of(pdf))
+    assert [f.kind for f in findings] == ["contents_rebuilt"]
+    return [(b.kind, b.text) for b in out]
+
+
+def test_one_column_contents_with_page_numbers_as_runs_of_their_own(fixtures_dir):
+    out = rebuilt(fixtures_dir["contents_layouts"], 1, (60.0, 90.0, 560.0, 260.0))
+    assert out == [
+        ("paragraph", "Part One: Basics of the work"),
+        ("paragraph", "Preface"),
+        ("paragraph", "Hunting on Windows 10"),
+        ("paragraph", "Lab mix"),
+        ("paragraph", "Editing with vi"),
+        ("paragraph", "and other tools"),
+        ("paragraph", "What next..."),
+        ("paragraph", "Chapter Two Is A Long Title That Runs Across"),
+        ("paragraph", "Chapter 3 Basics"),
+    ]
+
+
+def test_two_columns_with_page_numbers_as_runs_and_a_short_title_over_the_gutter(fixtures_dir):
+    # Docling's box is not centred on the gutter: "Part Two" lies left of the box's middle
+    out = rebuilt(fixtures_dir["contents_layouts"], 2, (60.0, 90.0, 600.0, 250.0))
+    assert [text for _, text in out] == [
+        "Part One: Getting Ready for the Long Walk",
+        "Alpha steps",
+        "Beta steps",
+        "Gamma steps",
+        "Delta notes",
+        "Epsilon notes",
+        "Zeta notes",
+        "Part Two",
+        "Eta work",
+        "Theta work",
+        "Iota work",
+        "Kappa work",
+    ]
+
+
+def test_an_index_line_keeps_a_comma_whose_glyph_sits_low(fixtures_dir):
+    out = rebuilt(fixtures_dir["contents_layouts"], 4, (60.0, 90.0, 560.0, 140.0))
+    assert out == [
+        ("list_item", "protecting 116, 117"),
+        ("list_item", "pyramid 3"),
+        ("list_item", "of pain 5"),
+    ]
+
+
+def test_the_caption_of_a_contents_block_comes_first(fixtures_dir):
+    out = rebuilt(fixtures_dir["contents_layouts"], 1, (60.0, 90.0, 560.0, 140.0), "In brief")
+    assert out == [
+        ("paragraph", "In brief"),
+        ("paragraph", "Part One: Basics of the work"),
+        ("paragraph", "Preface"),
+    ]
 
 
 def test_an_index_keeps_its_numbers(fixtures_dir):
