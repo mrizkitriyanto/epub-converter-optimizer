@@ -529,9 +529,9 @@ export async function onFontUpload() {
   $('font-upload').value = '';
   if (!file) return;
   const form = new FormData();
-  form.append('file', file, file.name);
+  form.append('files', file, file.name);
   try {
-    const uploaded = await getJson(URLS.fontUpload(state.job.id), { method: 'POST', body: form });
+    const [uploaded] = await getJson(URLS.fontUpload(), { method: 'POST', body: form });
     const existing = state.review.fonts.find((item) => item.family === uploaded.family);
     if (existing) existing.weights = [...new Set([...existing.weights, ...uploaded.weights])].sort((a, b) => a - b);
     else state.review.fonts.push(uploaded);

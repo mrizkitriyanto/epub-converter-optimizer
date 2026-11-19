@@ -38,6 +38,8 @@ def test_every_default_of_the_table():
         "margin_y": 16,
         "paragraph_spacing": 120,
         "first_line_indent": 0,
+        "focus_mode": False,
+        "focus_strength": "medium",
         "align": "justify",
         "hyphenate": True,
         "lang": "auto",
@@ -143,7 +145,7 @@ def test_a_flag_is_a_real_boolean(name):
 
 
 def test_there_are_flags():
-    assert len([f for f in fields(PageStyle) if isinstance(f.default, bool)]) == 11
+    assert len([f for f in fields(PageStyle) if isinstance(f.default, bool)]) == 12
 
 
 @pytest.mark.parametrize("lang", ["auto", "en", "id", "fil", "de"])

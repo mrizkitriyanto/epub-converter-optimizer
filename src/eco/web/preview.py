@@ -120,7 +120,8 @@ class _Answers:
 
 def _font_dirs(store: JobStore, info: JobInfo) -> tuple[Path, ...]:
     folder = store.root / info.id / "fonts"
-    return (folder,) if folder.is_dir() else ()
+    library = store.root.parent / "fonts"
+    return tuple(path for path in (library, folder) if path.is_dir())
 
 
 def _job_options(store: JobStore, info: JobInfo) -> Options:

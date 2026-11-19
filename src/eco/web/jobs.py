@@ -403,7 +403,8 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
     (job / "tmp").mkdir(exist_ok=True)
     tempfile.tempdir = str(job / "tmp")  # what a killed worker leaves there, the runner deletes
     font_dir = job / "fonts"
-    font_dirs = (font_dir,) if font_dir.is_dir() else ()
+    library = Path(data_dir) / "fonts"
+    font_dirs = tuple(folder for folder in (library, font_dir) if folder.is_dir())
     opts = options_from_dict(options, font_dirs)
     written: list[Path] = []
     for i, file in enumerate(files):
