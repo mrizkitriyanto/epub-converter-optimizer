@@ -4,6 +4,7 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
+import eco.render.md2typst as md2typst_module
 import eco.render.pages as pages_module
 from eco.bookfolder import load_source
 from eco.options import Options, image_profile
@@ -119,6 +120,35 @@ def test_chapter_excerpt_matches_inside_a_book_with_pictures_and_profile(small_b
         image_profile=profile,
     )
     assert part.pages[idx] == full.pages[0]
+
+
+def test_chapter_excerpt_checks_only_its_own_svg(tmp_path, monkeypatch):
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"></svg>'
+    (tmp_path / "one.svg").write_bytes(svg)
+    second = svg.replace(b'width="20"', b'width="21"')
+    (tmp_path / "two.svg").write_bytes(second)
+    src = book(
+        tmp_path,
+        "# One\n\n![one](one.svg)\n\n# Two\n\n![two](two.svg)\n",
+    )
+    checked = []
+    real = md2typst_module._typst_reads_svg
+
+    def spy(data):
+        checked.append(data)
+        return real(data)
+
+    monkeypatch.setattr(md2typst_module, "_typst_reads_svg", spy)
+
+    render_chapter(
+        src,
+        device="x4",
+        style=PageStyle(),
+        view="crosspoint",
+        chapter=0,
+    )
+
+    assert checked == [svg]
 
 
 def test_chapter_excerpt_matches_when_footnotes_are_numbered_across_chapters(tmp_path):

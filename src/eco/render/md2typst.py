@@ -149,11 +149,32 @@ def to_typst(
     image_profile: ImageProfile | None = None,
 ) -> dict[str, bytes | Path]:
     """Return typst-py's multi-file input: `main.typ` plus every image the source refers to."""
+    return _to_typst(src, device, style, view, image_profile)
+
+
+def _to_typst(
+    src: BookSource,
+    device: str,
+    style: PageStyle,
+    view: str,
+    image_profile: ImageProfile | None,
+    *,
+    defer_images: bool = False,
+    selected_images: set[Path] | None = None,
+) -> dict[str, bytes | Path]:
     if device not in DEVICES:
         raise ValueError(f"unknown device: {device!r}")
     if view not in VIEWS:
         raise ValueError(f"unknown view: {view!r}")
-    converter = _Converter(src, device, style, view, image_profile)
+    converter = _Converter(
+        src,
+        device,
+        style,
+        view,
+        image_profile,
+        defer_images=defer_images,
+        selected_images=selected_images,
+    )
     return {"main.typ": converter.convert().encode(), **converter.files}
 
 
@@ -428,6 +449,9 @@ class _Converter:
         style: PageStyle,
         view: str,
         profile: ImageProfile | None,
+        *,
+        defer_images: bool = False,
+        selected_images: set[Path] | None = None,
     ):
         self.meta = src.meta
         self.title = src.meta["title"]
@@ -437,6 +461,8 @@ class _Converter:
         self.style = style
         self.stock = view == "stock"
         self.profile = profile
+        self.defer_images = defer_images
+        self.selected_images = selected_images
         self.bar_area = _bar_area(style)
         self.files: dict[str, bytes | Path] = {}
         self._found: dict[Path, tuple[str, tuple[int, int] | None] | None] = {}  # None: left out
@@ -707,13 +733,18 @@ class _Converter:
         """Put the image into `files`. Returns its name there and its pixel size (None for a
         vector image), or None to leave it out."""
         path = self._lookup(ref)
-        if path is None:
+        if path is None or (self.selected_images is not None and path not in self.selected_images):
             return None
         if path not in self._found:
-            try:
-                self._found[path] = self._load(path)
-            except _BAD_IMAGE:
-                self._found[path] = None
+            if self.defer_images:
+                key = path.relative_to(self.base).as_posix()
+                self.files[key] = path
+                self._found[path] = (key, None)
+            else:
+                try:
+                    self._found[path] = self._load(path)
+                except _BAD_IMAGE:
+                    self._found[path] = None
         return self._found[path]
 
     def _load(self, path: Path) -> tuple[str, tuple[int, int] | None] | None:

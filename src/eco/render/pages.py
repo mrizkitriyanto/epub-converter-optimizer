@@ -24,7 +24,7 @@ from PIL import Image
 
 from eco.bookfolder import BookSource
 from eco.options import ImageProfile
-from eco.render.md2typst import _str, to_typst
+from eco.render.md2typst import _str, _to_typst, to_typst
 from eco.style import PageStyle, font_dirs
 
 _PPI = 72.0  # 1 pt is 1 px, so a page is exactly the device size
@@ -116,8 +116,43 @@ def render_chapter(
     """
     if (source_page is None) == (chapter is None):
         raise ValueError("Give source_page or chapter, not both and not neither")
-    files = to_typst(src, device=device, style=style, view=view, image_profile=image_profile)
+    mapped = _to_typst(
+        src,
+        device,
+        style,
+        view,
+        image_profile,
+        defer_images=True,
+    )
+    main = mapped["main.typ"].decode()
+    head, chunk = _chapter(main, source_page, chapter)
+    used = {m[1] for m in _IMAGE_REF.finditer(chunk)}
+    selected = {
+        path.resolve()
+        for key, path in mapped.items()
+        if key != "main.typ" and isinstance(path, Path) and _str(key) in used
+    }
+    files = _to_typst(
+        src,
+        device,
+        style,
+        view,
+        image_profile,
+        selected_images=selected,
+    )
     main = files["main.typ"].decode()
+    head, chunk = _chapter(main, source_page, chapter)
+    used = {m[1] for m in _IMAGE_REF.finditer(chunk)}
+    excerpt = {"main.typ": f"{head}\n\n{chunk.rstrip()}\n".encode()}
+    excerpt |= {key: data for key, data in files.items() if key != "main.typ" and _str(key) in used}
+    compiled = _compile(excerpt, style, font_extra_dirs)
+    if chapter is not None:
+        return compiled.rendered, 0
+    below = [page for src_page, page in compiled.markers if src_page <= source_page]
+    return compiled.rendered, below[-1] if below else 0
+
+
+def _chapter(main: str, source_page: int | None, chapter: int | None) -> tuple[str, str]:
     head, _, body = main.partition("\n\n")  # the preamble has no blank line
     chunks = _CHAPTER_START.split(body)  # what comes before the first chapter, then each chapter
     if chapter is not None:
@@ -131,14 +166,7 @@ def render_chapter(
             if any(int(m[1]) <= source_page for m in _SOURCE_MARKER.finditer(chunk)):
                 chosen = n
         chunk = chunks[chosen]
-    used = {m[1] for m in _IMAGE_REF.finditer(chunk)}
-    excerpt = {"main.typ": f"{head}\n\n{chunk.rstrip()}\n".encode()}
-    excerpt |= {key: data for key, data in files.items() if key != "main.typ" and _str(key) in used}
-    compiled = _compile(excerpt, style, font_extra_dirs)
-    if chapter is not None:
-        return compiled.rendered, 0
-    below = [page for src_page, page in compiled.markers if src_page <= source_page]
-    return compiled.rendered, below[-1] if below else 0
+    return head, chunk
 
 
 def _compile(
