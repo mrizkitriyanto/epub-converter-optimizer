@@ -84,10 +84,23 @@ def test_a_declaration_after_a_comment_still_follows_a_rename():
     )
 
 
+def test_a_declaration_after_a_nested_block_or_behind_a_star_hack_is_rewritten():
+    def to_jpg(ref):
+        return ref.replace(".png", ".jpg")
+
+    page = '@page { @top-center { content: "x" } background: url(bg.png) }'
+    assert rewrite_css(page, to_jpg) == page.replace("bg.png", "bg.jpg")
+    nested = "p { & b { color: red } float: left }"
+    assert rewrite_css(nested, keep, xteink=True) == "p { & b { color: red } }"
+    assert rewrite_css("p { *background: url(a.png) }", to_jpg) == "p { *background: url(a.jpg) }"
+    assert rewrite_css("p { *float: left; color: red }", keep, xteink=True) == "p {  color: red }"
+
+
 @pytest.mark.parametrize(
     "css",
     [
         "a:" * 16000 + "{",  # took 15.6 s at half this size
+        "}a:(" * 8000,
         "{a:(" * 8000,
         '{a:"' * 8000,
         "{/*" * 10000,

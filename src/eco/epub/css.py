@@ -4,15 +4,16 @@ from collections.abc import Callable
 # an unclosed comment runs to the end of the text, as in CSS, so a scan for "*/" is never repeated
 _COMMENT = re.compile(r"/\*.*?(?:\*/|\Z)", re.DOTALL)
 _FONT_FACE = re.compile(r"@font-face\s*\{[^}]*\}", re.IGNORECASE)
-# A declaration, name: value, up to ";", "}" or the end. It starts only at the start of the text
-# or after "{" or ";", where `lead` takes the white space and comments before it: tried at every
+# A declaration, name: value, up to ";", "}" or the end, with a "*" before the name (an old IE
+# hack) kept with it. It starts only at the start of the text or after "{", ";" or a nested
+# block's "}", where `lead` takes the white space and comments before it: tried at every
 # position, a run like "a:a:a:...{" took quadratic time. Strings and (...) groups, like
 # url(data:...;base64,...), are atomic. Outside a declaration `skip` steps over a string, group
 # or comment whole, to the end of the text if it is not closed, so one that never closes is
 # scanned once.
 _DECLARATION = re.compile(
-    r"""(?P<lead>(?:\A|(?<=[{;]))(?:\s|/\*.*?\*/)*)"""
-    r"""(?P<head>(?P<name>[-\w]+)\s*:\s*)(?P<value>(?:[^;{}()"']|"[^"]*"|'[^']*'|\([^)]*\))*)"""
+    r"""(?P<lead>(?:\A|(?<=[{;}]))(?:\s|/\*.*?\*/)*)"""
+    r"""(?P<head>\*?(?P<name>[-\w]+)\s*:\s*)(?P<value>(?:[^;{}()"']|"[^"]*"|'[^']*'|\([^)]*\))*)"""
     r"(?P<end>;|(?=\})|$)"
     r"""|(?P<skip>"[^"\n]*"?|'[^'\n]*'?|\([^)]*\)?|/\*.*?(?:\*/|\Z))""",
     re.DOTALL,

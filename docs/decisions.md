@@ -722,11 +722,15 @@ error for either.
   warning, like a root or a ".." part. Python reads a backslash as "/" on Windows only, so on other
   systems such a name reached the output.
 
-## 2026-11-19: CSS: a declaration starts only after "{", ";" or the start of the text
+## 2026-11-19: CSS: a declaration starts only after "{", ";", "}" or the start of the text
 
-- `rewrite_css` looks for a declaration only at the start of the text or after "{" or ";" (after
-  any white space and comments, which it keeps), and steps over a string, group or comment outside
-  a declaration whole. An unclosed comment runs to the end of the text, as CSS reads it. Tried at
+- `rewrite_css` looks for a declaration only at the start of the text or after "{", ";" or the
+  "}" of a nested block (after any white space and comments, which it keeps; a "*" before the
+  name, an old IE hack, goes with the declaration), and steps over a string, group or comment
+  outside a declaration whole. An unclosed comment runs to the end of the text, as CSS reads it. Tried at
   every position, crafted CSS took quadratic time: `a:a:a:...{` of 16 KB took 15.6 s, and an
   unclosed comment after every "{" took 0.8 s at 16 KB on Xteink; each now takes milliseconds,
   and the stylesheets of the tests come out the same.
+- 2026-11-20, re-review: the first form left out "}" and the "*" hack, so a declaration after a
+  nested block (`@page { @top-center {...} background: url(...) }`, CSS nesting) or behind
+  `*` was no longer rewritten.
