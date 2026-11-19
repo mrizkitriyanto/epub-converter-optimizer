@@ -98,10 +98,18 @@ def _rows(runs: list[_Run]) -> list[list[_Run]]:
     return [sorted(row, key=lambda r: r.left) for row in rows]
 
 
-def _across(run: _Run, x: float, gap: float, start: float) -> bool:
-    """True when a text run reaches into the gutter before `x` (`gap` wide), or starts in the
-    right half of the left column, as a short title centred over the gutter does."""
-    return run.left < x - _EDGE and (run.right > x - gap or run.left > (start + x) / 2)
+def _full_width(row: list[_Run], x: float, gap: float, start: float) -> bool:
+    """True for a line across the columns: a text run of it spans the right column's edge `x`; or
+    nothing of it lies right of `x`, and its text reaches into the gutter before `x` (`gap` wide)
+    or its first text run starts in the right half of the left column, as a short title centred
+    over the gutter does. Where a later run starts says nothing: an italic word after other text
+    of its line stays in the line's column."""
+    texts = [r for r in row if _is_text(r)]
+    if any(r.left < x - _EDGE and r.right > x + _EDGE for r in texts):
+        return True
+    if not texts or any(r.left >= x - _EDGE for r in texts):
+        return False
+    return any(r.right > x - gap for r in texts) or texts[0].left > (start + x) / 2
 
 
 def _gutter(runs: list[_Run]) -> tuple[float, float, float] | None:
@@ -118,18 +126,20 @@ def _gutter(runs: list[_Run]) -> tuple[float, float, float] | None:
         return None
     gap = statistics.median(r.height for r in texts)
     start = min(r.left for r in texts)
+    rows = _rows(runs)
     best: tuple[int, float] | None = None
     for x in sorted({r.left for r in texts}):
-        right = [r for r in texts if r.left >= x - _EDGE]
-        across = [r for r in texts if _across(r, x, gap, start)]
-        left = [r for r in texts if r.left < x - _EDGE and not _across(r, x, gap, start)]
-        starts = [r for r in right if r.left <= x + _ALIGN]
-        if len(_rows(starts)) < 2 or len(_rows(left)) < 2:
+        wide = [_full_width(row, x, gap, start) for row in rows]
+        columns = [
+            [r for r in row if _is_text(r)] for row, w in zip(rows, wide, strict=True) if not w
+        ]
+        left = [part for row in columns if (part := [r for r in row if r.left < x - _EDGE])]
+        right = [part for row in columns if (part := [r for r in row if r.left >= x - _EDGE])]
+        starts = [part for part in right if part[0].left <= x + _ALIGN]
+        crossed = sum(wide)
+        if len(starts) < 2 or len(left) < 2 or crossed >= min(len(left), len(right)):
             continue
-        crossed = len(_rows(across))
-        if crossed >= min(len(_rows(left)), len(_rows(right))):
-            continue
-        widths = max(r.right for r in left) - start, max(r.right for r in right) - x
+        widths = max(p[-1].right for p in left) - start, max(p[-1].right for p in right) - x
         if min(widths) < _SAME_WIDTH * max(widths):
             continue
         if best is None or crossed < best[0]:
@@ -149,7 +159,7 @@ def _reading_order(runs: list[_Run]) -> list[list[_Run]]:
     left: list[_Run] = []
     right: list[_Run] = []
     for row in _rows(runs):
-        if any(_is_text(r) and _across(r, x, gap, start) for r in row):
+        if _full_width(row, x, gap, start):
             lines += _reading_order(left) + _reading_order(right) + [row]
             left, right = [], []
         else:

@@ -129,6 +129,37 @@ def test_the_caption_of_a_contents_block_comes_first(fixtures_dir):
     ]
 
 
+STEPS = ["Alpha steps", "Beta steps", "Gamma steps", "Delta steps"]
+
+
+@pytest.mark.parametrize(
+    "page, box, lines",
+    [
+        (1, (62, 92, 548, 182), [*STEPS, "Epsilon steps", "Zeta notes", "Eta notes"]),
+        # a font change after other text stays in its line and its column, on either side
+        (
+            5,
+            (62, 92, 425, 182),
+            [
+                "Alpha steps",
+                "Beta steps",
+                "Detecting lateral movement with PsExec",
+                "Gamma steps",
+                "Delta steps",
+                "Eps notes",
+                "Zeta notes",
+                "Logs from auditd",
+                "Theta notes",
+                "Iota notes",
+            ],
+        ),
+    ],
+)
+def test_one_column_or_two_in_a_box_that_hugs_the_text(fixtures_dir, page, box, lines):
+    out = rebuilt(fixtures_dir["column_layouts"], page, box)
+    assert [text for _, text in out] == lines
+
+
 def test_an_index_keeps_its_numbers(fixtures_dir):
     pdf = fixtures_dir["contents"]
     block = Block("contents", page=3, bbox=(60.0, 95.0, 560.0, 140.0), html=TABLE)
