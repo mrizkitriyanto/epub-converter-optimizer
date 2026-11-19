@@ -690,3 +690,10 @@ error for either.
   a book folder cached by an intermediate state was reused as complete. Version 8 also covers the
   fixes of the M1 final review: the chapter rule's guards, the contents warning, table captions in
   book.md, vector pages, OCR scores and code hyphens.
+
+## 2026-11-19: Optimizer: an image under 20 px on Xteink goes with a finding, its alt text stays
+
+- On an Xteink device the optimizer removes an image whose short side is under 20 px, as before,
+  but an `image_too_small` info finding now counts them, and an `<img>` of such an image is
+  replaced by its alt text: "Press ![the power key](icon.png) to start." reads "Press the power
+  key to start." Before, the image and its alt text went without a finding (spec section 5).

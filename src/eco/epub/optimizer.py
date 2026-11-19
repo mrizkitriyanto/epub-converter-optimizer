@@ -262,6 +262,7 @@ class _Package:
         self.data_uris: dict[str, str] = {}  # data: URI -> the file that holds it
         self.obfuscated: set[str] = set()
         self.dropped = 0
+        self.small: set[str] = set()  # images removed for being too small to see
         self._read(src)
         self._load()
 
@@ -541,9 +542,17 @@ class _Package:
             if result is None:
                 if self.profile.drop_images:
                     self.dropped += 1
+                else:  # too small to see on the screen
+                    self.small.add(path)
                 self._remove(path)
             else:
                 self._store(path, item, result)
+        if self.small:
+            message = (
+                f"{_count(len(self.small), 'image')} under {self.profile.min_px} px removed, too "
+                "small to see on the screen; the alt text of each stays as text"
+            )
+            self._note("image_too_small", "info", message)
 
     def _store(self, path: str, item: ET.Element, result: ImageResult) -> None:
         """Keep the new bytes under the old name, or a new one if the extension changed."""
@@ -612,6 +621,8 @@ class _Package:
                     elif _local(el) == "a":
                         del el.attrib[attr]  # the link text stays
                     else:
+                        if _local(el) == "img" and _resolve(path, ref) in self.small:
+                            el.tail = el.get("alt", "") + (el.tail or "")  # _prune keeps it
                         dead.add(el)
             if dead:
                 _prune(doc.root, dead.__contains__)

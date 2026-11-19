@@ -913,6 +913,27 @@ def test_epub2_package_keeps_its_default_namespace_and_prefixed_attributes(tmp_p
     assert refs == ["text/c.xhtml"]  # the guide entry for a missing file is dropped
 
 
+def test_xteink_reports_an_image_under_20_px_it_removes_and_keeps_its_alt_text(tmp_path):
+    files = {"icon.png": image_bytes((16, 16), "PNG"), "photo.png": image_bytes((200, 120), "PNG")}
+    body = (
+        '<p>Press <img src="../icon.png" alt="the power key"/> to start.</p>'
+        '<p><img src="../photo.png" alt="A photo"/></p><p><img src="../icon.png" alt=""/>Again.</p>'
+    )
+    z, rep = run(tmp_path, package(tmp_path, {"c": body}, files), X4)
+    paragraphs = ET.fromstring(z.read("OEBPS/text/c.xhtml")).findall(".//h:p", NS)
+    assert ["".join(p.itertext()) for p in paragraphs] == [
+        "Press the power key to start.",
+        "",
+        "Again.",
+    ]
+    assert paragraphs[1].find("h:img", NS).get("alt") == "A photo"
+    small = [f for f in rep.findings if f.kind == "image_too_small"]
+    assert [f.level for f in small] == ["info"] and small[0].message.startswith(
+        "1 image under 20 px"
+    )
+    assert "OEBPS/icon.png" not in z.namelist()
+
+
 def test_nothing_in_the_package_points_at_what_xteink_removed(tmp_path):
     opf = (
         f'<package xmlns="{NS["opf"]}" version="3.0" unique-identifier="u"><metadata '
