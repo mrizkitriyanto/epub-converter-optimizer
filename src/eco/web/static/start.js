@@ -1,4 +1,4 @@
-import { $, DEFAULT_FONT_SIZE, FIRMWARE_ADVICE, JSON_HEADERS, MODELS_NOTE, MODE_HINT, STATUS_NAME, SUPPORTED_FILE, URLS, errorText, focusStage, formatMinutes, formatSize, getJson, h, renderStepper, route, setStage, setText, state, t, tn } from './core.js';
+import { $, DEFAULT_FONT_SIZE, FIRMWARE_ADVICE, JSON_HEADERS, MODELS_NOTE, MODE_HINT, STATUS_NAME, SUPPORTED_FILE, URLS, errorText, focusStage, formatMinutes, formatSize, getJson, h, renderStepper, request, route, setStage, setText, state, t, tn } from './core.js';
 import { parseEvent } from './job.js';
 
 // ------------------------------------------------------------ setup gate
@@ -125,11 +125,70 @@ export async function setupEnded(event) {
 
 export function showSelect() {
   setStage('select');
+  loadDefaultStyle();
+  loadLibraryFonts();
   renderModelsNote();
   renderFiles();
   syncSettingHints();
   loadRecent();
   focusStage();
+}
+
+export async function loadLibraryFonts() {
+  try {
+    const fonts = await getJson('/api/fonts');
+    $('library-font-list').replaceChildren(...fonts.map((font) => {
+      const weights = font.weights.map((weight) => {
+        const focus = font.weights.some((other) => other > weight);
+        return `${weight} (${t('focus_mode_label')}: ${t(focus ? 'focus_available_yes' : 'focus_available_no')})`;
+      }).join(', ');
+      const label = `${font.family} · ${weights}`;
+      const remove = font.styles ? h('button', {
+        type: 'button', onclick: () => removeLibraryFont(font.family),
+        'aria-label': t('font_remove', { name: font.family }),
+      }, t('font_delete')) : null;
+      return h('li', null, label, remove);
+    }));
+  } catch (error) {
+    setText($('library-font-status'), error.message);
+  }
+}
+
+async function removeLibraryFont(family) {
+  if (!window.confirm(t('font_remove', { name: family }))) return;
+  try {
+    await request(`/api/fonts/${encodeURIComponent(family)}`, { method: 'DELETE' });
+    await loadLibraryFonts();
+  } catch (error) {
+    setText($('library-font-status'), error.message);
+  }
+}
+
+export async function uploadLibraryFonts() {
+  const input = $('library-font-upload');
+  if (!input.files.length) return;
+  const form = new FormData();
+  for (const file of input.files) form.append('files', file, file.name);
+  input.value = '';
+  try {
+    const added = await getJson('/api/fonts', { method: 'POST', body: form });
+    setText($('library-font-status'), added.map((item) => `${item.family}: ${item.status}`).join(', '));
+    await loadLibraryFonts();
+  } catch (error) {
+    setText($('library-font-status'), error.message);
+  }
+}
+
+async function loadDefaultStyle() {
+  try {
+    const saved = await getJson('/api/styles');
+    const chosen = saved.find((item) => item.default && !item.error);
+    const style = chosen ? await getJson(`/api/styles/${encodeURIComponent(chosen.name)}`) : null;
+    const input = $('font-size');
+    if (!input.dataset.edited) input.value = String(style?.font_size || DEFAULT_FONT_SIZE);
+  } catch (error) {
+    // A new job still uses the server's default when this hint cannot load.
+  }
 }
 
 // Markdown and EPUB files need no model, and neither does a PDF read as page images. While the
@@ -333,7 +392,7 @@ export function readOptions() {
     title: text($('book-title')),
     author: text($('book-author')),
     lang: text($('book-lang')),
-    style: { font_size: wholeFontSize($('font-size').value) },
+    ...($('font-size').dataset.edited ? { style: { font_size: wholeFontSize($('font-size').value) } } : {}),
   };
 }
 

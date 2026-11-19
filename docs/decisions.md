@@ -1146,3 +1146,11 @@ Record the large chapter's load time in its column. If light and dark gray are r
   content, and a page 1 with a text layer keeps its text.
 - `EXTRACTOR_VERSION` is 6 (numbered lists, contents, picture text and this pass).
 - If it turns out wrong: drop the pass; the page then shows in the body as before.
+
+## 2026-11-20: Shared reading styles and font fallback (M5)
+
+- The reading aid is named Focus Mode because "Bionic Reading" is a registered trademark. It uses a Typst text rule in XTC body text and keeps the original characters in the PDF text layer.
+- Named styles live under the app data folder and the default name lives in `settings.json`. New GUI jobs and CLI conversions read the default; explicit CLI flags and panel changes override it.
+- Current user input is validated strictly. Stored styles and jobs with a removed font load with Literata at the nearest available weight and emit a `font_missing` finding. Focus Mode turns off with a finding when no heavier weight remains.
+- Shared font files live under `<data>/fonts/`; old job fonts remain readable. XTC conversion checks body text against the selected font cmap and reports missing characters. Live preview performs the same check for the displayed chapter.
+- The GUI Fonts section is part of the existing Settings area on Select files. This keeps font management near conversion settings without another route.

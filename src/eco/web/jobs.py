@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from eco.events import PageEvent, StageEvent
+from eco.events import FindingEvent, PageEvent, StageEvent
 from eco.options import Options, options_from_dict, upgrade_options
 
 if os.name == "nt":
@@ -405,7 +405,10 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
     font_dir = job / "fonts"
     library = Path(data_dir) / "fonts"
     font_dirs = tuple(folder for folder in (library, font_dir) if folder.is_dir())
-    opts = options_from_dict(options, font_dirs)
+    style_findings = []
+    opts = options_from_dict(options, font_dirs, style_findings)
+    for finding in style_findings:
+        q.put(_event(FindingEvent(finding)))
     written: list[Path] = []
     for i, file in enumerate(files):
         q.put({"type": "file", "index": i, "status": "started"})

@@ -419,7 +419,7 @@ export async function requestLive() {
     const shown = Number(response.headers.get('X-Excerpt-Index')) + 1;
     const pages = Number(response.headers.get('X-Excerpt-Pages'));
     setText($('device-caption'), t('live_caption', { page: shown, pages }));
-    setText($('device-status'), '');
+    setText($('device-status'), decodeURIComponent(response.headers.get('X-Font-Fallback') || ''));
   } catch (error) {
     if (error.name !== 'AbortError' && state.review === review) setText($('device-status'), error.message);
   }
@@ -453,6 +453,15 @@ export function syncWeights(preferred) {
   );
   const wanted = Number(preferred);
   $('font-weight').value = String(weights.includes(wanted) ? wanted : weights[0]);
+  updateFocusAvailability();
+}
+
+export function updateFocusAvailability() {
+  const found = state.review.fonts.find((item) => item.family === $('font').value);
+  const available = Boolean(found?.weights.some((weight) => weight > Number($('font-weight').value)));
+  $('focus-mode').disabled = !available;
+  $('focus-unavailable').hidden = available;
+  if (!available) $('focus-mode').checked = false;
 }
 
 export async function loadFonts() {
@@ -463,6 +472,12 @@ export async function loadFonts() {
       ...review.fonts.map((item) => h('option', { value: item.family }, item.family)),
       h('option', { value: '__upload__' }, t('font_upload')),
     );
+    const wanted = review.live.style.font;
+    if (!review.fonts.some((item) => item.family === wanted)) {
+      review.live.style.font = 'Literata';
+      setText($('panel-error'), t('font_missing_panel', { name: wanted }));
+      $('panel-error').hidden = false;
+    }
     $('font').value = review.live.style.font;
     syncWeights(review.live.style.font_weight);
   } catch (error) {
@@ -484,8 +499,77 @@ export async function openPanel() {
   $('panel-error').hidden = true;
   setText($('copy-status'), '');
   await loadFonts();
+  await loadSavedStyles();
   updateApply();
   $('font').focus();
+}
+
+async function loadSavedStyles() {
+  const entries = await getJson('/api/styles');
+  $('saved-style').replaceChildren(
+    h('option', { value: '' }, t('built_in_style')),
+    ...entries.filter((item) => !item.error).map((item) =>
+      h('option', { value: item.name }, `${item.name}${item.default ? ' (default)' : ''}`)),
+  );
+}
+
+export async function chooseSavedStyle() {
+  const name = $('saved-style').value;
+  if (!name) return;
+  try {
+    const style = await getJson(`/api/styles/${encodeURIComponent(name)}`);
+    writeStyle(style);
+    syncWeights(style.font_weight);
+    onLiveChange();
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function saveSavedStyle() {
+  const name = window.prompt(t('save_style'));
+  if (!name) return;
+  try {
+    let url = `/api/styles/${encodeURIComponent(name)}`;
+    const init = { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(readStyle()) };
+    try {
+      await request(url, init);
+    } catch (error) {
+      if (error.status !== 409 || !window.confirm(t('overwrite_style', { name }))) throw error;
+      await request(`${url}?overwrite=true`, init);
+    }
+    await loadSavedStyles();
+    $('saved-style').value = name;
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function makeSavedDefault() {
+  const name = $('saved-style').value;
+  if (!name) return;
+  try {
+    await getJson(`/api/styles/${encodeURIComponent(name)}/default`, { method: 'PUT' });
+    await loadSavedStyles();
+    $('saved-style').value = name;
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function deleteSavedStyle() {
+  const name = $('saved-style').value;
+  if (!name || !window.confirm(t('delete_style_confirm', { name }))) return;
+  try {
+    await request(`/api/styles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await loadSavedStyles();
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
 }
 
 export function hidePanel() {
@@ -509,6 +593,7 @@ export function updateApply() {
 
 export function onLiveChange() {
   const review = state.review;
+  if (document.activeElement === $('font-weight')) updateFocusAvailability();
   review.live = { style: readStyle(), size: $('live-size').value };
   updateApply();
   if (review.pages && review.pages.device_pages > 0) refreshDevice();
@@ -536,7 +621,9 @@ export async function onFontUpload() {
     if (existing) existing.weights = [...new Set([...existing.weights, ...uploaded.weights])].sort((a, b) => a - b);
     else state.review.fonts.push(uploaded);
     const uploadOption = $('font').querySelector('option[value="__upload__"]');
-    $('font').insertBefore(h('option', { value: uploaded.family }, uploaded.family), uploadOption);
+    if (![...$('font').options].some((option) => option.value === uploaded.family)) {
+      $('font').insertBefore(h('option', { value: uploaded.family }, uploaded.family), uploadOption);
+    }
     $('font').value = uploaded.family;
     syncWeights(uploaded.weights[0]);
     onLiveChange();

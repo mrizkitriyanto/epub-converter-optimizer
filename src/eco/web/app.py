@@ -116,6 +116,14 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from eco.font_library import MAX_FONT_BYTES, add_font, remove_font
 from eco.font_library import list_fonts as shared_fonts
 from eco.options import Options
+from eco.saved_styles import (
+    delete_style,
+    get_default,
+    list_styles,
+    load_style,
+    save_style,
+    set_default,
+)
 from eco.style import BUNDLED_FONTS, TYPST_FAMILY, PageStyle, available_weights
 from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, input_path, safe_name, server_lock
 from eco.web.models_setup import ModelSetup
@@ -306,12 +314,14 @@ def _valid(name: str, value) -> bool:
     return isinstance(value, str)  # device, firmware, size, mode and ocr
 
 
-def _options(raw: bytes, font_extra_dirs: tuple[Path, ...] = ()) -> Options:
+def _options(
+    raw: bytes, font_extra_dirs: tuple[Path, ...] = (), default_style: PageStyle | None = None
+) -> Options:
     """The Options of a posted JSON object. Nothing posted gives the defaults. Anything else that
     is wrong is HTTP 422 with a plain message; for a device or the like that does not exist, the
     message of `Options` itself."""
     if not raw.strip():
-        return Options()
+        return Options(style=default_style) if default_style else Options()
     try:
         given = json.loads(raw)
     except (ValueError, RecursionError):  # not JSON, not UTF-8, or too deep for the reader
@@ -323,6 +333,8 @@ def _options(raw: bytes, font_extra_dirs: tuple[Path, ...] = ()) -> Options:
             raise HTTPException(422, STRINGS["error_option_unknown"].format(name=name))
         if name == "style":  # it goes into Typst source (the previews): `PageStyle` checks it all
             try:
+                if default_style is not None and isinstance(value, dict):
+                    value = {**default_style.to_json(), **value}
                 given[name] = PageStyle.from_json(value, font_extra_dirs)
             except ValueError as e:
                 raise HTTPException(422, str(e)) from None
@@ -334,6 +346,8 @@ def _options(raw: bytes, font_extra_dirs: tuple[Path, ...] = ()) -> Options:
         if name in given:
             given[name] = given[name] or None  # a blank form field is not a value
     try:
+        if default_style is not None:
+            given.setdefault("style", default_style)
         return Options(**given)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
@@ -410,7 +424,10 @@ class _Upload:
         self.limit = limit_mb * MB
         self.job: Path | None = None  # the folder the files are written into, made at the first
         self.names: list[str] = []  # the stored name of each file; its place is its number
-        self.options = Options()
+        default = get_default(store.root.parent)
+        self.options = (
+            Options(style=load_style(store.root.parent, default)) if default else Options()
+        )
         self.adopted = False
         self._too_large = _too_large(limit_mb)
         self._seen = 0  # bytes of the body so far
@@ -513,7 +530,7 @@ class _Upload:
             self._file = None
         if self._field is not None:
             field, self._field = bytes(self._field), None
-            self.options = _options(field, self.font_extra_dirs)
+            self.options = _options(field, self.font_extra_dirs, self.options.style)
 
     def _end(self) -> None:
         self._ended = True
@@ -832,6 +849,43 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     def get_job(job_id: str):
         return _public(job_of(job_id), scrub)
 
+    @app.get("/api/styles")
+    def styles_list():
+        return list_styles(Path(data_dir))
+
+    @app.get("/api/styles/{name}")
+    def style_get(name: str):
+        try:
+            return load_style(Path(data_dir), name).to_json()
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from None
+
+    @app.put("/api/styles/{name}")
+    async def style_put(name: str, request: Request, overwrite: bool = False):
+        try:
+            raw = await request.json()
+            return save_style(Path(data_dir), name, raw, overwrite=overwrite).to_json()
+        except (ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(
+                409 if str(error).startswith("Style already exists:") else 422, str(error)
+            ) from None
+
+    @app.delete("/api/styles/{name}", status_code=204)
+    def style_delete(name: str):
+        try:
+            delete_style(Path(data_dir), name)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from None
+        return Response(status_code=204)
+
+    @app.put("/api/styles/{name}/default")
+    def style_default(name: str):
+        try:
+            set_default(Path(data_dir), name)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from None
+        return {"default_style": name}
+
     @app.get("/api/fonts")
     def list_fonts(job: str | None = None):
         folder = None
@@ -1055,7 +1109,12 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
             style=parsed_style,
         )
         return _png(
-            shown.png, **{"X-Excerpt-Index": str(shown.index), "X-Excerpt-Pages": str(shown.pages)}
+            shown.png,
+            **{
+                "X-Excerpt-Index": str(shown.index),
+                "X-Excerpt-Pages": str(shown.pages),
+                "X-Font-Fallback": quote(shown.font_fallback or ""),
+            },
         )
 
     @app.get("/api/jobs/{job_id}/files/{n}/text")

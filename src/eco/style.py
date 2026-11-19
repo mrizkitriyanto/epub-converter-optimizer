@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from functools import lru_cache
 from pathlib import Path
+
+from eco.events import Finding
 
 FONTS_DIR = Path(__file__).parent / "fonts"
 TYPST_FAMILY = "Libertinus Serif"  # the one Typst embeds
@@ -110,7 +112,14 @@ class PageStyle:
                 raise ValueError(f"{name} must be true or false")
 
     @classmethod
-    def from_json(cls, d: dict, extra_dirs: Sequence[Path] = ()) -> PageStyle:
+    def from_json(
+        cls,
+        d: dict,
+        extra_dirs: Sequence[Path] = (),
+        *,
+        lenient: bool = False,
+        findings: list[Finding] | None = None,
+    ) -> PageStyle:
         """A style from an object that may hold some of the fields. `extra_dirs` are the folders
         of uploaded fonts, whose families are then known. ValueError for anything that is not
         right."""
@@ -133,11 +142,45 @@ class PageStyle:
         style = cls(**d)
         weights = available_weights(style.font, extra_dirs) if isinstance(style.font, str) else []
         if not weights:
-            raise ValueError("font must be a bundled font, Libertinus Serif or an uploaded font")
+            if not lenient or not isinstance(style.font, str):
+                raise ValueError(
+                    "font must be a bundled font, Libertinus Serif or an uploaded font"
+                )
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0, "font_missing", "warning", f"Font missing: {style.font}; using Literata."
+                    )
+                )
+            style = replace(style, font="Literata")
+            weights = available_weights(style.font)
         if not (_whole(style.font_weight) and style.font_weight in weights):
-            raise ValueError(f"font_weight must be one of: {', '.join(map(str, weights))}")
+            if not lenient or not _whole(style.font_weight):
+                raise ValueError(f"font_weight must be one of: {', '.join(map(str, weights))}")
+            replacement = min(weights, key=lambda weight: (abs(weight - style.font_weight), weight))
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0,
+                        "font_weight_missing",
+                        "warning",
+                        f"Font weight {style.font_weight} unavailable; using {replacement}.",
+                    )
+                )
+            style = replace(style, font_weight=replacement)
         if style.focus_mode and not any(weight > style.font_weight for weight in weights):
-            raise ValueError(f"This font has no heavier weight: {style.font}")
+            if not lenient:
+                raise ValueError(f"This font has no heavier weight: {style.font}")
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0,
+                        "focus_unavailable",
+                        "warning",
+                        f"Focus Mode unavailable for {style.font} at {style.font_weight}.",
+                    )
+                )
+            style = replace(style, focus_mode=False)
         return style
 
     def to_json(self) -> dict:

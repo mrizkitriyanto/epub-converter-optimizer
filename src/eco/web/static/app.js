@@ -1,9 +1,9 @@
 'use strict';
 
 import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
-import { addFiles, continueWithoutModels, renderDetails, setSetupButtons, showSetup, startConversion, startDownload, syncSettingHints, wholeFontSize } from './start.js';
+import { addFiles, continueWithoutModels, renderDetails, setSetupButtons, showSetup, startConversion, startDownload, syncSettingHints, uploadLibraryFonts, wholeFontSize } from './start.js';
 import { apply, cancelJob } from './job.js';
-import { applyChanges, closePanel, copyStyle, deleteJob, explainImage, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onViewChange, openPanel, sizeFrameToImage, step, tryAgain } from './review.js';
+import { applyChanges, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
 
@@ -39,8 +39,10 @@ function bind() {
   $('mode').addEventListener('change', renderDetails);
   $('ocr').addEventListener('change', renderDetails);
   $('font-size').addEventListener('change', () => {
+    $('font-size').dataset.edited = 'true';
     $('font-size').value = String(wholeFontSize($('font-size').value));
   });
+  $('library-font-upload').addEventListener('change', uploadLibraryFonts);
   for (const output of document.querySelectorAll('input[name="output"]')) {
     output.addEventListener('change', () => {
       if (!document.querySelector('input[name="output"]:checked')) output.checked = true;
@@ -72,6 +74,10 @@ function bind() {
   $('live-size').addEventListener('change', onLiveChange);
   $('apply').addEventListener('click', applyChanges);
   $('copy-style').addEventListener('click', copyStyle);
+  $('saved-style').addEventListener('change', chooseSavedStyle);
+  $('save-style').addEventListener('click', saveSavedStyle);
+  $('default-style').addEventListener('click', makeSavedDefault);
+  $('delete-style').addEventListener('click', deleteSavedStyle);
   $('close-panel').addEventListener('click', () => closePanel(true, true));
   $('settings-panel').addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closePanel(true, true);

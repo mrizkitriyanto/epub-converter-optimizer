@@ -1,8 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
+from fontTools.ttLib import TTFont
 
 from eco.cli import main
-from eco.font_library import add_font, list_fonts
+from eco.font_library import MAX_FONT_BYTES, add_font, list_fonts, remove_font
 from eco.style import FONTS_DIR
 from eco.web.app import create_app
 
@@ -22,3 +23,28 @@ def test_bundled_family_cannot_shadow_built_in(tmp_path):
     font = FONTS_DIR / "literata" / "Literata-Regular.ttf"
     with pytest.raises(ValueError, match="built-in font"):
         add_font(tmp_path, font.name, font.read_bytes())
+
+
+def test_add_deduplicate_and_remove_family(tmp_path):
+    source = FONTS_DIR / "literata" / "Literata-Regular.ttf"
+    custom = tmp_path / "custom.ttf"
+    with TTFont(source) as font:
+        for record in font["name"].names:
+            if record.nameID in (1, 4, 6, 16):
+                record.string = "Test Reader".encode(record.getEncoding())
+        font.save(custom)
+    content = custom.read_bytes()
+    assert add_font(tmp_path, custom.name, content)["status"] == "added"
+    assert add_font(tmp_path, custom.name, content)["status"] == "unchanged"
+    with TTFont(custom) as font:
+        font["name"].setName("Version 2", 5, 3, 1, 0x409)
+        font.save(custom)
+    assert add_font(tmp_path, custom.name, custom.read_bytes())["status"] == "replaced"
+    assert list_fonts(tmp_path)[0]["family"] == "Test Reader"
+    assert remove_font(tmp_path, "Test Reader") == 1
+    assert list_fonts(tmp_path) == []
+
+
+def test_font_size_limit(tmp_path):
+    with pytest.raises(ValueError, match="Not a usable font file"):
+        add_font(tmp_path, "huge.ttf", b"x" * (MAX_FONT_BYTES + 1))

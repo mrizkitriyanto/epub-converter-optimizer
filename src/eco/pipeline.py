@@ -19,6 +19,7 @@ from eco.epub.builder import build_epub
 from eco.epub.optimizer import optimize_epub
 from eco.epub.reader import epub_to_book
 from eco.events import Cancelled, Event, Finding, FindingEvent, PageEvent, StageEvent
+from eco.font_coverage import missing_characters
 from eco.models import models_dir
 from eco.options import DEVICES, Options, image_profile
 from eco.pdf.code import fix_code_blocks
@@ -424,6 +425,8 @@ def convert_file(
             outputs["epub"] = out
         xtc_formats = tuple(fmt for fmt in options.formats if fmt in ("xtch", "xtc"))
         if xtc_formats:
+            if missing := missing_characters(source.markdown, options.style, font_extra_dirs):
+                _add(findings, [missing], on_event)
             with _stage(on_event, "xtc"):
                 outputs.update(
                     _write_xtc(

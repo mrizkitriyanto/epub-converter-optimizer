@@ -1,5 +1,9 @@
 # M2 web GUI: manual QA checklist
 
+## M5 reading style
+
+Run the additional [M5 reading style checks](m5-reading-style-checklist.md) in the same browsers, including shared fonts, saved defaults, Focus Mode, fallback warnings, and X4 device comparison.
+
 Acceptance criterion 12 of the design spec (section 9): the GUI works in Chrome, Firefox and Safari.
 Upload to download works. Progress shows stages and pages. Cancel stops within 10 s. A click on a
 finding moves both panes. Change settings does not repeat OCR. Network mode refuses requests without

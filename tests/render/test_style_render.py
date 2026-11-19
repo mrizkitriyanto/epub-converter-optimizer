@@ -169,6 +169,15 @@ def test_hyphenation_can_be_turned_off(tmp_path):
     assert soft_hyphen not in "".join(pdf_pages(src, off, tmp_path)[0])
 
 
+def test_focus_keeps_hyphenation(tmp_path):
+    src = book(
+        tmp_path,
+        "---\nlanguage: en\n---\n" + "Extraordinarily unconventional telecommunications. " * 12,
+    )
+    style = PageStyle(hyphenate=True, focus_mode=True, bar_position="off")
+    assert "\xad" in "".join(pdf_pages(src, style, tmp_path)[0])
+
+
 def test_the_language_of_the_style_wins_over_the_book(tmp_path):
     german = "Donaudampfschifffahrtsgesellschaft " * 8
     src = book(tmp_path, f"---\nlanguage: en\n---\n{german}\n")

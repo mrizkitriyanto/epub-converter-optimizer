@@ -25,7 +25,8 @@ from eco.options import (
     Options,
     resolve_data_dir,
 )
-from eco.style import PageStyle
+from eco.saved_styles import get_default, list_styles, load_style
+from eco.style import BUNDLED_FONTS, TYPST_FAMILY, PageStyle
 
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
@@ -134,8 +135,23 @@ def _font_family(path: Path) -> str:
 
 def _page_style(args: argparse.Namespace, data_dir: Path) -> tuple[PageStyle, tuple[Path, ...]]:
     values = {}
+    style_findings: list[Finding] = []
     if args.style:
-        values = json.loads(Path(args.style).expanduser().read_text(encoding="utf-8"))
+        path = Path(args.style).expanduser()
+        if path.is_file():
+            values = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            try:
+                values = load_style(data_dir, args.style, findings=style_findings).to_json()
+            except ValueError as error:
+                if not str(error).startswith("Style not found:"):
+                    raise
+                names = ", ".join(item["name"] for item in list_styles(data_dir)) or "none"
+                raise ValueError(f"{error}. Available styles: {names}") from None
+        print(f"Style: {args.style}")
+    elif default := get_default(data_dir):
+        values = load_style(data_dir, default, findings=style_findings).to_json()
+        print(f"Style: {default} (default)")
     library = data_dir / "fonts"
     extra_dirs = (library,) if library.is_dir() else ()
     if args.font:
@@ -144,10 +160,20 @@ def _page_style(args: argparse.Namespace, data_dir: Path) -> tuple[PageStyle, tu
             values = {**values, "font": _font_family(font)}
             extra_dirs = (*extra_dirs, font.parent)
         else:
+            families = (
+                *BUNDLED_FONTS,
+                TYPST_FAMILY,
+                *(item["family"] for item in list_fonts(data_dir)),
+            )
+            if args.font not in families:
+                names = ", ".join(families)
+                raise ValueError(f"Unknown font: {args.font}. Available families: {names}")
             values = {**values, "font": args.font}
     style = PageStyle.from_json(values, extra_dirs)
     if args.font_size is not None:
         style = PageStyle.from_json({**style.to_json(), "font_size": args.font_size}, extra_dirs)
+    if style_findings:
+        _print_findings(style_findings)
     return style, extra_dirs
 
 
@@ -216,6 +242,15 @@ def _fonts_cli(args: argparse.Namespace) -> int:
             print(f"{result['family']}: {result['status']}")
     elif not remove_font(data, args.family):
         raise ValueError(f"Font not found: {args.family}")
+    return 0
+
+
+def _styles_cli(args: argparse.Namespace) -> int:
+    for entry in list_styles(_writable_data_dir(args.data)):
+        suffix = " (default)" if entry["default"] else ""
+        if "error" in entry:
+            suffix += f" (broken: {entry['error']})"
+        print(entry["name"] + suffix)
     return 0
 
 
@@ -359,6 +394,9 @@ def _parser() -> argparse.ArgumentParser:
     font_commands.add_parser("add").add_argument("files", nargs="+", metavar="FILE")
     font_commands.add_parser("remove").add_argument("family", metavar="FAMILY")
 
+    styles = commands.add_parser("styles", parents=[common], help="list saved reading styles")
+    styles.add_subparsers(dest="style_command", required=True).add_parser("list")
+
     convert = commands.add_parser("convert", parents=[common], help="convert files to EPUB")
     convert.add_argument("inputs", nargs="+", metavar="INPUT", help="PDF, Markdown, EPUB or folder")
     convert.add_argument(
@@ -435,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
             "extract": _extract,
             "web": _web,
             "fonts": _fonts_cli,
+            "styles": _styles_cli,
         }
         return commands[args.command](args)
     except Exception as e:  # noqa: BLE001  every failure ends as one error line

@@ -49,6 +49,7 @@ from pypdfium2 import PdfiumError
 from eco.bookfolder import BookSource, load_source
 from eco.epub.optimizer import DRMError
 from eco.epub.reader import epub_to_book
+from eco.font_coverage import chapter_markdown, missing_characters
 from eco.options import SIZES, Options, image_profile, options_from_dict
 from eco.pdf.pages import PdfOpenError, inspect_pdf, page_count, render_page_fit
 from eco.pipeline import page_book
@@ -93,6 +94,7 @@ class Live(NamedTuple):
     png: bytes  # the page of the excerpt that is shown
     index: int  # where it is in the excerpt, from 0
     pages: int  # how many pages the excerpt has
+    font_fallback: str | None = None
 
 
 class _Answers:
@@ -342,8 +344,9 @@ class Previews:
             if page is not None and not 1 <= page <= _pdf_pages(file):
                 raise PreviewError(404, STRINGS["error_page"])
             try:
+                source = self._source(info, n)
                 excerpt, index = render_chapter(
-                    self._source(info, n),
+                    source,
                     device=options.device,
                     style=_shown(style, fmt),
                     view="xtc" if fmt != "epub" else view,
@@ -366,7 +369,12 @@ class Previews:
             out = BytesIO()
             image.save(out, "PNG")
             png = out.getvalue()
-        answer = Live(png, index, len(excerpt.pages))  # not the whole excerpt
+        fallback = None
+        if fmt != "epub":
+            section = chapter_markdown(source.markdown, chapter=chapter, source_page=page)
+            if finding := missing_characters(section, style, _font_dirs(self._store, info)):
+                fallback = finding.message
+        answer = Live(png, index, len(excerpt.pages), fallback)  # not the whole excerpt
         self._answers.put(key, answer)
         return answer
 
