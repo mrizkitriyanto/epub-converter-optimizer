@@ -130,12 +130,24 @@ def test_the_caption_of_a_contents_block_comes_first(fixtures_dir):
 
 
 STEPS = ["Alpha steps", "Beta steps", "Gamma steps", "Delta steps"]
+CHAPTERS = [
+    "Chapter 1 Introduction",
+    "Chapter 2 Methods",
+    "Chapter 3 Results",
+    "Chapter 4 Discussion",
+    "Chapter 5 Summary",
+]
 
 
 @pytest.mark.parametrize(
     "page, box, lines",
     [
+        # a short last column of contents, and a right column of one line
         (1, (62, 92, 548, 182), [*STEPS, "Epsilon steps", "Zeta notes", "Eta notes"]),
+        (2, (62, 92, 548, 166), [*STEPS, "Zeta notes"]),
+        # labels beside short titles are one column, with page numbers and without
+        (3, (62, 92, 548, 182), CHAPTERS),
+        (4, (62, 92, 205, 182), CHAPTERS),
         # a font change after other text stays in its line and its column, on either side
         (
             5,
@@ -153,6 +165,34 @@ STEPS = ["Alpha steps", "Beta steps", "Gamma steps", "Delta steps"]
                 "Iota notes",
             ],
         ),
+        # the last page of an index: six long entries on the left, three short ones on the right
+        (
+            7,
+            (62, 92, 402, 182),
+            [
+                "web shells, detecting 101, 140",
+                "Windows Event Forwarding 88",
+                "Windows Management Instrumentation 63, 70",
+                "workstation hunting 77",
+                "WMI persistence 71, 72",
+                "XDR platforms 30",
+                "YARA rules 150",
+                "zero trust 12",
+                "Zeek 98",
+            ],
+        ),
+        (
+            8,
+            (62, 92, 377, 146),
+            ["apple 12", "banana 7, 9, see also fruit", "fruit 2", "kiwi 3", "lemon 4", "mango 8"],
+        ),
+        (
+            9,
+            (62, 92, 475, 146),
+            ["acorn 1", "birch 2", "cedar 3", "dogwood 1", "elm 2", "fir 3"]
+            + ["ginkgo 1", "hazel 2", "ivy 3"],
+        ),
+        (10, (62, 92, 385, 146), ["oak 2", "pine 3", "yew 4", "zelkova 40"]),
     ],
 )
 def test_one_column_or_two_in_a_box_that_hugs_the_text(fixtures_dir, page, box, lines):

@@ -19,11 +19,14 @@ from eco.events import Finding
 from eco.pdf.pages import Bbox, PageInfo, _open, to_pdfium_rect
 
 _PAD = 2.0
-_EDGE = 0.5  # pt: a run that starts this close to a column's edge starts at it
+# pt: a run that starts this close left of a column's edge starts at it. A larger letter heading
+# ("T" of an index) starts 1.3 pt left of the entries below it; a gutter is a line high (8-11 pt).
+_EDGE = 2.0
 _ALIGN = 1.0  # pt: lines whose text starts this close together start a column
-# The narrower of two columns is at least this share of the wider one. A column of labels beside
-# their titles ("Chapter 1   Basics") is much narrower, and is one column with its titles.
-_SAME_WIDTH = 0.4
+# The left one of two columns spans at least this share of the page width: half the text area
+# less the gutter is 0.35 or more on Threat Hunting and the fixtures, and the first of three
+# columns about 0.3. A column of labels beside their titles ("Chapter 1") spans 0.1 to 0.15.
+_COLUMN = 0.2
 _ROMAN = re.compile(r"m{0,3}(c[md]|d?c{0,3})(x[cl]|l?x{0,3})(i[xv]|v?i{0,3})")
 _LEADER = r"(?:[.·…]\s*){4,}"  # a dot leader: four dots or more; "What next..." has three
 _NUMBER_RUN = re.compile(rf"({_LEADER})?(\d+|[ivxlcdm]+)")
@@ -112,46 +115,79 @@ def _full_width(row: list[_Run], x: float, gap: float, start: float) -> bool:
     return any(r.right > x - gap for r in texts) or texts[0].left > (start + x) / 2
 
 
-def _gutter(runs: list[_Run]) -> tuple[float, float, float] | None:
-    """Where the right column starts, how wide the gutter before it is at least, and where the
-    left column starts, when the runs stand in two columns (or more); None when they do not.
+def _numbered(part: list[_Run]) -> bool:
+    """True when a part of a line ends in a page number that is a run of its own."""
+    found = _NUMBER_RUN.fullmatch(part[-1].text) if len(part) > 1 else None
+    return bool(found and _page_number(found[2]))
 
-    The gutter is a band one line high (the median height of the text) that only a few lines
-    cross, fewer than either column has: those are full-width lines. Two lines or more start at
-    its right edge, two lines or more lie left of it, and the two columns are of much the same
-    width. Page numbers and dot leaders start no line, so a column of page numbers at the right
-    margin is not a column. Of several such bands, the one fewest lines cross wins."""
+
+def _gutter(runs: list[_Run], width: float) -> tuple[float, float, float] | None:
+    """Where the right column starts, how wide the gutter before it is at least, and where the
+    left column starts, when the runs stand in columns; None when they do not.
+
+    The gutter is a band one line high (the median height of the text) before the right column's
+    edge `x`. An edge is where a text run begins its line, or follows the run before it by the
+    gutter's width: an italic or code word after other text, a word space away, is no edge, and
+    page numbers and dot leaders make none. An edge makes two columns when:
+    - the left column spans a fifth of the page width or more; a column of labels ("Chapter 1")
+      beside their titles spans less;
+    - two lines or more start at it, or one line level with the first line of its section (the
+      block, or the part below a full-width line): a last column of one line. A word far right
+      in a later line is no column;
+    - two lines or more lie left of it, and fewer lines cross it than that. A line crosses when
+      it is full-width (`_full_width`) or a run of it, a page number too, reaches into the gutter;
+    - not only the right part of the lines ends in page numbers that are runs of their own: then
+      the left part holds labels of the titles, not entries of their own.
+    Of several edges, the one fewest lines cross wins, then the one most lines start at, then the
+    leftmost."""
     texts = [r for r in runs if _is_text(r)]
-    if len(texts) < 4:
+    if len(texts) < 3:
         return None
     gap = statistics.median(r.height for r in texts)
     start = min(r.left for r in texts)
     rows = _rows(runs)
-    best: tuple[int, float] | None = None
-    for x in sorted({r.left for r in texts}):
-        wide = [_full_width(row, x, gap, start) for row in rows]
-        columns = [
-            [r for r in row if _is_text(r)] for row, w in zip(rows, wide, strict=True) if not w
-        ]
-        left = [part for row in columns if (part := [r for r in row if r.left < x - _EDGE])]
-        right = [part for row in columns if (part := [r for r in row if r.left >= x - _EDGE])]
-        starts = [part for part in right if part[0].left <= x + _ALIGN]
-        crossed = sum(wide)
-        if len(starts) < 2 or len(left) < 2 or crossed >= min(len(left), len(right)):
+    edges = {
+        run.left
+        for row in rows
+        for before, run in zip([None, *row], row, strict=False)
+        if _is_text(run) and (before is None or run.left - before.right >= gap)
+    }
+    best: tuple[int, int, float] | None = None
+    for x in sorted(edges):
+        if x - start < _COLUMN * width:
             continue
-        widths = max(p[-1].right for p in left) - start, max(p[-1].right for p in right) - x
-        if min(widths) < _SAME_WIDTH * max(widths):
+        crossed, parts, level, top = 0, [], [], None
+        for row in rows:
+            if _full_width(row, x, gap, start):
+                crossed, top = crossed + 1, None  # a new section begins below it
+                continue
+            top = min(r.top for r in row) if top is None else top
+            left = [r for r in row if r.left < x - _EDGE]
+            right = [r for r in row if r.left >= x - _EDGE]
+            if any(r.right > x - gap for r in left):
+                crossed += 1
+            else:
+                parts.append((left, right))
+            texts = [r for r in right if _is_text(r)]
+            if texts and texts[0].left <= x + _ALIGN:  # a line that starts at the edge
+                level.append(texts[0].top - top <= gap)
+        lefts = sum(any(map(_is_text, left)) for left, _ in parts)
+        if (len(level) < 2 and not any(level)) or lefts < 2 or crossed >= lefts:
             continue
-        if best is None or crossed < best[0]:
-            best = (crossed, x)
-    return None if best is None else (best[1], gap, start)
+        if any(_numbered(right) for _, right in parts) and not any(
+            _numbered(left) for left, _ in parts
+        ):
+            continue
+        if best is None or (crossed, -len(level), x) < best:
+            best = (crossed, -len(level), x)
+    return None if best is None else (best[2], gap, start)
 
 
-def _reading_order(runs: list[_Run]) -> list[list[_Run]]:
-    """The lines of `runs` in reading order. In columns a full-width line ends the columns above
-    it, which are read left column first; each column is read the same way, so a third column is
-    found inside the second."""
-    found = _gutter(runs)
+def _reading_order(runs: list[_Run], width: float) -> list[list[_Run]]:
+    """The lines of `runs` in reading order, on a page `width` wide. In columns a full-width line
+    ends the columns above it, which are read left column first; each column is read the same
+    way, so a third column is found inside the second."""
+    found = _gutter(runs, width)
     if found is None:
         return _rows(runs)
     x, gap, start = found
@@ -160,12 +196,12 @@ def _reading_order(runs: list[_Run]) -> list[list[_Run]]:
     right: list[_Run] = []
     for row in _rows(runs):
         if _full_width(row, x, gap, start):
-            lines += _reading_order(left) + _reading_order(right) + [row]
+            lines += _reading_order(left, width) + _reading_order(right, width) + [row]
             left, right = [], []
         else:
             for run in row:
                 (left if run.left < x - _EDGE else right).append(run)
-    return lines + _reading_order(left) + _reading_order(right)
+    return lines + _reading_order(left, width) + _reading_order(right, width)
 
 
 def _text(row: list[_Run]) -> str:
@@ -218,7 +254,7 @@ def rebuild_contents(
             continue
         info = pages.get(block.page)
         readable = info is not None and not info.is_scanned and block.bbox is not None
-        lines = _reading_order(_runs(pdf, info, block.bbox)) if readable else []
+        lines = _reading_order(_runs(pdf, info, block.bbox), info.width) if readable else []
         if not lines:
             out.append(replace(block, kind="table"))
             continue

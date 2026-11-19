@@ -559,6 +559,24 @@ error for either.
     lost is a failure (spec section 5). A caption of the block is a paragraph before the entries.
   - Not covered: Threat Hunting puts each chapter's number and title in the left column only, so
     its pages 11-13 read the left column of several chapters before their right column.
+- 2026-11-19, fix round 2: the width ratio held a short last column of an index (three short
+  lines beside six long ones) to be no column, so the entries of both columns were joined pairwise
+  under a finding that said "in reading order"; it let labels beside short titles ("Chapter 1
+  Introduction") count as two columns; and an italic word past the middle of the left column made
+  its line full-width, taking the right-column entry beside it. The column rule is now:
+  - An edge of a column is where a text run begins its line, or follows the run before it by a
+    line height. An italic or code word a word space after other text is no edge, and page
+    numbers and leaders make none. A run up to 2 pt left of an edge (a larger letter heading)
+    starts at it.
+  - An edge makes two columns when the left column spans a fifth of the page width or more;
+    when two lines or more start at it, or one line level with the first line of its section (a
+    last column of one line); when two lines or more lie left of it and fewer cross it; and when
+    page numbers that are runs of their own do not end the right part of the lines only (then the
+    left part holds labels). Of several edges, the one fewest lines cross wins, then the one most
+    lines start at, then the leftmost; inside a column the same search finds a third one.
+  - A line is full-width when a text run of it spans the edge, or when nothing of it lies right of
+    the edge and its text reaches into the gutter or its first text run starts in the right half
+    of the left column. A line with an entry in each column is never joined into one.
 
 ## 2026-11-19: Text read by OCR from a picture on a digital page is kept as the picture (Q-22)
 
