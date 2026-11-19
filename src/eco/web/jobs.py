@@ -226,8 +226,11 @@ class JobStore:
         """A queued job with the inputs of `job_id` (hard links where the disk allows them) and
         new options. A PDF's extraction is cached, so it is not read again."""
         old = self.get(job_id)
+        old_fonts = self.job_dir(job_id) / "fonts"
 
         def fill(inputs: Path) -> list[JobFile]:
+            if old_fonts.is_dir():
+                shutil.copytree(old_fonts, inputs.parent / "fonts")
             files = []
             for n, f in enumerate(old.files):  # by number: the old job's own layout is not read
                 dst = input_path(inputs, n, f.name)
@@ -397,7 +400,9 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
     files = json.loads((job / "job.json").read_text(encoding="utf-8"))["files"]
     (job / "tmp").mkdir(exist_ok=True)
     tempfile.tempdir = str(job / "tmp")  # what a killed worker leaves there, the runner deletes
-    opts = options_from_dict(options)
+    font_dir = job / "fonts"
+    font_dirs = (font_dir,) if font_dir.is_dir() else ()
+    opts = options_from_dict(options, font_dirs)
     written: list[Path] = []
     for i, file in enumerate(files):
         q.put({"type": "file", "index": i, "status": "started"})
@@ -409,6 +414,7 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
                     Path(scratch),
                     data_dir=Path(data_dir),
                     on_event=lambda e: q.put(_event(e)),
+                    font_extra_dirs=font_dirs,
                 )
                 outputs = {}
                 for fmt, made in result.outputs.items():

@@ -204,6 +204,22 @@ Each PDF is read by the server before it is converted (one file at a time).
   with no traceback. Start it again: the job shows "The server stopped before this file was
   converted.", not "The conversion stopped unexpectedly (exit code 1)."
 
+## M3. XTC and page style
+
+- **M3-1 Live page style.** Convert a 30-page chapter with XTC selected. Open "Change settings" and
+  drag Font size. The preview updates about one second after the last change on the owner's Mac.
+- **M3-2 Exact XTC preview.** Apply a visible style change, select XTC in Review, and compare the
+  page with the live preview. They show the same quantized page. Download XTC opens the file made by
+  that rebuild.
+- **M3-3 Uploaded font.** Upload a `.ttf` or `.otf`, select its available weight, and apply. A text
+  file renamed to `.ttf` says `Not a usable font file` and is not kept.
+- **M3-4 Missing Visual C++ runtime.** On Windows without the x64 runtime, Download models shows the
+  Visual C++ Redistributable message and no IPv4 retry. Install the runtime and press Try again
+  without restarting eco web. If the retry cannot work, the message must tell the user to restart.
+- **M3-5 Keyboard and widths.** Tab through every page-style control and close the panel with Escape.
+  At 390, 1000 and 1440 px there is no horizontal scroll, all labels remain visible, and controls
+  have a visible focus indicator.
+
 ## Results
 
 Fill in the browser columns. The `curl` column is the server half of a step, run on 2026-11-18 on

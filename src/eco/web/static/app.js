@@ -3,7 +3,7 @@
 import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
 import { addFiles, continueWithoutModels, renderDetails, setSetupButtons, showSetup, startConversion, startDownload, syncSettingHints, wholeFontSize } from './start.js';
 import { apply, cancelJob } from './job.js';
-import { applyChanges, closePanel, deleteJob, explainImage, onFileSwitch, onKey, onLiveChange, onViewChange, openPanel, sizeFrameToImage, step, tryAgain } from './review.js';
+import { applyChanges, closePanel, copyStyle, deleteJob, explainImage, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onViewChange, openPanel, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
 
@@ -41,6 +41,11 @@ function bind() {
   $('font-size').addEventListener('change', () => {
     $('font-size').value = String(wholeFontSize($('font-size').value));
   });
+  for (const output of document.querySelectorAll('input[name="output"]')) {
+    output.addEventListener('change', () => {
+      if (!document.querySelector('input[name="output"]:checked')) output.checked = true;
+    });
+  }
   $('setup-download').addEventListener('click', () => startDownload(false));
   $('setup-ipv4').addEventListener('click', () => startDownload(true));
   $('setup-skip').addEventListener('click', continueWithoutModels);
@@ -54,11 +59,19 @@ function bind() {
   });
   $('review-file').addEventListener('change', onFileSwitch);
   $('view-as').addEventListener('change', onViewChange);
+  for (const format of document.querySelectorAll('input[name="preview-format"]')) {
+    format.addEventListener('change', onFormatChange);
+  }
   $('prev').addEventListener('click', () => step(-1));
   $('next').addEventListener('click', () => step(1));
-  $('live-font').addEventListener('input', onLiveChange);
+  for (const input of $('page-style').querySelectorAll('input:not(#font-upload), select:not(#font)')) {
+    input.addEventListener('input', onLiveChange);
+  }
+  $('font').addEventListener('change', onFontChange);
+  $('font-upload').addEventListener('change', onFontUpload);
   $('live-size').addEventListener('change', onLiveChange);
   $('apply').addEventListener('click', applyChanges);
+  $('copy-style').addEventListener('click', copyStyle);
   $('close-panel').addEventListener('click', () => closePanel(true, true));
   $('settings-panel').addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closePanel(true, true);

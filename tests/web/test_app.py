@@ -546,7 +546,7 @@ def test_the_font_size_limits_of_the_page_are_the_servers(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
     low, high = RANGES["font_size"]  # the one range: the server takes it from PageStyle
     fields = re.findall(
-        r'<input id="(?:font-size|live-font)" type="[a-z]+" min="(\d+)" max="(\d+)"', html
+        r'<input id="(?:font-size|style-font-size)" type="[a-z]+" min="(\d+)" max="(\d+)"', html
     )
     assert fields == [(str(low), str(high))] * 2
     assert re.search(rf"Math\.min\({high}, Math\.max\({low}, ", js)  # the clamp in the script
@@ -556,7 +556,7 @@ def test_the_page_keeps_the_font_size_in_the_style_of_the_options(tmp_path):
     js = source("app.js")
     assert "options.font_size" not in js  # M2's key
     assert "style: { font_size: wholeFontSize($('font-size').value) }" in js  # an upload
-    assert "style: { ...state.job.options.style, font_size: review.live.font }" in js  # a rebuild
+    assert "style: review.live.style" in js  # a rebuild keeps every page-style field
 
 
 def test_every_api_address_in_the_script_is_a_route(tmp_path):
@@ -633,15 +633,11 @@ def test_each_step_link_puts_the_focus_where_it_leads():
     assert "$('file-input').focus()" in body and "$('device').focus()" in body
 
 
-def test_the_xtc_hint_of_the_preview_toggle_is_text_on_the_page_and_not_a_tooltip(tmp_path):
+def test_the_xtc_preview_toggle_is_enabled_and_has_a_visible_label(tmp_path):
     html = local(tmp_path).get("/").text
     radio = re.search(r'<input type="radio" name="preview-format" value="xtc"[^>]*>', html).group(0)
-    described = re.search(r'aria-describedby="([^"]+)"', radio)
-    assert described, "the disabled toggle names its hint"
-    hint = re.search(rf'<p id="{described.group(1)}" class="([^"]*)">([^<]*)</p>', html)
-    assert hint and hint.group(2) == STRINGS["coming_later"]
-    assert "visually-hidden" not in hint.group(1)
-    assert f'title="{STRINGS["coming_later"]}"' not in html  # a tooltip needs a pointer
+    assert "disabled" not in radio and "title=" not in radio
+    assert f"<span>{STRINGS['output_xtc']}</span>" in html
 
 
 # Ruling M2-R39: continue without the models

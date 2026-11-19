@@ -141,10 +141,14 @@ export const URLS = {
   events: (id) => `/api/jobs/${id}/events`,
   cancel: (id) => `/api/jobs/${id}/cancel`,
   rebuild: (id) => `/api/jobs/${id}/rebuild`,
-  fileDownload: (id, n) => `/api/jobs/${id}/files/${n}/download/epub`,
-  pages: (id, n, view) => `/api/jobs/${id}/files/${n}/pages?format=epub&view=${view}`,
+  fonts: (id) => `/api/fonts?job=${id}`,
+  fontUpload: (id) => `/api/jobs/${id}/fonts`,
+  fileDownload: (id, n, format) => `/api/jobs/${id}/files/${n}/download/${format}`,
+  pages: (id, n, format, view) => `/api/jobs/${id}/files/${n}/pages?format=${format}&view=${view}`,
   source: (id, n, page) => `/api/jobs/${id}/files/${n}/source/${page}.png`,
-  device: (id, n, page, view) => `/api/jobs/${id}/files/${n}/preview/epub/${page}.png?view=${view}`,
+  device: (id, n, format, page, view) => format === 'epub'
+    ? `/api/jobs/${id}/files/${n}/preview/epub/${page}.png?view=${view}`
+    : `/api/jobs/${id}/files/${n}/xtc/${page}.png`,
   live: (id, n, query) => `/api/jobs/${id}/files/${n}/live.png?${query}`,
   text: (id, n) => `/api/jobs/${id}/files/${n}/text`,
 };

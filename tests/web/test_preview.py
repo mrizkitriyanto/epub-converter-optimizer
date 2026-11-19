@@ -269,8 +269,7 @@ def test_a_page_number_must_be_a_plain_number(c, app, page):
         ("preview/epub/1.png?view=xtc", "Unknown view: xtc"),
         ("pages?view=CrossPoint", "Unknown view: CrossPoint"),
         ("pages?view=", "Unknown view: "),
-        ("pages?format=xtc", "Unknown format: xtc"),
-        ("preview/xtc/1.png", "Unknown format: xtc"),
+        ("pages?format=pdf", "Unknown format: pdf"),
         ("preview/pdf/1.png", "Unknown format: pdf"),
     ],
 )
@@ -954,7 +953,7 @@ def test_live_takes_exactly_one_of_page_and_chapter(c, app, small_book, three_pa
         ("chapter=0&size=huge", 400, "Unknown size: huge"),
         ("chapter=0&view=xtc", 400, "Unknown view: xtc"),
         ("chapter=0&view=kindle", 400, "Unknown view: kindle"),
-        ("chapter=0&format=xtc", 400, "Unknown format: xtc"),
+        ("chapter=0&format=pdf", 400, "Unknown format: pdf"),
     ],
 )
 def test_live_checks_its_values(c, app, query, status, message):

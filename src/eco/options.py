@@ -66,13 +66,13 @@ def upgrade_options(options: dict) -> dict:
     return options
 
 
-def options_from_dict(options: dict) -> Options:
+def options_from_dict(options: dict, font_extra_dirs: tuple[Path, ...] = ()) -> Options:
     """`Options` from `asdict(Options)` after a trip through JSON."""
     return Options(
         **{
             **options,
             "formats": tuple(options["formats"]),
-            "style": PageStyle.from_json(options["style"]),
+            "style": PageStyle.from_json(options["style"], font_extra_dirs),
         }
     )
 

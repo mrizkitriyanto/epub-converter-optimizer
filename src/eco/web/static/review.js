@@ -1,14 +1,36 @@
 import { $, JSON_HEADERS, LIVE_DELAY_MS, URLS, VIEW_FOR_FIRMWARE, errorText, focusStage, formatDuration, formatSize, getJson, h, readAsDataUrl, request, route, setStage, setText, state, t, tn } from './core.js';
 import { apply, findingParts, isConverted } from './job.js';
 
+const STYLE_IDS = {
+  font: 'font', font_size: 'style-font-size', font_weight: 'font-weight', line_height: 'line-height',
+  margin: 'margin', align: 'align', hyphenate: 'hyphenate', lang: 'style-lang', mode: 'color-mode',
+  dither: 'dither', dither_strength: 'dither-strength', negative: 'negative', bar_position: 'bar-position',
+  bar_line: 'bar-line', bar_page: 'bar-page', bar_book_percent: 'bar-book-percent',
+  bar_chapter_page: 'bar-chapter-page', bar_chapter_percent: 'bar-chapter-percent',
+  bar_chapter_title: 'bar-chapter-title', bar_chapter_marks: 'bar-chapter-marks',
+  bar_full_width: 'bar-full-width', bar_font_size: 'bar-font-size', bar_edge_margin: 'bar-edge-margin',
+  bar_side_margin: 'bar-side-margin', orientation: 'orientation',
+};
+const STYLE_FLAGS = new Set([
+  'hyphenate', 'dither', 'negative', 'bar_line', 'bar_page', 'bar_book_percent',
+  'bar_chapter_page', 'bar_chapter_percent', 'bar_chapter_title', 'bar_chapter_marks', 'bar_full_width',
+]);
+const STYLE_NUMBERS = new Set([
+  'font_size', 'font_weight', 'line_height', 'margin', 'dither_strength', 'bar_font_size',
+  'bar_edge_margin', 'bar_side_margin', 'orientation',
+]);
+
 // ---------------------------------------------------------------- review
 
 export function newReview(job) {
   const first = job.files.findIndex(isConverted);
+  const outputs = job.files[Math.max(0, first)].outputs || {};
+  const xtc = outputs.xtch ? 'xtch' : (outputs.xtc ? 'xtc' : null);
   return {
     jobId: job.id,
     fileIndex: Math.max(0, first),
     view: VIEW_FOR_FIRMWARE[job.options.firmware] || 'crosspoint',
+    format: outputs.epub ? 'epub' : xtc,
     pages: null, // GET .../pages for the file and view
     page: 1, // the device page shown, from 1
     loadedFile: null, // the file whose panes are loaded
@@ -18,7 +40,8 @@ export function newReview(job) {
     selected: null, // the finding that was clicked
     panelOpen: false,
     applying: false,
-    live: { font: job.options.style.font_size, size: job.options.size },
+    live: { style: { ...job.options.style }, size: job.options.size },
+    fonts: [],
     controller: new AbortController(), // for the requests of the panes of this file
     liveTimer: null,
     liveAbort: null,
@@ -63,10 +86,21 @@ export function renderReview() {
   const info = job.files[review.fileIndex];
   const file = state.run.files[review.fileIndex];
   const converted = isConverted(info);
+  const xtc = info.outputs.xtch ? 'xtch' : (info.outputs.xtc ? 'xtc' : null);
+  if (!info.outputs[review.format]) review.format = info.outputs.epub ? 'epub' : xtc;
   setText($('review-title'), info.name);
   renderChips(info, file, converted);
   $('download').hidden = !converted;
-  if (converted) $('download').href = URLS.fileDownload(job.id, review.fileIndex);
+  if (converted) {
+    $('download').href = URLS.fileDownload(job.id, review.fileIndex, review.format);
+    setText($('download'), t(`download_${review.format}`));
+  }
+  const epubToggle = document.querySelector('input[name="preview-format"][value="epub"]');
+  const xtcToggle = document.querySelector('input[name="preview-format"][value="xtc"]');
+  epubToggle.disabled = !info.outputs.epub;
+  xtcToggle.disabled = !xtc;
+  (review.format === 'epub' ? epubToggle : xtcToggle).checked = true;
+  document.querySelector('.approx').hidden = review.format !== 'epub';
   $('change-settings').hidden = !converted;
   $('try-again').hidden = job.files.some(isConverted); // with nothing converted, trying again is the one action
   renderFilePick(job);
@@ -80,10 +114,10 @@ export function renderChips(info, file, converted) {
   if (converted) {
     const time = file.seconds === null ? t('converted') : t('converted_in', { time: formatDuration(file.seconds) });
     chips.push(h('li', { class: 'chip' }, time));
-    const after = info.sizes.epub;
-    if (after !== null && after !== undefined) {
+    for (const [format, after] of Object.entries(info.sizes)) {
+      if (after === null || after === undefined) continue;
       const before = info.size === null ? '' : formatSize(info.size);
-      const values = { format: t('output_epub'), after: formatSize(after), before };
+      const values = { format: t(format === 'epub' ? 'output_epub' : 'output_xtc'), after: formatSize(after), before };
       const text = info.size === null ? t('chip_size_only', values) : t('chip_size', values);
       chips.push(h('li', { class: 'chip' }, text));
     }
@@ -189,7 +223,7 @@ export async function loadPages(anchor) {
   const mine = ++review.pagesSeq;
   setText($('device-status'), t('preview_loading'));
   try {
-    const address = URLS.pages(state.job.id, review.fileIndex, review.view);
+    const address = URLS.pages(state.job.id, review.fileIndex, review.format, review.view);
     const pages = await getJson(address, { signal: review.controller.signal });
     if (state.review !== review || mine !== review.pagesSeq) return; // left, or the view changed
     review.pages = pages;
@@ -336,7 +370,9 @@ export function showMain() {
   const review = state.review;
   review.showing = 'main';
   setText($('device-status'), '');
-  const address = URLS.device(state.job.id, review.fileIndex, review.page, encodeURIComponent(review.view));
+  const address = URLS.device(
+    state.job.id, review.fileIndex, review.format, review.page, encodeURIComponent(review.view),
+  );
   setImage($('device-img'), address, t('device_alt', { page: review.page }));
   setText($('device-caption'), t('device_caption', { page: review.page, total: review.pages.device_pages }));
 }
@@ -344,15 +380,18 @@ export function showMain() {
 export function liveDirty() {
   const { live } = state.review;
   const options = state.job.options;
-  return live.font !== options.style.font_size || live.size !== options.size;
+  return JSON.stringify(live.style) !== JSON.stringify(options.style) || live.size !== options.size;
 }
 
 export function liveQuery() {
   const review = state.review;
+  const format = review.format === 'epub'
+    ? 'epub'
+    : (review.live.style.mode === 'xth' ? 'xtch' : 'xtc');
   const params = new URLSearchParams({
-    format: 'epub',
+    format,
     view: review.view,
-    font_size: String(review.live.font),
+    style: JSON.stringify(review.live.style),
     size: review.live.size,
   });
   const source = isPdf() ? review.sourceShown || nearestSource(review.page) : null;
@@ -381,20 +420,67 @@ export async function requestLive() {
   }
 }
 
-export function openPanel() {
+export function writeStyle(style) {
+  for (const [name, id] of Object.entries(STYLE_IDS)) {
+    const input = $(id);
+    if (STYLE_FLAGS.has(name)) input.checked = style[name];
+    else input.value = String(style[name]);
+  }
+}
+
+export function readStyle() {
+  const style = {};
+  for (const [name, id] of Object.entries(STYLE_IDS)) {
+    const input = $(id);
+    if (STYLE_FLAGS.has(name)) style[name] = input.checked;
+    else if (STYLE_NUMBERS.has(name)) style[name] = Number(input.value);
+    else style[name] = input.value;
+  }
+  return style;
+}
+
+export function syncWeights(preferred) {
+  const family = $('font').value;
+  const found = state.review.fonts.find((item) => item.family === family);
+  const weights = found ? found.weights : [];
+  $('font-weight').replaceChildren(
+    ...weights.map((weight) => h('option', { value: String(weight) }, String(weight))),
+  );
+  const wanted = Number(preferred);
+  $('font-weight').value = String(weights.includes(wanted) ? wanted : weights[0]);
+}
+
+export async function loadFonts() {
+  const review = state.review;
+  try {
+    review.fonts = await getJson(URLS.fonts(state.job.id));
+    $('font').replaceChildren(
+      ...review.fonts.map((item) => h('option', { value: item.family }, item.family)),
+      h('option', { value: '__upload__' }, t('font_upload')),
+    );
+    $('font').value = review.live.style.font;
+    syncWeights(review.live.style.font_weight);
+  } catch (error) {
+    setText($('panel-error'), error.message);
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function openPanel() {
   const review = state.review;
   const options = state.job.options;
   review.panelOpen = true;
-  review.live = { font: options.style.font_size, size: options.size };
-  $('live-font').value = String(options.style.font_size);
-  $('live-font-value').value = String(options.style.font_size);
+  review.live = { style: { ...options.style }, size: options.size };
+  writeStyle(review.live.style);
   $('live-size').value = options.size;
   $('settings-panel').hidden = false;
   $('review-grid').classList.add('with-panel');
   $('change-settings').setAttribute('aria-expanded', 'true');
   $('panel-error').hidden = true;
+  setText($('copy-status'), '');
+  await loadFonts();
   updateApply();
-  $('live-font').focus();
+  $('font').focus();
 }
 
 export function hidePanel() {
@@ -418,10 +504,50 @@ export function updateApply() {
 
 export function onLiveChange() {
   const review = state.review;
-  review.live = { font: Number($('live-font').value), size: $('live-size').value };
-  $('live-font-value').value = String(review.live.font);
+  review.live = { style: readStyle(), size: $('live-size').value };
   updateApply();
   if (review.pages && review.pages.device_pages > 0) refreshDevice();
+}
+
+export function onFontChange() {
+  if ($('font').value === '__upload__') {
+    $('font').value = state.review.live.style.font;
+    $('font-upload').click();
+    return;
+  }
+  syncWeights(state.review.live.style.font_weight);
+  onLiveChange();
+}
+
+export async function onFontUpload() {
+  const [file] = $('font-upload').files;
+  $('font-upload').value = '';
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file, file.name);
+  try {
+    const uploaded = await getJson(URLS.fontUpload(state.job.id), { method: 'POST', body: form });
+    const existing = state.review.fonts.find((item) => item.family === uploaded.family);
+    if (existing) existing.weights = [...new Set([...existing.weights, ...uploaded.weights])].sort((a, b) => a - b);
+    else state.review.fonts.push(uploaded);
+    const uploadOption = $('font').querySelector('option[value="__upload__"]');
+    $('font').insertBefore(h('option', { value: uploaded.family }, uploaded.family), uploadOption);
+    $('font').value = uploaded.family;
+    syncWeights(uploaded.weights[0]);
+    onLiveChange();
+  } catch (error) {
+    setText($('panel-error'), error.message || t('font_error'));
+    $('panel-error').hidden = false;
+  }
+}
+
+export async function copyStyle() {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(readStyle(), null, 2));
+    setText($('copy-status'), t('style_copied'));
+  } catch (error) {
+    setText($('copy-status'), error.message);
+  }
 }
 
 export async function rebuild(options, fail) {
@@ -444,7 +570,11 @@ export async function applyChanges() {
   $('panel-error').hidden = true;
   const options = {
     ...state.job.options,
-    style: { ...state.job.options.style, font_size: review.live.font },
+    formats: state.job.options.formats.map((format) => {
+      if (format !== 'xtch' && format !== 'xtc') return format;
+      return review.live.style.mode === 'xth' ? 'xtch' : 'xtc';
+    }),
+    style: review.live.style,
     size: review.live.size,
   };
   const ok = await rebuild(options, (message) => {
@@ -512,6 +642,23 @@ export function onViewChange() {
   clearTimeout(review.liveTimer);
   if (review.liveAbort) review.liveAbort.abort();
   review.pages = null;
+  loadPages(anchor);
+}
+
+export function onFormatChange() {
+  const review = state.review;
+  const info = state.job.files[review.fileIndex];
+  const selected = document.querySelector('input[name="preview-format"]:checked').value;
+  review.format = selected === 'epub' ? 'epub' : (info.outputs.xtch ? 'xtch' : 'xtc');
+  if (!review.pages) {
+    renderReview();
+    return;
+  }
+  const anchor = anchorHere();
+  clearTimeout(review.liveTimer);
+  if (review.liveAbort) review.liveAbort.abort();
+  review.pages = null;
+  renderReview();
   loadPages(anchor);
 }
 

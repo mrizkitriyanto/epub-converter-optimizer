@@ -4,7 +4,7 @@ import { renderReview, showReview } from './review.js';
 // ------------------------------------------------ a job and its events
 
 export const isActive = (job) => job.status === 'queued' || job.status === 'running';
-export const isConverted = (file) => Boolean(file.outputs && file.outputs.epub);
+export const isConverted = (file) => Boolean(file.outputs && Object.keys(file.outputs).length);
 
 export function newFileRun() {
   return { status: 'waiting', stages: {}, page: null, anchor: null, rate: null, findings: [], seconds: null };

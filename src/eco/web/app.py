@@ -25,6 +25,8 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
     POST /api/jobs/{id}/cancel                    202, or 409 when the job has finished
     POST /api/jobs/{id}/rebuild                   JSON options; 201, a new job from the same files
     GET  /api/jobs/{id}/files/{n}/download/{fmt}  an output, as an attachment
+    GET  /api/fonts?job={id}                      bundled and uploaded font families
+    POST /api/jobs/{id}/fonts                     one `.ttf` or `.otf` font upload
     DELETE /api/jobs/{id}                         204, the job and all its files are gone; 409
                                                   while it is queued or running
 
@@ -44,12 +46,14 @@ are missing). `ipv4` in the body of the POST is optional:
     GET  /api/setup/events                        server-sent events of the last run; 404 before one
 
 The previews of the review stage (`eco.web.preview` does the work, the routes only check what they
-are given, and its errors are answered like all the others). `format` is `epub` and `view` is
+are given, and its errors are answered like all the others). `format` is `epub`, `xtch`, or `xtc`;
+`view` is
 `crosspoint`, `crossink` or `stock` (both have defaults); pages count from 1, chapters from 0:
 
     GET  /api/jobs/{id}/files/{n}/pages?format=&view=            page counts, page map, chapters
     GET  /api/jobs/{id}/files/{n}/source/{page}.png              a PDF page, 600 px wide
     GET  /api/jobs/{id}/files/{n}/preview/{format}/{page}.png    a device page; `?view=`
+    GET  /api/jobs/{id}/files/{n}/xtc/{page}.png                 a decoded XTC/XTCH output page
     GET  /api/jobs/{id}/files/{n}/live.png                       one page of a chapter, rendered now:
          ?format=&view=&page=|chapter=&font_size=&size=          `page` (a PDF's source page) or
                                                                  `chapter`; the PNG has the headers
@@ -104,13 +108,13 @@ from fastapi.templating import Jinja2Templates
 from python_multipart import MultipartParser
 from python_multipart.exceptions import FormParserError
 from python_multipart.multipart import parse_options_header
-from starlette.datastructures import MutableHeaders
+from starlette.datastructures import MutableHeaders, UploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from eco.options import Options
-from eco.style import PageStyle
+from eco.style import BUNDLED_FONTS, TYPST_FAMILY, PageStyle, available_weights
 from eco.web.jobs import KINDS, JobInfo, JobStore, Runner, input_path, safe_name, server_lock
 from eco.web.models_setup import ModelSetup
 from eco.web.preview import PreviewError, Previews, describe_pdf
@@ -298,7 +302,7 @@ def _valid(name: str, value) -> bool:
     return isinstance(value, str)  # device, firmware, size, mode and ocr
 
 
-def _options(raw: bytes) -> Options:
+def _options(raw: bytes, font_extra_dirs: tuple[Path, ...] = ()) -> Options:
     """The Options of a posted JSON object. Nothing posted gives the defaults. Anything else that
     is wrong is HTTP 422 with a plain message; for a device or the like that does not exist, the
     message of `Options` itself."""
@@ -315,7 +319,7 @@ def _options(raw: bytes) -> Options:
             raise HTTPException(422, STRINGS["error_option_unknown"].format(name=name))
         if name == "style":  # it goes into Typst source (the previews): `PageStyle` checks it all
             try:
-                given[name] = PageStyle.from_json(value)
+                given[name] = PageStyle.from_json(value, font_extra_dirs)
             except ValueError as e:
                 raise HTTPException(422, str(e)) from None
         elif not _valid(name, value):
@@ -329,6 +333,48 @@ def _options(raw: bytes) -> Options:
         return Options(**given)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+
+
+def _font_details(path: Path) -> tuple[str, list[int]]:
+    import typst
+
+    fonts = typst.Fonts(
+        include_system_fonts=False,
+        include_embedded_fonts=False,
+        font_paths=[str(path.parent)],
+    ).fonts()
+    matching = [font for font in fonts if Path(font.path).resolve() == path.resolve()]
+    families = {font.family for font in matching}
+    if len(families) != 1:
+        raise ValueError("Not a usable font file")
+    family = families.pop()
+    if any(ord(char) < 32 or char in '"\\' for char in family):
+        raise ValueError("Not a usable font file")
+    weights = sorted({font.weight for font in matching if font.style == "normal"})
+    if not weights:
+        raise ValueError("Not a usable font file")
+    return family, weights
+
+
+def _fonts(folder: Path | None) -> list[dict]:
+    families = {name: available_weights(name) for name in (*BUNDLED_FONTS, TYPST_FAMILY)}
+    if folder and folder.is_dir():
+        import typst
+
+        for font in typst.Fonts(
+            include_system_fonts=False,
+            include_embedded_fonts=False,
+            font_paths=[str(folder)],
+        ).fonts():
+            if font.style == "normal" and Path(font.path).resolve().is_relative_to(
+                folder.resolve()
+            ):
+                families.setdefault(font.family, [])
+                families[font.family].append(font.weight)
+    return [
+        {"family": family, "weights": sorted(set(weights))}
+        for family, weights in sorted(families.items())
+    ]
 
 
 class _Upload:
@@ -762,6 +808,50 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     def get_job(job_id: str):
         return _public(job_of(job_id), scrub)
 
+    @app.get("/api/fonts")
+    def list_fonts(job: str | None = None):
+        folder = None
+        if job is not None:
+            job_of(job)
+            folder = store.job_dir(job) / "fonts"
+        return _fonts(folder)
+
+    @app.post("/api/jobs/{job_id}/fonts")
+    async def upload_font(job_id: str, request: Request):
+        job_of(job_id)
+        form = await request.form()
+        upload = form.get("file")
+        if not isinstance(upload, UploadFile) or not upload.filename:
+            raise HTTPException(400, "Not a usable font file")
+        name = safe_name(upload.filename)
+        if Path(name).suffix.lower() not in (".ttf", ".otf"):
+            raise HTTPException(400, "Not a usable font file")
+        folder = store.job_dir(job_id) / "fonts"
+        folder.mkdir(exist_ok=True)
+        target = folder / name
+        number = 0
+        while target.exists():
+            number += 1
+            target = folder / f"{Path(name).stem}-{number}{Path(name).suffix}"
+        size = 0
+        try:
+            with target.open("wb") as output:
+                while chunk := await upload.read(MB):
+                    size += len(chunk)
+                    if size > app.state.max_upload_mb * MB:
+                        raise HTTPException(413, _too_large(app.state.max_upload_mb))
+                    output.write(chunk)
+            try:
+                family, weights = _font_details(target)
+            except ValueError as error:
+                raise HTTPException(400, str(error)) from None
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+        finally:
+            await upload.close()
+        return {"family": family, "weights": weights}
+
     @app.get("/api/jobs/{job_id}/events")
     async def job_events(job_id: str):
         await run_in_threadpool(job_of, job_id)  # 404 now, not in the middle of a stream
@@ -789,7 +879,8 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
             raw = await _small_body(request)
         except ClientDisconnect:
             return Response(status_code=400)
-        options = _options(raw)
+        font_folder = store.job_dir(job_id) / "fonts"
+        options = _options(raw, (font_folder,) if font_folder.is_dir() else ())
         info = await run_in_threadpool(queue_job, lambda: store.rebuild(job_id, options))
         return _public(info, scrub)
 
@@ -866,6 +957,11 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         info, index = file_of(job_id, n)
         return _png(previews.device_page(info, index, fmt, view, _page_number(page)))
 
+    @app.get("/api/jobs/{job_id}/files/{n}/xtc/{page}.png")
+    def xtc_page(job_id: str, n: str, page: str):
+        info, index = file_of(job_id, n)
+        return _png(previews.xtc_page(info, index, _page_number(page)))
+
     @app.get("/api/jobs/{job_id}/files/{n}/live.png")
     def live_page(
         job_id: str,
@@ -876,17 +972,34 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         chapter: int | None = None,
         font_size: int | None = None,
         size: str | None = None,
+        style: str | None = None,
     ):
         info, index = file_of(job_id, n)
         if (page is None) == (chapter is None):
             raise HTTPException(422, STRINGS["error_live_target"])
+        font_folder = store.job_dir(job_id) / "fonts"
+        extra_dirs = (font_folder,) if font_folder.is_dir() else ()
+        parsed_style = None
+        if style is not None:
+            try:
+                parsed_style = PageStyle.from_json(json.loads(style), extra_dirs)
+            except (ValueError, RecursionError) as error:
+                raise HTTPException(422, str(error)) from None
         if font_size is not None:  # it goes into Typst source
             try:
                 PageStyle(font_size=font_size)
             except ValueError as e:
                 raise HTTPException(422, str(e)) from None
         shown = previews.live(
-            info, index, fmt, view, font_size=font_size, size=size, page=page, chapter=chapter
+            info,
+            index,
+            fmt,
+            view,
+            font_size=font_size,
+            size=size,
+            page=page,
+            chapter=chapter,
+            style=parsed_style,
         )
         return _png(
             shown.png, **{"X-Excerpt-Index": str(shown.index), "X-Excerpt-Pages": str(shown.pages)}

@@ -78,10 +78,9 @@
         <div class="field" role="group" aria-labelledby="output-label">
           <span id="output-label" class="field-label">{{ strings.output_label }}</span>
           <div class="checks">
-            <label class="check"><input type="checkbox" name="output" value="epub" checked disabled> {{ strings.output_epub }}</label>
-            <label class="check dim"><input type="checkbox" name="output" value="xtc" disabled> {{ strings.output_xtc }}</label>
+            <label class="check"><input type="checkbox" name="output" value="epub" checked> {{ strings.output_epub }}</label>
+            <label class="check"><input type="checkbox" name="output" value="xtch"> {{ strings.output_xtc }}</label>
           </div>
-          <p class="hint">{{ strings.coming_later }}</p>
         </div>
         <div class="field">
           <label for="size">{{ strings.size_label }}</label>
@@ -233,20 +232,56 @@
           <fieldset class="segmented">
             <legend class="visually-hidden">{{ strings.format_label }}</legend>
             <label><input type="radio" name="preview-format" value="epub" checked><span>{{ strings.output_epub }}</span></label>
-            <label><input type="radio" name="preview-format" value="xtc" aria-describedby="xtc-hint" disabled><span>{{ strings.output_xtc }}</span></label>
+            <label><input type="radio" name="preview-format" value="xtc"><span>{{ strings.output_xtc }}</span></label>
           </fieldset>
-          <p id="xtc-hint" class="hint">{{ strings.coming_later }}</p>
         </div>
       </section>
 
       <aside id="settings-panel" class="panel" aria-labelledby="settings-panel-title" hidden>
         <h3 id="settings-panel-title">{{ strings.change_settings }}</h3>
-        <div class="field stack">
-          <label for="live-font">{{ strings.live_font_label }}</label>
-          <div class="range">
-            <input id="live-font" type="range" min="16" max="64" step="1">
-            <output id="live-font-value" for="live-font"></output>
-          </div>
+        <div id="page-style">
+          <fieldset class="style-group">
+            <legend>{{ strings.style_text }}</legend>
+            <div class="field stack"><label for="font">{{ strings.font_label }}</label><select id="font"></select><input id="font-upload" class="visually-hidden" type="file" accept=".ttf,.otf"></div>
+            <div class="field stack"><label for="font-weight">{{ strings.font_weight_label }}</label><select id="font-weight"></select></div>
+            <div class="field stack"><label for="style-font-size">{{ strings.live_font_label }}</label><input id="style-font-size" type="number" min="16" max="64" step="1"></div>
+            <div class="field stack"><label for="line-height">{{ strings.line_height_label }}</label><input id="line-height" type="number" min="100" max="250" step="1"></div>
+            <div class="field stack"><label for="margin">{{ strings.margin_label }}</label><input id="margin" type="number" min="0" max="80" step="1"></div>
+            <div class="field stack"><label for="align">{{ strings.align_label }}</label><select id="align">{{ choices([("justify", strings.align_justify), ("left", strings.align_left)]) }}</select></div>
+            <label class="check"><input id="hyphenate" type="checkbox"> {{ strings.hyphenate_label }}</label>
+            <div class="field stack"><label for="style-lang">{{ strings.style_lang_label }}</label><input id="style-lang" type="text" maxlength="3" autocomplete="off"></div>
+          </fieldset>
+
+          <fieldset class="style-group">
+            <legend>{{ strings.style_images }}</legend>
+            <div class="field stack"><label for="color-mode">{{ strings.color_mode_label }}</label><select id="color-mode">{{ choices([("xth", strings.color_xth), ("xtg", strings.color_xtg)]) }}</select></div>
+            <label class="check"><input id="dither" type="checkbox"> {{ strings.dither_label }}</label>
+            <div class="field stack"><label for="dither-strength">{{ strings.dither_strength_label }}</label><input id="dither-strength" type="number" min="0" max="100" step="1"></div>
+            <label class="check"><input id="negative" type="checkbox"> {{ strings.negative_label }}</label>
+          </fieldset>
+
+          <fieldset class="style-group">
+            <legend>{{ strings.style_progress }}</legend>
+            <div class="field stack"><label for="bar-position">{{ strings.bar_position_label }}</label><select id="bar-position">{{ choices([("bottom", strings.bar_bottom), ("top", strings.bar_top), ("off", strings.bar_off)]) }}</select></div>
+            <div class="style-checks">
+              <label class="check"><input id="bar-line" type="checkbox"> {{ strings.bar_line_label }}</label>
+              <label class="check"><input id="bar-page" type="checkbox"> {{ strings.bar_page_label }}</label>
+              <label class="check"><input id="bar-book-percent" type="checkbox"> {{ strings.bar_book_percent_label }}</label>
+              <label class="check"><input id="bar-chapter-page" type="checkbox"> {{ strings.bar_chapter_page_label }}</label>
+              <label class="check"><input id="bar-chapter-percent" type="checkbox"> {{ strings.bar_chapter_percent_label }}</label>
+              <label class="check"><input id="bar-chapter-title" type="checkbox"> {{ strings.bar_chapter_title_label }}</label>
+              <label class="check"><input id="bar-chapter-marks" type="checkbox"> {{ strings.bar_chapter_marks_label }}</label>
+              <label class="check"><input id="bar-full-width" type="checkbox"> {{ strings.bar_full_width_label }}</label>
+            </div>
+            <div class="field stack"><label for="bar-font-size">{{ strings.bar_font_size_label }}</label><input id="bar-font-size" type="number" min="8" max="32" step="1"></div>
+            <div class="field stack"><label for="bar-edge-margin">{{ strings.bar_edge_margin_label }}</label><input id="bar-edge-margin" type="number" min="0" max="40" step="1"></div>
+            <div class="field stack"><label for="bar-side-margin">{{ strings.bar_side_margin_label }}</label><input id="bar-side-margin" type="number" min="0" max="80" step="1"></div>
+          </fieldset>
+
+          <fieldset class="style-group">
+            <legend>{{ strings.style_device }}</legend>
+            <div class="field stack"><label for="orientation">{{ strings.orientation_label }}</label><select id="orientation">{{ choices([(0, "0°"), (90, "90°"), (180, "180°"), (270, "270°")]) }}</select></div>
+          </fieldset>
         </div>
         <div class="field stack">
           <label for="live-size">{{ strings.size_label }}</label>
@@ -256,8 +291,10 @@
         <p id="panel-error" class="error-text" role="alert" hidden></p>
         <div class="actions">
           <button id="apply" type="button" class="secondary" disabled>{{ strings.apply }}</button>
+          <button id="copy-style" type="button" class="secondary">{{ strings.copy_style }}</button>
           <button id="close-panel" type="button" class="secondary">{{ strings.close }}</button>
         </div>
+        <p id="copy-status" class="muted" role="status"></p>
       </aside>
     </div>
   </section>

@@ -56,9 +56,12 @@ from eco.render.pages import ChapterNotFound, page_file, read_map, render_book, 
 from eco.style import PageStyle
 from eco.web.jobs import JobFile, JobInfo, JobStore
 from eco.web.strings import STRINGS
+from eco.xtc.codec import decode_page
+from eco.xtc.container import read_container
+from eco.xtc.quantize import quantize_page
 
-FORMATS = ("epub",)  # M3 adds "xtc"
-VIEWS = ("crosspoint", "crossink", "stock")  # M3 adds "xtc"
+FORMATS = ("epub", "xtch", "xtc")
+VIEWS = ("crosspoint", "crossink", "stock")
 SOURCE_WIDTH = 600  # px
 SOURCE_MAX_HEIGHT = 10 * SOURCE_WIDTH  # a page that is taller is drawn smaller
 LIVE_ANSWERS = 32
@@ -115,8 +118,13 @@ class _Answers:
                 self._items.popitem(last=False)
 
 
-def _job_options(info: JobInfo) -> Options:
-    return options_from_dict(info.options)
+def _font_dirs(store: JobStore, info: JobInfo) -> tuple[Path, ...]:
+    folder = store.root / info.id / "fonts"
+    return (folder,) if folder.is_dir() else ()
+
+
+def _job_options(store: JobStore, info: JobInfo) -> Options:
+    return options_from_dict(info.options, _font_dirs(store, info))
 
 
 def _shown(style: PageStyle, fmt: str) -> PageStyle:
@@ -239,18 +247,44 @@ class Previews:
         """The PNG of one device page. Only that page is read from the cache."""
         _check_choice(fmt, view)
         _check_converted(info.files[n], fmt)
+        if fmt != "epub":
+            return self.xtc_page(info, n, page, fmt)
         with self._job_kept(info):
             folder, page_map, _ = self._cache(info, n, fmt, view)
             if not 1 <= page <= len(page_map):
                 raise PreviewError(404, STRINGS["error_page"])
             return page_file(folder, page - 1).read_bytes()
 
+    def xtc_page(self, info: JobInfo, n: int, page: int, fmt: str | None = None) -> bytes:
+        """A page decoded from the XTC/XTCH file produced by the conversion."""
+        file = info.files[n]
+        fmt = fmt or ("xtch" if "xtch" in file.outputs else "xtc")
+        if fmt not in ("xtch", "xtc"):
+            raise PreviewError(404, STRINGS["error_output"])
+        _check_converted(file, fmt)
+        with self._job_kept(info):
+            folder = self._folder(info, n, f"decoded-{fmt}")
+            target = page_file(folder, page - 1)
+            if target.is_file():
+                return target.read_bytes()
+            with self._hold(folder):
+                if not target.is_file():
+                    _, pages, _ = read_container(Path(file.outputs[fmt]).read_bytes())
+                    if not 1 <= page <= len(pages):
+                        raise PreviewError(404, STRINGS["error_page"])
+                    out = BytesIO()
+                    decode_page(pages[page - 1]).save(out, "PNG")
+                    partial = target.with_name(f"{target.name}.tmp")
+                    partial.write_bytes(out.getvalue())
+                    os.replace(partial, target)
+                return target.read_bytes()
+
     def _cache(
         self, info: JobInfo, n: int, fmt: str, view: str
     ) -> tuple[Path, list[int], list[tuple[str, int]]]:
         """The folder of the device pages, rendered now when it holds none, and its page map and
         chapters (the chapters' pages from 0)."""
-        options = _job_options(info)
+        options = _job_options(self._store, info)
         style = _shown(options.style, fmt)
         folder = self._folder(info, n, f"{fmt}-{view}-{_style_key(style)}")
         with self._hold(folder):
@@ -260,9 +294,10 @@ class Previews:
                     self._source(info, n),
                     device=options.device,
                     style=style,
-                    view=view,
+                    view="xtc" if fmt != "epub" else view,
                     cache_dir=folder,
-                    image_profile=image_profile(options),
+                    image_profile=None if fmt != "epub" else image_profile(options),
+                    font_extra_dirs=_font_dirs(self._store, info),
                 )
                 found = read_map(folder)
         if found is None:
@@ -282,21 +317,24 @@ class Previews:
         size: str | None,
         page: int | None,
         chapter: int | None,
+        style: PageStyle | None = None,
     ) -> Live:
         """One page of a chapter rendered now with `font_size` and the `size` preset (the job's own
         when None). The chapter is the one that holds source page `page` of a PDF, or number
         `chapter` of the book. Answers are kept by every one of their parameters."""
         _check_choice(fmt, view)
-        options = _job_options(info)
-        font_size = options.style.font_size if font_size is None else font_size
+        options = _job_options(self._store, info)
+        style = style or options.style
+        font_size = style.font_size if font_size is None else font_size
+        style = replace(style, font_size=font_size)
         size = options.size if size is None else size
         if size not in SIZES:
             raise PreviewError(400, STRINGS["error_size"].format(size=size))
         file = info.files[n]
-        _check_converted(file, fmt)
+        _check_converted(file)
         if page is not None and file.kind != "pdf":
             raise PreviewError(404, STRINGS["error_no_source"])
-        key = (info.id, n, fmt, view, font_size, size, page, chapter)
+        key = (info.id, n, fmt, view, _style_key(style), size, page, chapter)
         if (answer := self._answers.get(key)) is not None:
             return answer
         with self._job_kept(info):
@@ -306,15 +344,28 @@ class Previews:
                 excerpt, index = render_chapter(
                     self._source(info, n),
                     device=options.device,
-                    style=_shown(replace(options.style, font_size=font_size), fmt),
-                    view=view,
+                    style=_shown(style, fmt),
+                    view="xtc" if fmt != "epub" else view,
                     source_page=page,
                     chapter=chapter,
-                    image_profile=image_profile(replace(options, size=size)),
+                    image_profile=(
+                        image_profile(replace(options, size=size)) if fmt == "epub" else None
+                    ),
+                    font_extra_dirs=_font_dirs(self._store, info),
                 )
             except ChapterNotFound:
                 raise PreviewError(404, STRINGS["error_chapter"]) from None
-        answer = Live(excerpt.pages[index], index, len(excerpt.pages))  # not the whole excerpt
+        png = excerpt.pages[index]
+        if fmt != "epub":
+            image = quantize_page(
+                png,
+                excerpt.image_boxes[index],
+                replace(style, mode="xth" if fmt == "xtch" else "xtg"),
+            )
+            out = BytesIO()
+            image.save(out, "PNG")
+            png = out.getvalue()
+        answer = Live(png, index, len(excerpt.pages))  # not the whole excerpt
         self._answers.put(key, answer)
         return answer
 
@@ -355,7 +406,7 @@ class Previews:
             if not (book / BOOK).is_file():
                 raise _NoBook
             return book
-        options = _job_options(info)
+        options = _job_options(self._store, info)
         if file.kind == "pdf" and options.mode != "pages":
             raise _NoBook
         folder = self._folder(info, n, "book")
