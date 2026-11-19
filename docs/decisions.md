@@ -887,3 +887,18 @@ section 8.14 asks for a clear message.
 - eco does not look for the runtime when it starts. It names the failure where it happens, so on
   Windows a DLL that fails to load in these forms gets this message whichever DLL it was. The original
   error stays chained. If it turns out wrong: the forms are in one function.
+
+## 2026-11-19: XTC device behavior awaits owner verification (M3 Task 8)
+
+The container writes one-based chapter page numbers while eco's internal `Chapter` values remain
+zero-based. `XTH_VALUES` currently maps the four displayed levels using the CrossPoint layout proven
+by the codec vectors. Both choices still need a real-device check; `docs/device-check.md` is the
+repeatable procedure.
+
+| Firmware and version | Gray order | Chapter jumps | CSS and images | Large chapter | Result |
+| --- | --- | --- | --- | --- | --- |
+| CrossPoint (record version) | Not checked | Not checked | Not checked | Not checked | Pending owner check |
+| CrossInk (record version) | Not checked | Not checked | Not checked | Not checked | Pending owner check |
+
+Record the large chapter's load time in its column. If light and dark gray are reversed, exchange the
+85 and 170 mappings in `XTH_VALUES`, regenerate the kit, rerun the tests, and repeat this check.
