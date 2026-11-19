@@ -5,9 +5,12 @@ import re
 import secrets
 import shutil
 import sys
+import tempfile
 import threading
 from collections import Counter
 from pathlib import Path
+
+import platformdirs
 
 from eco import __version__, models
 from eco.events import Finding, FindingEvent, PageEvent, StageEvent
@@ -34,6 +37,19 @@ _BROWSER_DELAY = 1.0  # seconds: the server listens by then
 
 def _error(e: Exception) -> None:
     print(f"error: {' '.join(str(e).split()) or type(e).__name__}", file=sys.stderr)
+
+
+def _writable_data_dir(value: str | None) -> Path:
+    path = Path(
+        value or os.environ.get("ECO_DATA") or platformdirs.user_data_dir("eco")
+    ).expanduser()
+    try:
+        data = resolve_data_dir(value)
+        with tempfile.TemporaryFile(dir=data):
+            pass
+    except OSError as e:
+        raise RuntimeError(f"Data directory not writable: {path}") from e
+    return data
 
 
 def _progress(event) -> None:
@@ -136,7 +152,7 @@ def _page_style(args: argparse.Namespace) -> tuple[PageStyle, tuple[Path, ...]]:
 def _convert(args: argparse.Namespace) -> int:
     from eco.pipeline import convert_file  # imported late: it loads Docling
 
-    data = resolve_data_dir(args.data)
+    data = _writable_data_dir(args.data)
     style, font_extra_dirs = _page_style(args)
     options = Options(
         device=args.device,
@@ -257,7 +273,7 @@ def _web(args: argparse.Namespace) -> int:
         return 2
     if token is None and args.host not in _LOOPBACK:
         token = secrets.token_urlsafe(24)
-    data = resolve_data_dir(args.data)
+    data = _writable_data_dir(args.data)
     with server_lock(data):  # a second eco web on these jobs stops here, with one error line
         pass  # the app holds the lock while it runs
     app = create_app(data, token=token, max_upload_mb=args.max_upload_mb)

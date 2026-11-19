@@ -108,7 +108,11 @@ def explain_vc_runtime():
 
 
 def models_dir(data_dir: Path) -> Path:
-    return data_dir / "models"
+    return (
+        Path(os.environ["ECO_MODELS"]).expanduser()
+        if os.environ.get("ECO_MODELS")
+        else data_dir / "models"
+    )
 
 
 def models_ready(d: Path) -> bool:

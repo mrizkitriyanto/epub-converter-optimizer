@@ -23,3 +23,7 @@ Sample books are copyrighted. CI fails if one is committed.
 ## Decisions
 
 Record every new decision in `docs/decisions.md` with a date.
+
+## Releasing
+
+Update `src/eco/__init__.py` and `pyproject.toml` to the same version, refresh `uv.lock`, run the checks in [docs/install-check.md](docs/install-check.md), and commit. After the release commit is merged to `main`, tag it `vX.Y.Z` and push the tag. The release workflow checks the tag against `eco.__version__`, builds amd64 and arm64 images, publishes them to GHCR, and creates a GitHub release. Tagging and pushing require the owner's approval.

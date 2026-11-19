@@ -4,7 +4,7 @@
 
 eco mengubah file PDF dan Markdown menjadi EPUB, dan mengoptimalkan file EPUB. Hasilnya disesuaikan untuk e-reader Xteink (X4, X4 Pro, X4 v2 Classic, X3) dan untuk e-reader umum. eco bisa mengalirkan ulang teks, mempertahankan halaman tetap, menjalankan OCR pada PDF hasil pindai, dan memperkecil gambar serta ukuran file.
 
-eco berupa alat baris perintah dengan GUI web yang berjalan di komputer Anda sendiri. Output XTC sedang direncanakan.
+eco berupa alat baris perintah dengan GUI web yang berjalan di komputer Anda sendiri. eco juga membuat file XTC dan XTCH untuk device Xteink yang didukung.
 
 ## Persyaratan
 
@@ -16,7 +16,17 @@ eco berupa alat baris perintah dengan GUI web yang berjalan di komputer Anda sen
 | Unduhan pertama | sekitar 0,8 GB (paket 0,35 GB, model 0,42 GB) | sekitar 0,9 GB | sekitar 1 GB (wajib PyTorch versi CPU) |
 | GPU | opsional (GPU Apple dipakai otomatis) | opsional | opsional |
 
-Anda memerlukan [uv](https://docs.astral.sh/uv/). uv memasang Python 3.12 untuk Anda.
+Pasang [uv](https://docs.astral.sh/uv/), yang juga memasang Python 3.12:
+
+```sh
+# macOS atau Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
 Di Windows, pasang [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) sebelum menjalankan `eco setup`. Windows 10/11 yang baru dipasang bisa belum memilikinya; tanpa itu PyTorch, onnxruntime, dan rtree tidak bisa dimuat, sehingga `eco setup` dan setiap konversi PDF gagal dengan galat DLL.
 
@@ -30,7 +40,20 @@ Lalu unduh model AI satu kali. Perintah ini menampilkan ukurannya (sekitar 417 M
 
 ```bash
 eco setup
+eco web
 ```
+
+Untuk memperbarui, jalankan `uv tool upgrade eco`. Untuk menghapus, jalankan `uv tool uninstall eco`. Lihat [pemeriksaan pemasangan](docs/install-check.md) untuk daftar verifikasi per OS.
+
+## Docker
+
+Setelah rilis pertama terbit, jalankan image dengan volume data permanen dan token minimal 16 huruf, angka, `_`, atau `-`:
+
+```sh
+docker run -d --name eco -p 8000:8000 -v eco-data:/data -e ECO_TOKEN=replace-with-a-long-secret ghcr.io/mrizkitriyanto/epub-converter-optimizer:latest
+```
+
+Buka `http://<server>:8000/?token=<your-secret>`. Kunjungan pertama menyimpan token dalam cookie browser. Image berjalan sebagai uid 10001; folder host yang dipasang pada `/data` harus dapat ditulis oleh uid itu. Jika model belum ada, GUI menawarkan unduhan. Untuk server tanpa internet, jalankan `docker build --build-arg BAKE_MODELS=1 -t eco:offline .` di mesin yang terhubung internet, lalu pindahkan image tersebut.
 
 ## Penggunaan
 

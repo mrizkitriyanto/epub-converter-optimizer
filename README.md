@@ -4,7 +4,7 @@
 
 eco converts PDF and Markdown files to EPUB and optimizes EPUB files. It tunes the result for Xteink e-readers (X4, X4 Pro, X4 v2 Classic, X3) and for general e-readers. It can reflow text, keep fixed pages, run OCR on scanned PDFs, and shrink images and file size.
 
-eco is a command-line tool with a web GUI that runs on your own computer. XTC output is planned.
+eco is a command-line tool with a web GUI that runs on your own computer. It also creates XTC and XTCH files for supported Xteink devices.
 
 ## Requirements
 
@@ -16,7 +16,17 @@ eco is a command-line tool with a web GUI that runs on your own computer. XTC ou
 | First download | about 0.8 GB (packages 0.35 GB, models 0.42 GB) | about 0.9 GB | about 1 GB (CPU build of PyTorch required) |
 | GPU | optional (Apple GPU is used automatically) | optional | optional |
 
-You need [uv](https://docs.astral.sh/uv/). It installs Python 3.12 for you.
+Install [uv](https://docs.astral.sh/uv/), which installs Python 3.12 for you:
+
+```sh
+# macOS or Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
 On Windows, install the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) before `eco setup`. A clean Windows 10/11 machine can lack it, and without it PyTorch, onnxruntime and rtree cannot load, so `eco setup` and every PDF conversion fail with a DLL error.
 
@@ -30,7 +40,20 @@ Then download the AI models once. The command shows the size (about 417 MB) and 
 
 ```bash
 eco setup
+eco web
 ```
+
+To upgrade, run `uv tool upgrade eco`. To remove eco, run `uv tool uninstall eco`. See the [installation check](docs/install-check.md) for an OS-specific verification checklist.
+
+## Docker
+
+After the first release is published, run the image with a persistent data volume and a token of at least 16 letters, digits, `_` or `-`:
+
+```sh
+docker run -d --name eco -p 8000:8000 -v eco-data:/data -e ECO_TOKEN=replace-with-a-long-secret ghcr.io/mrizkitriyanto/epub-converter-optimizer:latest
+```
+
+Open `http://<server>:8000/?token=<your-secret>`. The first visit stores the token in a browser cookie. The image runs as uid 10001; a host directory mounted at `/data` must be writable by that uid. Without models, the GUI offers to download them. For an offline server, build from this repository with `docker build --build-arg BAKE_MODELS=1 -t eco:offline .` on a connected machine, then transfer the image.
 
 ## Usage
 

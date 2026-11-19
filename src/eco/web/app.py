@@ -207,7 +207,9 @@ class _Guard:
                 return _error(403, STRINGS["error_host"])
         elif method == "GET" and request.scope["path"] == "/" and "token" in request.query_params:
             return self._login(request.query_params["token"])
-        elif not self._authorized(request):
+        elif not (
+            method == "GET" and request.scope["path"] == "/api/health"
+        ) and not self._authorized(request):
             return _error(401, STRINGS["error_token"])
         # The page answers with `Referrer-Policy: no-referrer`, under which a browser sends
         # `Origin: null` with a form POST and with a fetch() whose mode is not "cors", and this
@@ -720,6 +722,16 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     app.state.max_upload_mb = max_upload_mb
     app.state.stopping = threading.Event()  # set by `Server` when it is asked to stop
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+
+    @app.get("/api/health")
+    def health():
+        from eco import __version__, models
+
+        return {
+            "ok": True,
+            "version": __version__,
+            "models_ready": models.models_ready(models.models_dir(Path(data_dir))),
+        }
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

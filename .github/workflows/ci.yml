@@ -28,6 +28,11 @@ jobs:
       - name: PyTorch is the CPU build
         if: runner.os == 'Linux'
         run: uv run python -c "import torch; assert '+cpu' in torch.__version__"
+      - name: Git-style tool install uses CPU PyTorch
+        if: runner.os == 'Linux'
+        run: |
+          uv tool install .
+          "$(uv tool dir)/eco/bin/python" -c "import torch; assert '+cpu' in torch.__version__"
 
   epubcheck:
     runs-on: ubuntu-latest
@@ -52,6 +57,14 @@ jobs:
       - name: Validate every EPUB
         run: |
           for f in out/epubcheck/*.epub; do java -jar epubcheck-5.4.0/epubcheck.jar "$f" || exit 1; done
+
+  docker:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t eco:ci .
+      - run: bash scripts/docker-smoke.sh eco:ci
 
   integration:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
