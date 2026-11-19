@@ -1,0 +1,341 @@
+import { newChoice, showSelect, showSetup } from './start.js';
+import { isActive, listen, newRun, pollQueue, showProcessing } from './job.js';
+import { abortReview, rebuild, showReview, step } from './review.js';
+
+'use strict';
+
+/*
+ * The eco workspace. One page with four stages: the setup gate (models missing), Select files and
+ * Settings, Processing, and Review & download. The open job is in the address (#job=<id>), so a
+ * reload or a link goes back to it: a queued or running job opens Processing, any other Review.
+ *
+ * The tests read this file, so it keeps four habits:
+ * - every text comes from t(...) or tn(...), which read the strings block of the page;
+ * - every element is found with $(...);
+ * - every address of the API is in URLS;
+ * - what the server sends (file names, messages) goes into the page as text, never as markup.
+ */
+// ---------------------------------------------------------------- basics
+
+export const $ = (id) => document.getElementById(id);
+export const STRINGS = JSON.parse($('strings').textContent);
+
+export function t(key, values) {
+  const text = STRINGS[key];
+  if (text === undefined) return key;
+  return text.replace(/\{(\w+)\}/g, (whole, name) =>
+    values && name in values ? String(values[name]) : whole,
+  );
+}
+
+export const tn = (key, n, values) => t(`${key}_${n === 1 ? 'one' : 'other'}`, { ...values, n });
+
+export function h(tag, props, ...children) {
+  const element = document.createElement(tag);
+  for (const [name, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (name === 'class') element.className = value;
+    else if (name.startsWith('on')) element.addEventListener(name.slice(2), value);
+    else element.setAttribute(name, value === true ? '' : value);
+  }
+  element.append(...children.filter((child) => child !== null && child !== undefined));
+  return element;
+}
+
+export function setText(element, text) {
+  if (element.textContent !== text) element.textContent = text;
+}
+
+export function formatSize(bytes) {
+  if (bytes < 1000) return `${bytes} ${t('unit_b')}`;
+  if (bytes < 1e6) return `${Math.round(bytes / 1e3)} ${t('unit_kb')}`;
+  return `${(bytes / 1e6).toFixed(1)} ${t('unit_mb')}`;
+}
+
+export function formatMinutes(minutes) {
+  if (minutes < 60) return `${minutes} ${t('unit_min')}`;
+  return `${Math.floor(minutes / 60)} ${t('unit_h')} ${minutes % 60} ${t('unit_min')}`;
+}
+
+export function formatDuration(seconds) {
+  const total = Math.max(1, Math.round(seconds));
+  if (total < 60) return `${total} ${t('unit_s')}`;
+  const rest = total % 60;
+  const minutes = formatMinutes(Math.floor(total / 60));
+  return rest && total < 3600 ? `${minutes} ${rest} ${t('unit_s')}` : minutes;
+}
+
+export function approximateLeft(seconds) {
+  if (seconds < 45) return t('remaining_soon');
+  return t('remaining_left', { time: formatMinutes(Math.round(seconds / 60)) });
+}
+
+export const STAGE_NAME = {
+  read: () => t('stage_read'),
+  layout: () => t('stage_layout'),
+  fix: () => t('stage_fix'),
+  epub: () => t('stage_epub'),
+  optimize: () => t('stage_optimize'),
+  xtc: () => t('stage_xtc'),
+};
+export const STATE_NAME = {
+  done: () => t('state_done'),
+  now: () => t('state_now'),
+  todo: () => t('state_todo'),
+};
+export const STATUS_NAME = {
+  queued: () => t('status_queued'),
+  running: () => t('status_running'),
+  done: () => t('status_done'),
+  failed: () => t('status_failed'),
+  cancelled: () => t('status_cancelled'),
+};
+export const FIRMWARE_ADVICE = {
+  any: () => t('firmware_any_advice'),
+  stock: () => t('firmware_stock_advice'),
+  crosspoint: () => t('firmware_crosspoint_advice'),
+  crossink: () => t('firmware_crossink_advice'),
+};
+// The note of Select files while the models are missing: no download started, one runs, or one failed.
+export const MODELS_NOTE = {
+  idle: () => t('models_missing_note'),
+  running: () => t('models_downloading_note'),
+  failed: () => t('models_failed_note'),
+};
+export const MODE_HINT = {
+  auto: () => t('mode_text_hint'),
+  reflow: () => t('mode_text_hint'),
+  pages: () => t('mode_pages_hint'),
+};
+// The view that matches the firmware the book was made for; CrossInk draws like CrossPoint.
+export const VIEW_FOR_FIRMWARE = {
+  any: 'crosspoint',
+  stock: 'stock',
+  crosspoint: 'crosspoint',
+  crossink: 'crossink',
+};
+export const STEPS = [
+  () => t('step_select'),
+  () => t('step_settings'),
+  () => t('step_processing'),
+  () => t('step_review'),
+];
+
+export const SUPPORTED_FILE = /\.(pdf|md|epub)$/i;
+export const JSON_HEADERS = { 'Content-Type': 'application/json' };
+export const LIVE_DELAY_MS = 300; // after the last change, before the live preview is asked for
+export const QUEUE_POLL_MS = 2000; // a queued job has no event: its position is polled
+export const REPLAY_GAP_MS = 250; // a quiet gap this long between two events means the replay of a stream is over
+export const MIN_SAMPLE_MS = 500; // page events closer than this are folded into one rate sample
+export const DEFAULT_FONT_SIZE = 32;
+
+// ------------------------------------------------------------------- API
+
+export const URLS = {
+  setup: '/api/setup',
+  setupDownload: '/api/setup/download',
+  setupEvents: '/api/setup/events',
+  inspect: '/api/inspect',
+  jobs: '/api/jobs',
+  job: (id) => `/api/jobs/${id}`,
+  events: (id) => `/api/jobs/${id}/events`,
+  cancel: (id) => `/api/jobs/${id}/cancel`,
+  rebuild: (id) => `/api/jobs/${id}/rebuild`,
+  fileDownload: (id, n) => `/api/jobs/${id}/files/${n}/download/epub`,
+  pages: (id, n, view) => `/api/jobs/${id}/files/${n}/pages?format=epub&view=${view}`,
+  source: (id, n, page) => `/api/jobs/${id}/files/${n}/source/${page}.png`,
+  device: (id, n, page, view) => `/api/jobs/${id}/files/${n}/preview/epub/${page}.png?view=${view}`,
+  live: (id, n, query) => `/api/jobs/${id}/files/${n}/live.png?${query}`,
+  text: (id, n) => `/api/jobs/${id}/files/${n}/text`,
+};
+
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status || 0;
+  }
+}
+
+// The `error` of any answer that is not 2xx is the text to show.
+export async function errorText(response) {
+  try {
+    const body = await response.json();
+    if (typeof body.error === 'string') return body.error;
+  } catch (error) {
+    // an answer that is not JSON has no text of its own
+  }
+  return t('error_unknown', { status: response.status });
+}
+
+export async function request(address, init) {
+  let response;
+  try {
+    response = await fetch(address, init);
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
+    throw new ApiError(t('error_unreachable'));
+  }
+  if (!response.ok) throw new ApiError(await errorText(response), response.status);
+  return response;
+}
+
+export const getJson = async (address, init) => (await request(address, init)).json();
+
+export function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new ApiError(t('error_unknown', { status: 0 })));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ----------------------------------------------------------------- state
+
+export const state = {
+  started: false, // after the first stage is shown, a change of stage moves the focus
+  stage: null, // setup, select, processing or review
+  setup: null, // GET /api/setup
+  skipModels: false, // the user went on from the setup gate without the models; this page load only
+  download: 'idle', // the model download this page started: idle, running or failed
+  files: [], // the files chosen, not uploaded yet: { file, kind, scan, controller }, see newChoice
+  scanning: null, // the chosen PDF that the server is reading now (POST /api/inspect), one at a time
+  uploading: false,
+  job: null, // GET /api/jobs/{id}
+  run: null, // what the events of the job say, per file
+  stream: null, // the open event stream of the job
+  poller: null, // the timer that polls a queued job
+  cancelling: false,
+  cancelError: '', // why Cancel did not work
+  lost: false, // the stream ended without an end event
+  review: null, // the Review stage's own state
+  sequence: 0, // a new number at each route: an answer that comes late is dropped
+};
+
+export const SECTIONS = {
+  setup: $('stage-setup'),
+  select: $('stage-select'),
+  processing: $('stage-processing'),
+  review: $('stage-review'),
+};
+
+export function setStage(name) {
+  state.stage = name;
+  for (const [key, section] of Object.entries(SECTIONS)) section.hidden = key !== name;
+  renderStepper();
+}
+
+// After a change of stage the heading of the new stage takes the focus, once it has its text.
+export function focusStage() {
+  if (state.started) SECTIONS[state.stage].querySelector('h2').focus();
+}
+
+export const showBanner = (text) => {
+  const banner = $('banner');
+  banner.textContent = text;
+  banner.hidden = false;
+};
+export const hideBanner = () => {
+  $('banner').hidden = true;
+};
+
+// --------------------------------------------------------------- stepper
+
+export function stepStates() {
+  if (state.stage === 'select') {
+    return state.files.length
+      ? ['done', 'current', 'todo', 'todo']
+      : ['current', 'todo', 'todo', 'todo'];
+  }
+  if (state.stage === 'processing') return ['done', 'done', 'current', 'todo'];
+  if (state.stage === 'review') return ['done', 'done', 'done', 'current'];
+  return null; // the setup gate comes before the steps
+}
+
+export function renderStepper() {
+  const states = stepStates();
+  $('stepper').hidden = !states;
+  if (states) $('stepper-list').replaceChildren(...states.map((status, i) => stepItem(i, status)));
+}
+
+export function stepItem(index, status) {
+  const name = STEPS[index]();
+  const completed = status === 'done' ? h('span', { class: 'visually-hidden' }, ` (${t('step_done')})`) : null;
+  // Select files and Settings lead back to the start; the later steps have nowhere to lead.
+  const content =
+    status === 'done' && index < 2
+      ? h('a', { class: 'step-link', href: '#', onclick: (event) => onStepLink(event, index) }, name, completed)
+      : h('span', { class: 'step-label', 'aria-current': status === 'current' ? 'step' : null }, name, completed);
+  return h('li', { class: `step ${status}` }, content);
+}
+
+// On Select files a step link only moves the focus, to what the step is about. From the other
+// stages the address changes, and the route follows.
+export function onStepLink(event, index) {
+  if (state.stage !== 'select') return;
+  event.preventDefault();
+  if (index === 0) $('file-input').focus();
+  else $('device').focus();
+}
+
+// --------------------------------------------------------------- routing
+
+export const jobIdOfAddress = () => (/^#job=([0-9a-f]{16})$/.exec(location.hash) || [])[1] || null;
+
+export async function route() {
+  const mine = ++state.sequence;
+  stopWork();
+  hideBanner();
+  const id = jobIdOfAddress();
+  if (!id) {
+    showStart();
+    return;
+  }
+  let job;
+  try {
+    job = await getJson(URLS.job(id));
+  } catch (error) {
+    if (mine !== state.sequence) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    showBanner(error.message);
+    showStart();
+    return;
+  }
+  if (mine !== state.sequence) return;
+  state.job = job;
+  state.run = newRun(job);
+  if (isActive(job)) showProcessing();
+  else showReview();
+  listen(job);
+  if (job.status === 'queued') pollQueue(job.id);
+}
+
+export function stopWork() {
+  if (state.stream) state.stream.source.close();
+  clearInterval(state.poller);
+  if (state.review) abortReview(state.review);
+  Object.assign(state, {
+    stream: null,
+    poller: null,
+    job: null,
+    run: null,
+    review: null,
+    cancelling: false,
+    cancelError: '',
+    lost: false,
+  });
+}
+
+// The setup gate is the first view while the models are missing, unless the user went on without them.
+export function showStart() {
+  if (state.setup.ready || state.skipModels) showSelect();
+  else showSetup();
+}
+
+export function dropTokenFromAddress() {
+  const address = new URL(location.href);
+  if (!address.searchParams.has('token')) return;
+  address.searchParams.delete('token');
+  history.replaceState(null, '', address.pathname + address.search + address.hash);
+}
+

@@ -408,8 +408,13 @@ PAGE_PLACES = [
 
 
 def source(name):
-    """The text of one of the three files of the page: index.html, app.css or app.js."""
+    """The text of one page file; app.js includes the modules it loads."""
     folder = "templates" if name.endswith(".html") else "static"
+    if name == "app.js":
+        return "\n".join(
+            (SOURCES / folder / part).read_text(encoding="utf-8")
+            for part in ("core.js", "start.js", "job.js", "review.js", "app.js")
+        )
     return (SOURCES / folder / name).read_text(encoding="utf-8")
 
 
@@ -424,13 +429,14 @@ def test_page_has_the_places_of_the_workspace(tmp_path):
 
 def test_page_loads_its_script_and_style_from_the_static_folder(tmp_path):
     html = local(tmp_path).get("/").text
-    assert re.search(r'<script src="/static/app\.js"[^>]*\bdefer\b', html)
+    assert re.search(r'<script src="/static/app\.js"[^>]*\btype="module"[^>]*\bdefer\b', html)
     assert '<link rel="stylesheet" href="/static/app.css">' in html
     assert '<link rel="icon" href="data:,">' in html  # no request for /favicon.ico, no 404 logged
 
 
-def test_app_js_is_served_as_javascript(tmp_path):
-    r = local(tmp_path).get("/static/app.js")
+@pytest.mark.parametrize("name", ["app.js", "core.js", "start.js", "job.js", "review.js"])
+def test_app_modules_are_served_as_javascript(tmp_path, name):
+    r = local(tmp_path).get(f"/static/{name}")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/javascript")
 
@@ -570,9 +576,8 @@ def test_every_api_address_in_the_script_is_a_route(tmp_path):
 
 
 def function_body(js, name):
-    """The source of one function of app.js. They all sit one level inside its closure: each
-    starts at two spaces and ends at a closing brace that has two spaces."""
-    found = re.search(rf"\n  (?:async )?function {name}\(.*?\n  \}}\n", js, re.DOTALL)
+    """The source of one function in the app's modules."""
+    found = re.search(rf"\n(?:export )?(?:async )?function {name}\(.*?\n\}}\n", js, re.DOTALL)
     assert found, f"app.js has no function {name}"
     return found.group(0)
 
