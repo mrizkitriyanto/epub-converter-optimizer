@@ -9,6 +9,7 @@ import math
 import re
 import tempfile
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from io import BytesIO
@@ -24,7 +25,7 @@ from PIL import Image
 from eco.bookfolder import BookSource
 from eco.epub.images import transform_image
 from eco.options import DEVICES, ImageProfile
-from eco.style import PageStyle
+from eco.style import PageStyle, available_weights
 
 VIEWS = ("crosspoint", "crossink", "stock", "xtc")
 
@@ -147,9 +148,10 @@ def to_typst(
     style: PageStyle,
     view: str,
     image_profile: ImageProfile | None = None,
+    font_extra_dirs: Sequence[Path] = (),
 ) -> dict[str, bytes | Path]:
     """Return typst-py's multi-file input: `main.typ` plus every image the source refers to."""
-    return _to_typst(src, device, style, view, image_profile)
+    return _to_typst(src, device, style, view, image_profile, font_extra_dirs=font_extra_dirs)
 
 
 def _to_typst(
@@ -161,6 +163,7 @@ def _to_typst(
     *,
     defer_images: bool = False,
     selected_images: set[Path] | None = None,
+    font_extra_dirs: Sequence[Path] = (),
 ) -> dict[str, bytes | Path]:
     if device not in DEVICES:
         raise ValueError(f"unknown device: {device!r}")
@@ -174,6 +177,7 @@ def _to_typst(
         image_profile,
         defer_images=defer_images,
         selected_images=selected_images,
+        font_extra_dirs=font_extra_dirs,
     )
     return {"main.typ": converter.convert().encode(), **converter.files}
 
@@ -452,6 +456,7 @@ class _Converter:
         *,
         defer_images: bool = False,
         selected_images: set[Path] | None = None,
+        font_extra_dirs: Sequence[Path] = (),
     ):
         self.meta = src.meta
         self.title = src.meta["title"]
@@ -459,6 +464,8 @@ class _Converter:
         self.base = src.base_dir.resolve()
         self.device = device
         self.style = style
+        self.view = view
+        self.font_extra_dirs = font_extra_dirs
         self.stock = view == "stock"
         self.profile = profile
         self.defer_images = defer_images
@@ -495,6 +502,22 @@ class _Converter:
         top = s.margin_y + self.bar_area * (s.bar_position == "top")
         bottom = s.margin_y + self.bar_area * (s.bar_position == "bottom")
         bar, bar_arguments = _bar(s, width, height)
+        focus = ""
+        if s.focus_mode and self.view == "xtc":
+            weights = available_weights(s.font, self.font_extra_dirs)
+            heavier = [weight for weight in weights if weight > s.font_weight]
+            if heavier:
+                target = next(
+                    (weight for weight in heavier if weight >= s.font_weight + 300), heavier[-1]
+                )
+                ratio = {"low": 0.3, "medium": 0.5, "high": 0.7}[s.focus_strength]
+                focus = (
+                    "#let focus(body) = {\n"
+                    '  show regex("[\\\\p{Latin}\\\\p{Greek}\\\\p{Cyrillic}][\\\\p{Latin}\\\\p{Greek}\\\\p{Cyrillic}\\\\p{M}]*"): it => {\n'
+                    f"    let c = it.text.clusters(); let n = if c.len() == 1 {{ 1 }} else {{ calc.min(c.len() - 1, calc.max(1, calc.ceil(c.len() * {ratio}))) }}\n"
+                    f"    text(weight: {target}, c.slice(0, n).join()) + c.slice(n).join()\n"
+                    "  }; body\n}\n"
+                )
         return (
             f"{bar}"
             f"#set page(width: {width}pt, height: {height}pt, "
@@ -509,6 +532,7 @@ class _Converter:
             "#set smartquote(enabled: false)\n"
             '#show raw: set text(font: "DejaVu Sans Mono", size: 0.62em)\n'
             f"{self._raw_wrap()}\n"
+            f"{focus}"
             "#show heading.where(level: 1): it => { pagebreak(weak: true); it }\n"
             "#show figure.caption: it => it.body\n"
             f"{_IMAGE_BOXES}\n"
@@ -580,7 +604,9 @@ class _Converter:
         if kind == "heading_open":
             return self._heading(int(token.tag[1]), inner[0], nested)
         if kind == "paragraph_open":
-            text = self._inline(inner[0].children or [])
+            text = self._inline(
+                inner[0].children or [], focus=self.style.focus_mode and self.view == "xtc"
+            )
             return f"#align(center)[{text}]" if self.style.align == "center" else text
         if kind in ("bullet_list_open", "ordered_list_open"):
             return self._list(token, inner)
@@ -624,7 +650,7 @@ class _Converter:
 
     # Inline
 
-    def _inline(self, tokens: list[Token], start: bool = True) -> str:
+    def _inline(self, tokens: list[Token], start: bool = True, focus: bool = False) -> str:
         """Render inline tokens. `start` is true when the first one begins a line."""
         out: list[str] = []
         text = ""
@@ -634,7 +660,8 @@ class _Converter:
             if start:
                 text = text.lstrip()  # a space after <br> would hide the line start
             if text:
-                out.append(_esc(text, start))
+                shown = _esc(text, start)
+                out.append(f"#focus[{shown}]" if focus else shown)
                 text, start = "", False
 
         def add(markup: str):
@@ -661,7 +688,7 @@ class _Converter:
                 before = out[-1][-1:] if out else ""
                 following = tokens[end + 1] if end + 1 < len(tokens) else None
                 after = following.content[:1] if following and following.type == "text" else ""
-                inner = self._inline(tokens[i + 1 : end], start=False)
+                inner = self._inline(tokens[i + 1 : end], start=False, focus=focus)
                 mark, name = ("_", "emph") if kind == "em_open" else ("*", "strong")
                 if before.isalnum() or after.isalnum():  # Typst ignores _ and * inside a word
                     add(f"#{name}[{inner}];")

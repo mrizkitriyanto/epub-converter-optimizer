@@ -5,6 +5,7 @@ const STYLE_IDS = {
   font: 'font', font_size: 'style-font-size', font_weight: 'font-weight', line_height: 'line-height',
   margin_x: 'margin-x', margin_y: 'margin-y', paragraph_spacing: 'paragraph-spacing',
   first_line_indent: 'first-line-indent', align: 'align', hyphenate: 'hyphenate',
+  focus_mode: 'focus-mode', focus_strength: 'focus-strength',
   lang: 'style-lang', mode: 'color-mode',
   dither: 'dither', dither_strength: 'dither-strength', negative: 'negative', bar_position: 'bar-position',
   bar_line: 'bar-line', bar_page: 'bar-page', bar_book_percent: 'bar-book-percent',
@@ -14,7 +15,7 @@ const STYLE_IDS = {
   bar_side_margin: 'bar-side-margin', orientation: 'orientation',
 };
 const STYLE_FLAGS = new Set([
-  'hyphenate', 'dither', 'negative', 'bar_line', 'bar_page', 'bar_book_percent',
+  'hyphenate', 'focus_mode', 'dither', 'negative', 'bar_line', 'bar_page', 'bar_book_percent',
   'bar_chapter_page', 'bar_chapter_percent', 'bar_chapter_title', 'bar_chapter_marks', 'bar_full_width',
 ]);
 const STYLE_NUMBERS = new Set([
@@ -104,6 +105,7 @@ export function renderReview() {
   xtcToggle.disabled = !xtc;
   (review.format === 'epub' ? epubToggle : xtcToggle).checked = true;
   document.querySelector('.approx').hidden = review.format !== 'epub';
+  $('focus-controls').hidden = review.format === 'epub';
   $('change-settings').hidden = !converted;
   $('try-again').hidden = job.files.some(isConverted); // with nothing converted, trying again is the one action
   renderFilePick(job);

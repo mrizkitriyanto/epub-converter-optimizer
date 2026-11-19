@@ -42,6 +42,7 @@ RANGES: dict[str, tuple[int, int]] = {
 }
 CHOICES: dict[str, tuple] = {
     "align": ("justify", "left", "center"),
+    "focus_strength": ("low", "medium", "high"),
     "mode": ("xth", "xtg"),
     "bar_position": ("bottom", "top", "off"),
     "orientation": (0, 90, 180, 270),
@@ -64,6 +65,8 @@ class PageStyle:
     margin_y: int = 16
     paragraph_spacing: int = 120
     first_line_indent: int = 0
+    focus_mode: bool = False
+    focus_strength: str = "medium"
     align: str = "justify"
     hyphenate: bool = True
     lang: str = "auto"
@@ -133,6 +136,8 @@ class PageStyle:
             raise ValueError("font must be a bundled font, Libertinus Serif or an uploaded font")
         if not (_whole(style.font_weight) and style.font_weight in weights):
             raise ValueError(f"font_weight must be one of: {', '.join(map(str, weights))}")
+        if style.focus_mode and not any(weight > style.font_weight for weight in weights):
+            raise ValueError(f"This font has no heavier weight: {style.font}")
         return style
 
     def to_json(self) -> dict:

@@ -251,6 +251,10 @@
             <div class="field stack"><label for="paragraph-spacing">{{ strings.paragraph_spacing_label }}</label><input id="paragraph-spacing" type="number" min="0" max="300" step="1"></div>
             <div class="field stack"><label for="first-line-indent">{{ strings.first_line_indent_label }}</label><input id="first-line-indent" type="number" min="0" max="400" step="1"></div>
             <div class="field stack"><label for="align">{{ strings.align_label }}</label><select id="align">{{ choices([("justify", strings.align_justify), ("left", strings.align_left), ("center", strings.align_center)]) }}</select></div>
+            <div id="focus-controls">
+              <label class="check"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
+              <div class="field stack"><label for="focus-strength">{{ strings.focus_strength_label }}</label><select id="focus-strength">{{ choices([("low", strings.focus_low), ("medium", strings.focus_medium), ("high", strings.focus_high)]) }}</select></div>
+            </div>
             <label class="check"><input id="hyphenate" type="checkbox"> {{ strings.hyphenate_label }}</label>
             <div class="field stack"><label for="style-lang">{{ strings.style_lang_label }}</label><input id="style-lang" type="text" maxlength="3" autocomplete="off"></div>
           </fieldset>
