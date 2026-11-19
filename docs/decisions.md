@@ -677,7 +677,8 @@ error for either.
 ## 2026-11-19: OCR: a page whose OCR confidence is below 0.5 is a warning (spec section 8.11)
 
 - `extract_blocks` returns Docling's OCR score (the mean confidence of its OCR cells) for each page
-  whose text came from OCR: a scanned page, or every page with `--ocr force`. The layout stage
+  whose text came from OCR: a scanned page, a page without a text layer (text drawn as outlines,
+  which Docling's auto OCR reads), or every page with `--ocr force`. The layout stage
   reports one `ocr_low_confidence` warning per page below 0.5, Docling's grade "poor", with the
   score. A page with a text layer is left out: auto OCR reads only its pictures, which stay images
   (Q-22). One finding per page, like `ocr_page`, so the report and the GUI name each page.
@@ -703,6 +704,8 @@ error for either.
   a book folder cached by an intermediate state was reused as complete. Version 8 also covers the
   fixes of the M1 final review: the chapter rule's guards, the contents warning, table captions in
   book.md, vector pages, OCR scores and code hyphens.
+- 2026-11-20: the re-review's fixes (the OCR score of a page without a text layer, the wording of
+  the index warning) change report.json again; the version stays 8, since no release carried it.
 
 ## 2026-11-19: Optimizer: an image under 20 px on Xteink goes with a finding, its alt text stays
 

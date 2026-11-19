@@ -137,6 +137,7 @@ def _layout(
     """The `layout` stage: Docling over the non-blank pages, one chunk at a time."""
     numbers = [info.number for info in infos if not info.is_blank]
     scanned = frozenset(info.number for info in infos if info.is_scanned)
+    textless = frozenset(info.number for info in infos if info.chars == 0)
     reported: set[int] = set()
 
     def on_page(number: int) -> None:
@@ -150,7 +151,14 @@ def _layout(
         if cancel():
             raise Cancelled
         found, scores = extract_blocks(
-            pdf, models, first=first, last=last, ocr=options.ocr, on_page=on_page, scanned=scanned
+            pdf,
+            models,
+            first=first,
+            last=last,
+            ocr=options.ocr,
+            on_page=on_page,
+            scanned=scanned,
+            textless=textless,
         )
         blocks += found
         message = "This page could not be converted and is missing from the book."

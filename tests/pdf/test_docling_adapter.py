@@ -359,7 +359,13 @@ PIPELINE_OPTIONS = {
 
 
 def run_with_fake_convert(
-    tmp_path, monkeypatch, pages_done, ocr="auto", scanned=frozenset(), ocr_scores=None
+    tmp_path,
+    monkeypatch,
+    pages_done,
+    ocr="auto",
+    scanned=frozenset(),
+    ocr_scores=None,
+    textless=frozenset(),
 ):
     """Call extract_blocks with Docling's `convert` replaced, so Docling never runs.
 
@@ -419,6 +425,7 @@ def run_with_fake_convert(
         ocr=ocr,
         on_page=pages.append,
         scanned=scanned,
+        textless=textless,
     )
     return result, pages, seen
 
@@ -441,6 +448,18 @@ def test_the_ocr_score_of_each_page_read_by_ocr_comes_with_the_blocks(
         tmp_path, monkeypatch, pages_done, ocr=ocr, scanned=frozenset({1, 3, 4}), ocr_scores=docling
     )
     assert found == scores
+
+
+def test_the_ocr_score_of_a_page_without_a_text_layer_comes_with_the_blocks(tmp_path, monkeypatch):
+    # text drawn as outlines has no text layer, and Docling's auto OCR reads it
+    (_, found), _, _ = run_with_fake_convert(
+        tmp_path,
+        monkeypatch,
+        [(1, True), (2, True)],
+        textless=frozenset({2}),
+        ocr_scores={1: 0.9, 2: 0.3},
+    )
+    assert found == {2: 0.3}
 
 
 def test_only_pages_that_finished_are_reported(tmp_path, monkeypatch):

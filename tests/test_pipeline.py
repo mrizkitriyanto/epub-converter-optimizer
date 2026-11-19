@@ -155,6 +155,8 @@ def test_a_page_of_vector_drawing_goes_to_docling_and_is_not_reported_blank(
 ):
     r = convert(fixtures_dir["vector_page"], tmp_path)
     assert [(c.first, c.last) for c in fake_blocks.calls] == [(1, 2), (4, 4)]
+    # its text, if any, comes from OCR, so its OCR score counts
+    assert fake_blocks.calls[0].textless == frozenset({2, 3})
     assert [f.page for f in r.findings if f.kind == "blank_page"] == [3]
 
 

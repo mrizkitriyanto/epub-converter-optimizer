@@ -75,9 +75,13 @@ def fake_blocks(monkeypatch):
         calls=[],
     )
 
-    def extract_blocks(pdf, models, *, first, last, ocr, on_page, scanned=frozenset()):
+    def extract_blocks(
+        pdf, models, *, first, last, ocr, on_page, scanned=frozenset(), textless=frozenset()
+    ):
         fake.calls.append(
-            SimpleNamespace(models=models, first=first, last=last, ocr=ocr, scanned=scanned)
+            SimpleNamespace(
+                models=models, first=first, last=last, ocr=ocr, scanned=scanned, textless=textless
+            )
         )
         for number in range(first, last + 1):
             if number not in fake.skip:
