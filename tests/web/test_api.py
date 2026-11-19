@@ -553,7 +553,9 @@ def test_a_job_of_m2_is_shown_and_rebuilt_with_its_font_size_in_the_style(tmp_pa
 def test_missing_options_mean_the_defaults(tmp_path):
     job = post(client(tmp_path), ("a.md", b"# A")).json()
     assert job["options"] == {
-        **asdict(Options()), "formats": ["epub"], "style": PageStyle().to_json()
+        **asdict(Options()),
+        "formats": ["epub"],
+        "style": PageStyle().to_json(),
     }
 
 
