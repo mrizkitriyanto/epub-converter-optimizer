@@ -71,14 +71,18 @@ src/eco/pdf/structure.py     assign_heading_levels()
 tests/conftest.py  tests/fixtures/{make.py,links.py}  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
 ```
 
-Some of these modules do not exist yet. Milestone M1 adds them task by task. The core knows nothing
-about the CLI or the web. Docling and Typst are reached only through their adapters.
+The core knows nothing about the CLI or the web. Docling and Typst are reached only through their
+adapters.
 
 ## How to add a fix-up pass
 
-A fix-up pass is a pure function `(blocks, ...) -> (blocks, findings)`. It takes the list of blocks
-and returns the corrected list plus the findings it wants to report. It does no I/O. Put it in
-the module under `src/eco/pdf/` that fits its subject, and give it its own test file.
+A fix-up pass is a function `(blocks, ...) -> (blocks, findings)`. It takes the list of blocks
+and returns the corrected list plus the findings it wants to report. Make it pure when it can be.
+Some passes need the PDF: `rebuild_contents` and `keep_picture_text_as_images` read it, and
+`fix_code_blocks` and `materialize_regions` also render its pages and write images into the
+book folder's `images/`. A pass reads nothing but the PDF, writes nowhere but
+`images/`, and never uses the network. Put it in the module under `src/eco/pdf/` that fits its
+subject, and give it its own test file.
 
 ## Where decisions live
 

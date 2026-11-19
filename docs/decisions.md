@@ -557,8 +557,9 @@ error for either.
     of its own after a gap of half its height or after a dot leader (four dots or more), or ends a
     run after a leader. Otherwise the line keeps it: a page number kept costs nothing, a title word
     lost is a failure (spec section 5). A caption of the block is a paragraph before the entries.
-  - Not covered: Threat Hunting puts each chapter's number and title in the left column only, so
-    its pages 11-13 read the left column of several chapters before their right column.
+  - Not covered by this round: Threat Hunting puts each chapter's number and title in the left
+    column only, so its pages 11-13 read the left column of several chapters before their right
+    column. The chapter rule covers it since ("a chapter number set apart", below).
 - 2026-11-19, fix round 2: the width ratio held a short last column of an index (three short
   lines beside six long ones) to be no column, so the entries of both columns were joined pairwise
   under a finding that said "in reading order"; it let labels beside short titles ("Chapter 1
@@ -633,6 +634,18 @@ error for either.
   sit inside a column.
 - Threat Hunting's pages 10-15 and 234-240 read the same as with the first form of the rule.
 - If it turns out wrong: drop `_chapter_starts`; such pages then read column by column again.
+
+## 2026-11-19: Headings: an equal bookmark match goes to the nearer page; more short words kept
+
+- When two headings on the pages around a bookmark match its title equally well, the one on the
+  page nearest the bookmark's page takes it, then the earlier one. Before, the earlier heading won
+  even a page away from the bookmark; spec section 8.4 asks for the nearest heading block (a
+  deferred minor of Task 16, built in bccd67d).
+- `clean_heading_artifacts` drops a one- or two-letter token of an OCR heading that echoes the end
+  of the word before it or the start of the word after it, unless the language lists it as a real
+  short word. The lists now hold "i" and "am" in English and "ia", "si" and "ya" in Indonesian, so
+  "Why I Invest", "Here I am" and "Menjadi Si Sibuk" keep every word.
+- If it turns out wrong: compare the ratio and then the order alone again; drop the added words.
 
 ## 2026-11-19: Contents: an order inferred from the layout is a warning (M1 final review)
 
