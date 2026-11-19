@@ -185,6 +185,20 @@ def test_second_run_reads_the_cache(tmp_path, fixtures_dir, fake_blocks):
     assert [e.finding for e in seen if isinstance(e, FindingEvent)] == second.findings
 
 
+def test_a_folder_cached_before_the_m1_final_fixes_is_extracted_again(
+    tmp_path, fixtures_dir, fake_blocks
+):
+    # extractor 7 had none of the contents, caption, blank-page, OCR-score and code-hyphen fixes
+    pdf, data = fixtures_dir["blank"], tmp_path / "d"
+    digest = hashlib.sha256(pdf.read_bytes()).hexdigest()
+    old = data / "cache" / f"{digest[:16]}-x7-auto.book"
+    old.mkdir(parents=True)
+    (old / "book.md").write_text("# Stale\n", encoding="utf-8")
+    (old / "report.json").write_text("[]\n", encoding="utf-8")
+    assert extract(pdf, data) != old
+    assert len(fake_blocks.calls) == 2
+
+
 def test_ocr_option_has_its_own_cache_entry(tmp_path, fixtures_dir, fake_blocks):
     pdf, data = fixtures_dir["blank"], tmp_path / "d"
     auto, off = extract(pdf, data), extract(pdf, data, Options(ocr="off"))

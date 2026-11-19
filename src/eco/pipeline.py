@@ -42,7 +42,7 @@ from eco.pdf.text import (
     normalize,
 )
 
-EXTRACTOR_VERSION = 7  # bump it when extraction changes: cached book folders then stop matching
+EXTRACTOR_VERSION = 8  # bump it when extraction changes: cached book folders then stop matching
 CHUNK_PAGES = 50
 OCR_POOR = 0.5  # an OCR score below this is Docling's grade "poor" (spec section 8.11)
 _UNSURE = "OCR is unsure of the text of this page (confidence {:.2f}); check it against the PDF."

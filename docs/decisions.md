@@ -615,3 +615,78 @@ error for either.
   content, and a page 1 with a text layer keeps its text.
 - `EXTRACTOR_VERSION` is 6 (numbered lists, contents, picture text and this pass).
 - If it turns out wrong: drop the pass; the page then shows in the body as before.
+
+## 2026-11-19: Contents: a chapter number set apart starts a chapter zone (Q-28, M1 final review)
+
+- On a contents page (a block in the front half of the book) read in columns, a line that holds
+  only a chapter number at the left ends the columns above it, as a full-width line does. Threat
+  Hunting puts each chapter's number and title in the left column only, with the chapter's
+  entries in both columns below them, and its pages 10-14 read the left part of several chapters
+  before their right parts. They now finish each chapter's right column before the next number.
+- The number must be clearly a chapter number: alone in its line, and at least 1.25 times as high
+  as the median text of the page (Threat Hunting's are 1.31 to 1.66 times as high). And every line
+  whose left part is only numbers must have nothing of the right column level with it, or the rule
+  is off for the whole page. The first form of the rule took any lone number and reordered two
+  layouts that read right without it: a newspaper flow, whose chapter goes on at the top of the
+  right column, level with an earlier chapter number; and a page number alone on its own line
+  under a wrapped entry. The index (the back half) never uses the rule, since its letter headings
+  sit inside a column.
+- Threat Hunting's pages 10-15 and 234-240 read the same as with the first form of the rule.
+- If it turns out wrong: drop `_chapter_starts`; such pages then read column by column again.
+
+## 2026-11-19: Contents: an order inferred from the layout is a warning (M1 final review)
+
+- The `contents_rebuilt` finding is a warning that ends "Order inferred from the layout; check this
+  page." when the page was read in columns, or read as one column although a line holds text that
+  follows other text by a gutter's width a fifth of the page width or more from the left edge (two
+  columns that the gutter rule did not accept). A plain one-column read stays info.
+- Why: every column read is inferred, and spec section 5 counts a wrong order without a warning as
+  a failure. Cost: every contents or index page in columns gives a warning.
+
+## 2026-11-19: eco writes a table's caption, and keeps it beside a table shown as an image
+
+- `write_book` writes `Block.caption` as the table's `<caption>`, in place of any caption
+  docling-core put into the HTML. docling-core 2.107 writes one although the adapter passes
+  `add_caption=False`, and a version that honours the flag (docling-slim allows `<3`, and `uv tool
+  install` ignores uv.lock) would have dropped every table caption.
+- On an Xteink device a table with more than 4 columns becomes its twin image, which shows only the
+  grid. Its caption is now the image's `figcaption`, and the footnotes after the table stay text.
+  Before, both were lost (ResNet's "Table 1. Architectures for ImageNet..." on X4).
+
+## 2026-11-19: A page is blank only when a small render of it shows no ink
+
+- A page with no text layer and no raster image is rendered at scale 0.2 and counts as blank only
+  when the render has no ink (the test `page_slices` uses). A page of vector drawing, or of text
+  drawn as outlines, used to be skipped as "Blank page skipped." and never reached Docling or
+  `--mode pages`. Every blank page of Threat Hunting, Forensic, Malware, ResNet and Bicara renders
+  pure white, so their blank pages are unchanged.
+
+## 2026-11-19: OCR: a page whose OCR confidence is below 0.5 is a warning (spec section 8.11)
+
+- `extract_blocks` returns Docling's OCR score (the mean confidence of its OCR cells) for each page
+  whose text came from OCR: a scanned page, or every page with `--ocr force`. The layout stage
+  reports one `ocr_low_confidence` warning per page below 0.5, Docling's grade "poor", with the
+  score. A page with a text layer is left out: auto OCR reads only its pictures, which stay images
+  (Q-22). One finding per page, like `ocr_page`, so the report and the GUI name each page.
+
+## 2026-11-19: PDFium's line-end hyphen marker is a hyphen in code too (R-90)
+
+- PDFium gives a hyphen at a line end after a letter as U+FFFE (or "\x02" in a bounded text). The
+  code pass kept it, and the builder replaced it with U+FFFD. The mapping table moves to `pages.py`
+  and serves the contents, code and region passes.
+
+## 2026-11-19: An image reference of a Markdown book is judged as text before any file is opened
+
+- The builder refuses an image, cover or table-image reference with a URL scheme or host, a leading
+  slash or backslash, a drive or root, or ".." that climbs out of the book folder, before it
+  resolves or tests the path; the resolved path must still lie in the folder (symlinks). Why: on
+  Windows, resolving `//host/share/x.png` opens an SMB connection to a host the input names, which
+  sends the user's credentials during a conversion that must not use the network (spec 6.5).
+
+## 2026-11-19: `EXTRACTOR_VERSION` is 8
+
+- Eight commits after the bump to 7 changed what extraction writes (the round-2 fixes of Q-22 and
+  Q-23, the chapter rule, the heading tie-break, the new protected short words) without a bump, so
+  a book folder cached by an intermediate state was reused as complete. Version 8 also covers the
+  fixes of the M1 final review: the chapter rule's guards, the contents warning, table captions in
+  book.md, vector pages, OCR scores and code hyphens.
