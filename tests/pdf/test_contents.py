@@ -71,7 +71,8 @@ def test_contents_are_rebuilt_in_reading_order_without_print_page_numbers(fixtur
         ("paragraph", "Iota work 35"),
     ]
     assert all(b.page == 1 for b in out)
-    assert [(f.page, f.kind, f.level) for f in findings] == [(1, "contents_rebuilt", "info")]
+    # read in columns: the order is inferred from the layout
+    assert [(f.page, f.kind, f.level) for f in findings] == [(1, "contents_rebuilt", "warning")]
 
 
 def rebuilt(pdf, page, bbox, caption=""):
@@ -263,6 +264,34 @@ def test_a_number_alone_starts_a_chapter_zone_only_when_it_is_clearly_a_chapter_
 ):
     out = rebuilt(fixtures_dir["chapter_layouts"], page, box)
     assert [text for _, text in out] == lines
+
+
+def levels(pdf, page, box):
+    _, findings = rebuild_contents(pdf, [Block("contents", page=page, bbox=box)], pages_of(pdf))
+    return [(f.kind, f.level) for f in findings]
+
+
+def test_contents_read_in_columns_or_across_a_wide_gap_are_a_warning(fixtures_dir):
+    warning = [("contents_rebuilt", "warning")]
+    # the chapter rule fired; columns; an index in columns
+    assert levels(fixtures_dir["column_layouts"], 6, (62, 92, 548, 280)) == warning
+    assert levels(fixtures_dir["chapter_layouts"], 1, (62, 92, 548, 290)) == warning
+    assert levels(fixtures_dir["column_layouts"], 9, (62, 92, 475, 146)) == warning
+    # one column, but a line holds a title a column's width after another: no gutter was found
+    assert levels(fixtures_dir["chapter_layouts"], 3, (62, 92, 548, 146)) == warning
+    _, findings = rebuild_contents(
+        fixtures_dir["chapter_layouts"],
+        [Block("contents", page=3, bbox=(62, 92, 548, 146))],
+        pages_of(fixtures_dir["chapter_layouts"]),
+    )
+    assert findings[0].message.endswith("Order inferred from the layout; check this page.")
+
+
+def test_a_plain_one_column_read_is_info(fixtures_dir):
+    info = [("contents_rebuilt", "info")]
+    assert levels(fixtures_dir["contents_layouts"], 1, (60.0, 90.0, 560.0, 260.0)) == info
+    # labels beside their titles are no column
+    assert levels(fixtures_dir["column_layouts"], 3, (62, 92, 548, 182)) == info
 
 
 def test_contents_py_holds_no_invisible_character():

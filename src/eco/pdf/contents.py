@@ -6,7 +6,8 @@ the entries are read again from that layer, one entry per line. The text runs ar
 lines by their height on the page; a page is read in columns only where its text has a gutter
 (`_gutter`), and then a full-width line ends the columns above it, which are read left column
 first; on a contents page a chapter number set apart does too (agent decision Q-28). Otherwise
-the lines are read top to bottom, each left to right."""
+the lines are read top to bottom, each left to right. Where the order is inferred from the
+layout, the finding is a warning."""
 
 import re
 import statistics
@@ -233,6 +234,26 @@ def _reading_order(
     return lines + _reading_order(left, width) + _reading_order(right, width)
 
 
+def _inferred(runs: list[_Run], width: float) -> bool:
+    """True when the reading order of `runs` is inferred from their layout, so it can be wrong: the
+    page is read in columns (`_gutter`), or read as one column although a line of it holds text
+    that follows other text a gutter's width away and a column's width from the left edge, two
+    columns that `_gutter` did not accept. A plain one-column read gives False."""
+    if _gutter(runs, width) is not None:
+        return True
+    texts = [r for r in runs if _is_text(r)]
+    if not texts:
+        return False
+    gap = statistics.median(r.height for r in texts)
+    start = min(r.left for r in texts)
+    rows = _rows(runs)
+    return any(
+        _is_text(run) and run.left - before.right >= gap and run.left - start >= _COLUMN * width
+        for row in rows
+        for before, run in pairwise(row)
+    )
+
+
 def _text(row: list[_Run]) -> str:
     """The text of a line: its runs joined by a space, but for a comma or the like that touches
     the run before it."""
@@ -273,7 +294,8 @@ def rebuild_contents(
     line of contents, without the print page numbers; a list item for each line of an index (a
     block in the back half of the book), which keeps its numbers. A caption of the block comes
     first. On a scanned page, or when the text layer has nothing in the box, the block is
-    Docling's table."""
+    Docling's table. The finding is a warning when the order is inferred from the layout
+    (`_inferred`), since a wrong order without a warning is a failure (spec section 5)."""
     last = max(pages, default=0)
     out: list[Block] = []
     findings: list[Finding] = []
@@ -299,5 +321,11 @@ def rebuild_contents(
         else:
             out += [Block("paragraph", _entry(line), page=block.page) for line in lines]
             message = "Contents read again from the PDF text layer, without print page numbers."
-        findings.append(Finding(block.page, "contents_rebuilt", "info", message))
+        level = "info"
+        if _inferred(runs, info.width):
+            level, message = (
+                "warning",
+                f"{message} Order inferred from the layout; check this page.",
+            )
+        findings.append(Finding(block.page, "contents_rebuilt", level, message))
     return out, findings
