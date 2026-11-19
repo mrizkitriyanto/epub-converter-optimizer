@@ -21,6 +21,7 @@ from eco.options import (
     Options,
     resolve_data_dir,
 )
+from eco.style import PageStyle
 
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
@@ -89,14 +90,58 @@ def _expand(inputs: list[str]) -> tuple[list[Path], list[str]]:
     return files, empty
 
 
+def _formats(value: str) -> tuple[str, ...]:
+    formats = tuple(value.split(","))
+    unknown = [fmt for fmt in formats if fmt not in FORMATS]
+    if not formats or unknown:
+        allowed = ",".join(FORMATS)
+        raise argparse.ArgumentTypeError(f"must be a comma list of: {allowed}")
+    return formats
+
+
+def _font_family(path: Path) -> str:
+    if not path.is_file():
+        raise ValueError(f"No such font file: {path}")
+    import typst
+
+    fonts = typst.Fonts(
+        include_system_fonts=False,
+        include_embedded_fonts=False,
+        font_paths=[str(path.parent)],
+    ).fonts()
+    families = {font.family for font in fonts if Path(font.path).resolve() == path.resolve()}
+    if len(families) != 1:
+        raise ValueError(f"Not a usable font file: {path.name}")
+    return families.pop()
+
+
+def _page_style(args: argparse.Namespace) -> tuple[PageStyle, tuple[Path, ...]]:
+    values = {}
+    if args.style:
+        values = json.loads(Path(args.style).expanduser().read_text(encoding="utf-8"))
+    extra_dirs = ()
+    if args.font:
+        font = Path(args.font).expanduser()
+        if font.suffix.lower() in (".ttf", ".otf"):
+            values = {**values, "font": _font_family(font)}
+            extra_dirs = (font.parent,)
+        else:
+            values = {**values, "font": args.font}
+    style = PageStyle.from_json(values, extra_dirs)
+    if args.font_size is not None:
+        style = PageStyle.from_json({**style.to_json(), "font_size": args.font_size}, extra_dirs)
+    return style, extra_dirs
+
+
 def _convert(args: argparse.Namespace) -> int:
     from eco.pipeline import convert_file  # imported late: it loads Docling
 
     data = resolve_data_dir(args.data)
+    style, font_extra_dirs = _page_style(args)
     options = Options(
         device=args.device,
         firmware=args.firmware,
-        formats=(args.format,),
+        formats=args.format,
         size=args.size,
         mode=args.mode,
         landscape=args.landscape,
@@ -104,6 +149,7 @@ def _convert(args: argparse.Namespace) -> int:
         title=args.title,
         author=args.author,
         lang=args.lang,
+        style=style,
     )
     files, failed = _expand(args.inputs)
     written: list[Path] = []
@@ -119,11 +165,12 @@ def _convert(args: argparse.Namespace) -> int:
                 data_dir=data,
                 on_event=_progress,
                 inputs=(*files, *written),
+                font_extra_dirs=font_extra_dirs,
             )
-            out = result.outputs["epub"]
-            written.append(out)
-            print(out)
-            print(f"  size: {_human(_size(path))} -> {_human(result.sizes['epub'])}")
+            for fmt, out in result.outputs.items():
+                written.append(out)
+                print(out)
+                print(f"  size: {_human(_size(path))} -> {_human(result.sizes[fmt])}")
             _print_findings(result.findings)
             converted += 1
         except Exception as e:  # noqa: BLE001  one bad file must not stop the batch
@@ -279,7 +326,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     convert.add_argument("--device", choices=list(DEVICES), default="x4")
     convert.add_argument("--firmware", choices=FIRMWARES, default="any")
-    convert.add_argument("--format", choices=FORMATS, default="epub")
+    convert.add_argument(
+        "--format",
+        type=_formats,
+        default=("epub",),
+        metavar="LIST",
+        help="comma-separated output formats: epub,xtch,xtc (default: epub)",
+    )
     convert.add_argument("--size", choices=SIZES, default="balanced")
     convert.add_argument("--mode", choices=MODES, default="auto")
     convert.add_argument("--landscape", action="store_true", help="turn pages sideways (Xteink)")
@@ -287,6 +340,9 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--title", help="set the title")
     convert.add_argument("--author", help="set the author")
     convert.add_argument("--lang", help="set the language, for example en or id")
+    convert.add_argument("--style", metavar="FILE.json", help="page style JSON for XTC output")
+    convert.add_argument("--font", metavar="NAME|PATH", help="font family or .ttf/.otf file")
+    convert.add_argument("--font-size", type=int, metavar="N", help="override the style font size")
 
     extract = commands.add_parser(
         "extract", parents=[common], help="extract a PDF into an editable book folder"
