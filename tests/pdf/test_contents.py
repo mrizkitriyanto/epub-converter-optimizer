@@ -25,6 +25,7 @@ def line(*runs):
         (line((72, 130, "What next...")), "What next..."),
         (line((72, 165, "Hunting on Windows"), (167, 177, "10")), "Hunting on Windows 10"),
         (line((72, 160, "Index .......... ic")), "Index .......... ic"),  # no roman numeral
+        (line((72, 110, "Rock"), (112, 120, "&"), (530, 540, "45")), "Rock &"),  # not a leader
         # a page number: it goes, and its leader with it
         (line((72, 160, "Preface .......... xi")), "Preface"),
         (line((72, 180, "Hunting on Windows 10"), (530, 540, "45")), "Hunting on Windows 10"),

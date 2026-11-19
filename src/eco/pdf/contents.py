@@ -29,6 +29,7 @@ _LEADER = r"(?:[.·…]\s*){4,}"  # a dot leader: four dots or more; "What next.
 _NUMBER_RUN = re.compile(rf"({_LEADER})?(\d+|[ivxlcdm]+)")
 _NUMBER_AFTER_LEADER = re.compile(rf"(.*?\w.*?)\s*{_LEADER}(\d+|[ivxlcdm]+)")
 _ENDS_IN_LEADER = re.compile(rf"\s*{_LEADER}$")
+_LEADER_RUN = re.compile(_LEADER)
 _CLOSING = ",;:)]"  # punctuation that belongs to the word before it
 
 
@@ -183,7 +184,7 @@ def _entry(row: list[_Run]) -> str:
     if head and found and _page_number(found[2]):
         apart = last.left - head[-1].right >= last.height / 2
         led = bool(found[1] or _ENDS_IN_LEADER.search(head[-1].text))
-        while head and not re.search(r"\w", head[-1].text):  # a leader that is a run of its own
+        while head and _LEADER_RUN.fullmatch(head[-1].text):  # a leader that is a run of its own
             head, led = head[:-1], True
         if head and (apart or led):
             return _ENDS_IN_LEADER.sub("", _text(head))
