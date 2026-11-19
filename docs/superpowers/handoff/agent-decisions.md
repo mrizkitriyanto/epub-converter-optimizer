@@ -315,3 +315,14 @@ Entry format:
 - Why: it affects three pages of one book, the content is complete, and the order is better than before the round. A new rule changes the rebuilt order of every contents page, which needs its own tests and review, and the final fix wave is the cheaper place for it.
 - Cost if wrong: books with this layout keep a partly wrong contents order until the fix wave; the EPUB's own linked contents is not affected.
 - Recorded by: controller (Claude Sonnet 5.5), owner's Windows laptop.
+
+### Q-29: The owner moves what is left of M1, the merges and the final acceptance run to Codex
+- Date, milestone, task: 2026-11-19 13:40, M1 and all later steps. This is the owner's decision (message: "kalau M1 claude belum selesai handoff ke codex saja"). It supersedes the split of 2026-11-19 08:55 ("codex M3-5 aja, M1 tetap claude") for everything that is left of M1.
+- Evidence: M1 is not finished: wave 3b is in fix round 2 (the re-review of round 1 found three regressions in the contents reader), and the M1 final review, its fix wave and the report are still ahead. The implementer on the Claude side hit the 5-hour Opus usage limit twice on this day. Meanwhile Codex finished M3 Tasks 3 to 5 (about 3 hours).
+- Answer:
+  - Codex takes all that is left: the check of round 2, the M1 final review (its own, strict, native method), one fix wave, the M1 report in Indonesian, the merge of `m1-core-cli` into `m2-web-gui` with its scoped review and the M2 report, the forward merge into `m3-xtc`, M3 to M5, and the final acceptance run.
+  - Claude finishes only the step that is already running (the senior engineer's round 2, which ends with a clean tree and a report), then stops editing the repo. `STATUS-claude.md` says "HANDED OVER" when that is done. The main checkout and the M2 worktree are Codex's from that moment. Claude keeps the sitrep and answers questions.
+  - Pushing stays held for every branch (Q-27). The acceptance runs stay postponed until after M5 (Q-26).
+- Why: the owner chose one agent for the rest; Codex is working and Claude's Opus agents are limited.
+- Cost if wrong: the M1 final review of a security-sensitive branch becomes a self-review by Codex instead of an Opus reviewer agent, which gives less assurance. The owner can ask Claude for an Opus review of M1 at any time; the ledger, the review packages and the probes stay in `.superpowers/sdd/2026-11-16-m1-core-cli/` and in the scratch folder.
+- Recorded by: controller (Claude Sonnet 5.5), owner's Windows laptop.
