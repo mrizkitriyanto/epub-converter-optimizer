@@ -43,8 +43,9 @@ def test_words_keep_the_text_and_drop_the_markup():
         "<!-- page: 3 -->\n![formula](images/p0003-formula-1.png)\n"
         "Don't miss [the Café](http://x.org/a_b) &amp; <b>Ünï</b> 42."
     )
-    assert words(text) == ["don't", "miss", "the", "café", "ünï", "42"]
-    assert words(r"see \[1\](x) there") == ["see", "1", "x", "there"]  # how eco writes `[1](x)`
+    assert words(text, markdown=True) == ["don't", "miss", "the", "café", "ünï", "42"]
+    # how eco writes `[1](x)`
+    assert words(r"see \[1\](x) there", markdown=True) == ["see", "1", "x", "there"]
 
 
 def test_identical_text_scores_one():
@@ -266,9 +267,15 @@ def test_the_reason_of_a_failed_conversion_is_its_error_lines():
     assert failure_reason("Traceback (most recent call last):\nKeyError: 1\n") == ""
 
 
+def test_xhtml_tags_after_a_backslash_are_markup_too():
+    # in XHTML a "<" of the text is "&lt;", so every "<" starts a tag (R-80)
+    markup = "<p>Key <code>HKLM\\Run\\</code> and a &lt;b&gt; [1](x)</p>"
+    assert words(markup, markdown=False) == ["key", "hklm", "run", "and", "a", "b", "1", "x"]
+
+
 def test_words_keep_the_text_after_an_escaped_angle_bracket():
     # eco escapes "<" in book.md as "\<"; that is text, not the start of a tag
-    assert words("run the tool with \\<name\\> and check a \\< b <b>c</b>") == [
+    assert words("run the tool with \\<name\\> and check a \\< b <b>c</b>", markdown=True) == [
         "run",
         "the",
         "tool",
@@ -288,7 +295,7 @@ def test_drop_section_removes_a_heading_and_what_follows_it_up_to_the_next_headi
         '<h1 id="h-2">Index</h1><h2>A</h2><p>apple, 12</p>'
         "<h1>Other <em>Books</em></h1><p>last text</p>"
     )
-    assert words(drop_section(markup, "Index")) == [
+    assert words(drop_section(markup, "Index"), markdown=False) == [
         "one",
         "first",
         "text",
@@ -302,5 +309,6 @@ def test_drop_section_removes_a_heading_and_what_follows_it_up_to_the_next_headi
         drop_section(
             markup.replace("<h1>Other", "<h2>Other").replace("</h1><p>last", "</h2><p>last"),
             "Index",
-        )
+        ),
+        markdown=False,
     ) == ["one", "first", "text"]

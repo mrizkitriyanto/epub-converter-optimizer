@@ -139,9 +139,10 @@ def sharing_a_line(expected: list[list[str]], blocks: list[list[str]]) -> list[l
 def test_ac1_threat_hunting_text_matches_the_publisher_epub(threat_hunting):
     """The text of the output EPUB against the publisher's (R-65). The publisher EPUB has no index,
     so precision leaves the output's index section out and is printed both ways (Q-21)."""
-    truth = words(epub_text(sample("foundationsofthreathunting.epub")))
+    truth = words(epub_text(sample("foundationsofthreathunting.epub")), markdown=False)
     markup = epub_text(threat_hunting.epub)
-    out, without_index = words(markup), words(drop_section(markup, "Index"))
+    out = words(markup, markdown=False)
+    without_index = words(drop_section(markup, "Index"), markdown=False)
     precision_all, recall = sequence_scores(truth, out)
     precision, _ = sequence_scores(truth, without_index)
     print(
@@ -152,8 +153,9 @@ def test_ac1_threat_hunting_text_matches_the_publisher_epub(threat_hunting):
 
 
 def test_ac2_bicara_page_87_word_recall(bicara):
-    truth = words(sample("ground-truth/bicara-p87.txt").read_text(encoding="utf-8"))
-    recall = word_recall(truth, words(pages(bicara.markdown, 87, 87)))
+    # the transcription is plain text, read like the book.md it is compared with
+    truth = words(sample("ground-truth/bicara-p87.txt").read_text(encoding="utf-8"), markdown=True)
+    recall = word_recall(truth, words(pages(bicara.markdown, 87, 87), markdown=True))
     print(f"AC2: page 87 word recall {recall:.4f} (limit 0.99)")
     assert recall >= 0.99, f"word recall {recall:.4f}"
 
