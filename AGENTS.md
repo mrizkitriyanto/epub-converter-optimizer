@@ -6,8 +6,8 @@ This file is the source of truth for every agent and every human working on this
 
 eco converts PDF and Markdown files to EPUB, tuned for Xteink e-readers and for general e-readers.
 Milestone M1 is the core library and the `eco` CLI (`setup`, `convert`, `extract`).
-Milestone M2 adds the local web GUI (`eco web`). XTC output and a Docker image follow in later
-milestones.
+M2 adds the local web GUI, M3 adds XTC/XTCH output, M4 adds Docker, and M5 adds reusable reading
+styles and fonts.
 
 ## Golden rules
 
@@ -55,6 +55,10 @@ src/eco/book.py              Block, Book
 src/eco/bookfolder.py        write_book(), load_source(), BookSource, write_report()
 src/eco/models.py            model setup/download/offline
 src/eco/pipeline.py          extract_pdf(), page_book(), convert_file(), output_path(), Result
+src/eco/style.py             PageStyle, bundled font families and weight lookup
+src/eco/font_library.py      shared font import, listing and removal
+src/eco/font_coverage.py     missing-character findings for XTC
+src/eco/saved_styles.py      named reading styles and the default style
 src/eco/epub/builder.py      build_epub()
 src/eco/epub/images.py       transform_image()
 src/eco/epub/optimizer.py    optimize_epub(), OptimizeReport, DRMError
