@@ -326,3 +326,15 @@ Entry format:
 - Why: the owner chose one agent for the rest; Codex is working and Claude's Opus agents are limited.
 - Cost if wrong: the M1 final review of a security-sensitive branch becomes a self-review by Codex instead of an Opus reviewer agent, which gives less assurance. The owner can ask Claude for an Opus review of M1 at any time; the ledger, the review packages and the probes stay in `.superpowers/sdd/2026-11-16-m1-core-cli/` and in the scratch folder.
 - Recorded by: controller (Claude Sonnet 5.5), owner's Windows laptop.
+
+### Q-30: The owner asks Claude to fix the findings of the Opus review of M1 (partly reverses Q-29)
+- Date, milestone, task: 2026-11-19 21:45, M1. This is the owner's decision (message: "M1 bisa anda saja yang memperbaiki?").
+- Evidence: the Opus review of the whole M1 branch (HEAD bccd67d) found 6 Important findings (a UNC path reaches the filesystem on Windows, a contents rule reorders other layouts, EXTRACTOR_VERSION is stale, vector-only pages count as blank, table captions are lost on Xteink, no OCR-confidence finding) and a must-fix triage item. Codex had moved on to M4 and M5, and the findings had not reached it.
+- Answer:
+  - Claude fixes them in `m1-core-cli` in one fix wave (one senior engineer agent with the complete findings list), followed by one scoped re-review. The scope: Important 1 to 6, the must-fix triage item, Minor 7, 8, 9, 10, 13 and 15. Minor 11, 12 and 14 and the known limits stay deferred.
+  - While `STATUS-claude.md` says FIX WAVE RUNNING, Codex does not edit the main checkout. Claude then merges `m1-core-cli` into `m2-web-gui` (merge commit) and runs the M2 suite. Codex merges onward into `m3-xtc`, `m4-docker-release` and `m5-reading-style` at its task boundaries.
+  - The rest of Q-29 stands: the M1 final review report, the M1 to M5 reports in Indonesian and the final acceptance run are Codex's; Claude adds a summary of the fix wave to `STATUS-claude.md`.
+  - Pushing stays held (Q-27); no acceptance runs before M5 is done (Q-26).
+- Why: the owner prefers that the agent that holds the review context fixes it, and the main checkout is idle.
+- Cost if wrong: two agents touch M1 within one day, so the forward merges need care; the wave is committed in small steps to keep them simple.
+- Recorded by: controller (Claude Sonnet 5.5), owner's Windows laptop.
