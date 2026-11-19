@@ -1,6 +1,10 @@
+import unicodedata
+from pathlib import Path
+
 import pytest
 
 from eco.book import Block
+from eco.pdf import contents
 from eco.pdf.contents import _entry, _Run, rebuild_contents
 from eco.pdf.pages import PageInfo, inspect_pdf
 
@@ -198,6 +202,19 @@ CHAPTERS = [
 def test_one_column_or_two_in_a_box_that_hugs_the_text(fixtures_dir, page, box, lines):
     out = rebuilt(fixtures_dir["column_layouts"], page, box)
     assert [text for _, text in out] == lines
+
+
+def test_a_hyphen_at_a_line_end_stays_a_hyphen(fixtures_dir):
+    # PDFium gives it as "\x02" in a bounded text and as U+FFFE in a range of the page
+    out = rebuilt(fixtures_dir["column_layouts"], 11, (62, 92, 200, 146))
+    assert [text for _, text in out] == ["anomaly detec-", "tion 40", "audit logs 9"]
+
+
+def test_contents_py_holds_no_invisible_character():
+    # a literal U+FFFE that an editor drops would make `.replace("", "-")` of the hyphen marker
+    source = Path(contents.__file__).read_text(encoding="utf-8")
+    hidden = {c for c in source if unicodedata.category(c) in ("Cc", "Cf", "Cn", "Co", "Cs")}
+    assert hidden <= {"\n"}
 
 
 def test_an_index_keeps_its_numbers(fixtures_dir):

@@ -28,12 +28,13 @@ _ALIGN = 1.0  # pt: lines whose text starts this close together start a column
 # columns about 0.3. A column of labels beside their titles ("Chapter 1") spans 0.1 to 0.15.
 _COLUMN = 0.2
 _ROMAN = re.compile(r"m{0,3}(c[md]|d?c{0,3})(x[cl]|l?x{0,3})(i[xv]|v?i{0,3})")
-_LEADER = r"(?:[.·…]\s*){4,}"  # a dot leader: four dots or more; "What next..." has three
+_LEADER = r"(?:[.\u00b7\u2026]\s*){4,}"  # a dot leader: four dots or more; "What next..." has three
 _NUMBER_RUN = re.compile(rf"({_LEADER})?(\d+|[ivxlcdm]+)")
 _NUMBER_AFTER_LEADER = re.compile(rf"(.*?\w.*?)\s*{_LEADER}(\d+|[ivxlcdm]+)")
 _ENDS_IN_LEADER = re.compile(rf"\s*{_LEADER}$")
 _LEADER_RUN = re.compile(_LEADER)
 _CLOSING = ",;:)]"  # punctuation that belongs to the word before it
+_HYPHEN_MARKS = str.maketrans({"\ufffe": "-", "\x02": "-"})
 
 
 class _Run(NamedTuple):
@@ -65,8 +66,9 @@ def _runs(pdf: Path, info: PageInfo, bbox: Bbox) -> list[_Run]:
             inside = left - _PAD <= (x0 + x1) / 2 <= right + _PAD
             if not inside or not bottom - _PAD <= (y0 + y1) / 2 <= top + _PAD:
                 continue
-            # PDFium marks a hyphen at a line end with U+FFFE: keep it as a hyphen
-            text = textpage.get_text_bounded(x0, y0, x1, y1).replace("￾", "-")
+            # PDFium marks a hyphen at a line end: U+FFFE in a range of the text, "\x02" in a
+            # bounded text. Keep it as a hyphen.
+            text = textpage.get_text_bounded(x0, y0, x1, y1).translate(_HYPHEN_MARKS)
             if text.strip():
                 runs.append(_Run(-y1, -y0, x0, x1, " ".join(text.split())))
     return runs
