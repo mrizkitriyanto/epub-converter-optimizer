@@ -1,5 +1,6 @@
 import base64
 import io
+import ntpath
 import os
 import random
 import re
@@ -418,6 +419,93 @@ def test_image_outside_the_book_folder_is_refused(tmp_path):
     findings = build_epub(load_source(folder / "x.md"), tmp_path / "o.epub", device="general")
     assert [f.kind for f in findings] == ["missing_image", "missing_image"]
     assert not [n for n in zipfile.ZipFile(tmp_path / "o.epub").namelist() if "img-" in n]
+
+
+HOST = "probe-host.invalid"
+REMOTE_REFS = [
+    f"//{HOST}/share/a.png",
+    f"\\\\{HOST}\\share\\b.png",
+    f"%5C%5C{HOST}%5Cshare%5Cc.png",
+    f"%2F%2F{HOST}/share/d.png",
+    f"file://{HOST}/share/e.png",
+    f"http://{HOST}/share/f.png",
+    f"/{HOST}/share/g.png",
+    f"C:{HOST}.png",
+]
+
+
+@pytest.fixture
+def os_calls(monkeypatch):
+    """Every path the filesystem calls behind resolve(), stat() and is_file() are asked about.
+    A call that names the probe host fails as an unreachable network path would, so nothing is
+    sent. On Windows such a call is an SMB connection that carries the user's credentials."""
+    seen = []
+
+    def guard(real):
+        def call(path, *args, **kwargs):
+            if isinstance(path, (str, bytes, os.PathLike)):
+                name = os.fsdecode(path)
+                seen.append(name)
+                if HOST in name:
+                    raise OSError(53, "network path not found (test: blocked)", name)
+            return real(path, *args, **kwargs)
+
+        return call
+
+    for module, name in [
+        (os, "stat"),
+        (os, "lstat"),
+        (os, "readlink"),
+        (ntpath, "_getfinalpathname"),
+        (ntpath, "_nt_readlink"),
+    ]:
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, guard(getattr(module, name)))
+    return seen
+
+
+def remote(paths):
+    """The paths that name the probe host or a UNC share."""
+    return [p for p in paths if HOST in p or p.replace("/", "\\").startswith("\\\\")]
+
+
+def test_an_image_reference_that_could_leave_the_book_folder_never_reaches_the_filesystem(
+    tmp_path, os_calls
+):
+    images = "\n\n".join(f"![x]({ref})" for ref in REMOTE_REFS)
+    raw = "\n\n".join(f'<p><img src="{ref}" alt="y"/></p>' for ref in REMOTE_REFS)
+    md = f'---\ntitle: "T"\ncover: "//{HOST}/share/cover.png"\n---\n# A\n\n{images}\n\n{raw}\n'
+    z, findings = build(tmp_path, md, "x4")
+    assert remote(os_calls) == []
+    # the cover and every image, except the Markdown one with "file:", which markdown-it keeps as text
+    assert [f.kind for f in findings] == ["missing_image"] * (1 + 2 * len(REMOTE_REFS) - 1)
+    assert "OEBPS/images/cover.jpg" in z.namelist()  # the text cover
+    assert not [n for n in z.namelist() if "img-" in n]
+
+
+def test_a_table_image_that_could_leave_the_book_folder_never_reaches_the_filesystem(
+    tmp_path, os_calls
+):
+    row = "<tr>" + "<td>x</td>" * 6 + "</tr>"
+    tables = "\n\n".join(
+        f"<!-- table-image: {ref} -->\n<table>{row}</table>" for ref in REMOTE_REFS
+    )
+    z, findings = build(tmp_path, f"# A\n\n{tables}\n", "x4")
+    assert remote(os_calls) == []
+    assert [f.kind for f in findings] == ["missing_image"] * len(REMOTE_REFS)
+    assert xhtml(z)["OEBPS/text/ch001.xhtml"].count("<table") == len(REMOTE_REFS)
+
+
+def test_an_image_reference_inside_the_book_folder_still_works(tmp_path):
+    (tmp_path / "pics").mkdir()
+    Image.new("L", (30, 30)).save(tmp_path / "pics" / "a b.png")
+    md = '# A\n\n![a](pics/../pics/a%20b.png)\n\n<img src="pics\\a b.png" alt="b"/>\n'
+    z, findings = build(tmp_path, md)
+    if os.sep == "\\":  # a backslash separates folders on Windows only
+        assert findings == []
+        assert xhtml(z)["OEBPS/text/ch001.xhtml"].count('src="../images/img-001.png"') == 2
+    else:
+        assert [f.kind for f in findings] == ["missing_image"]
 
 
 def test_data_uri_images_are_left_for_the_optimizer(tmp_path):

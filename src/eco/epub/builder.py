@@ -1,4 +1,5 @@
 import html
+import posixpath
 import re
 import uuid
 import xml.etree.ElementTree as ET
@@ -8,8 +9,8 @@ from datetime import UTC, datetime
 from html.entities import html5
 from io import BytesIO
 from itertools import count
-from pathlib import Path
-from urllib.parse import unquote
+from pathlib import Path, PureWindowsPath
+from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -198,8 +199,11 @@ class _Builder:
         return f'{tag[: found.start()]}{found[1]}"../{name}"{tag[found.end() :]}' if name else ""
 
     def _lookup(self, ref: str) -> Path | None:
+        name = unquote(ref)
+        if not _inside(name):
+            return None
         try:
-            path = (self.base / unquote(ref)).resolve()
+            path = (self.base / name).resolve()
         except (OSError, ValueError):
             return None
         usable = path.suffix.lower() in _IMAGE_SUFFIXES and path.is_relative_to(self.base)
@@ -327,6 +331,23 @@ class _Builder:
             f"<manifest>\n{items}\n</manifest>\n"
             f'<spine toc="ncx">\n{itemrefs}\n</spine>\n</package>\n'
         )
+
+
+def _inside(ref: str) -> bool:
+    """True if `ref` is a relative path that stays inside the book folder, judged on its text
+    alone. The filesystem must not see any other reference: on Windows, resolving or testing
+    `//host/share/x.png` opens an SMB connection to that host, which sends the user's credentials.
+    """
+    if ref.startswith(("/", "\\")) or PureWindowsPath(ref).anchor:  # root, drive or UNC share
+        return False
+    try:
+        parts = urlsplit(ref)
+    except ValueError:
+        return False
+    if parts.scheme or parts.netloc:
+        return False
+    rel = posixpath.normpath(ref.replace("\\", "/"))  # a backslash may separate folders
+    return rel != "." and rel != ".." and not rel.startswith("../")
 
 
 def _blocks(tokens: list[Token]) -> Iterator[list[Token]]:
