@@ -1,6 +1,7 @@
 """Docling adapter: runs Docling's PDF pipeline offline and maps its document to blocks.
 Docling is imported inside `extract_blocks`, never at module level."""
 
+import math
 import re
 from collections.abc import Callable
 from importlib.metadata import version
@@ -182,8 +183,10 @@ def extract_blocks(
     ocr: str,
     on_page: Callable[[int], None],
     scanned: frozenset[int] = frozenset(),
-) -> list[Block]:
-    """Run Docling on pages `first` to `last` (1-based) and return their blocks.
+) -> tuple[list[Block], dict[int, float]]:
+    """Run Docling on pages `first` to `last` (1-based) and return their blocks, and Docling's OCR
+    score (0 to 1, the mean confidence of its OCR cells) of each page whose text came from OCR: a
+    scanned page, or any page with `ocr="force"`, when OCR found text on it.
 
     `on_page` gets the number of each page Docling finishes without error, in the order they
     finish. A page that failed is not reported, so the caller can see which pages are missing.
@@ -221,4 +224,11 @@ def extract_blocks(
                 on_page(event.page_no)
 
         result = converter.convert(pdf, page_range=(first, last), progress_callback=report)
-    return _to_blocks(result.document, scanned)
+    # On a page with a text layer, auto OCR reads only pictures, whose text the fix stage keeps
+    # as images (agent decision Q-22), so its score says nothing about the book's text.
+    scores = {
+        number: float(page.ocr_score)
+        for number, page in result.confidence.pages.items()
+        if (number in scanned or ocr == "force") and not math.isnan(page.ocr_score)
+    }
+    return _to_blocks(result.document, scanned), scores

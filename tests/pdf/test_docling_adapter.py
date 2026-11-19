@@ -358,15 +358,18 @@ PIPELINE_OPTIONS = {
 }
 
 
-def run_with_fake_convert(tmp_path, monkeypatch, pages_done, ocr="auto", scanned=frozenset()):
+def run_with_fake_convert(
+    tmp_path, monkeypatch, pages_done, ocr="auto", scanned=frozenset(), ocr_scores=None
+):
     """Call extract_blocks with Docling's `convert` replaced, so Docling never runs.
 
     The stand-in reports one event that is not about a page, then a PageCompletedProgress for each
-    (page_no, success) in `pages_done`, and returns a document with one text on page 1. Returns the
-    blocks, the page numbers that reached `on_page`, and what the stand-in was given.
+    (page_no, success) in `pages_done`, and returns a document with one text on page 1 and the
+    OCR score of each page in `ocr_scores`. Returns what extract_blocks returns, the page numbers
+    that reached `on_page`, and what the stand-in was given.
     """
     # Docling takes seconds to import, so only the tests that call this load it.
-    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.base_models import ConfidenceReport, InputFormat
     from docling.datamodel.progress import (
         ConversionPhase,
         PageCompletedProgress,
@@ -401,11 +404,14 @@ def run_with_fake_convert(tmp_path, monkeypatch, pages_done, ocr="auto", scanned
                     **base,
                 )
             )
-        return SimpleNamespace(document=doc)
+        confidence = ConfidenceReport()
+        for page_no, score in (ocr_scores or {}).items():
+            confidence.pages[page_no].ocr_score = score
+        return SimpleNamespace(document=doc, confidence=confidence)
 
     monkeypatch.setattr("docling.document_converter.DocumentConverter.convert", fake_convert)
     pages = []
-    blocks = extract_blocks(
+    result = extract_blocks(
         tmp_path / "book.pdf",
         tmp_path,
         first=1,
@@ -414,7 +420,27 @@ def run_with_fake_convert(tmp_path, monkeypatch, pages_done, ocr="auto", scanned
         on_page=pages.append,
         scanned=scanned,
     )
-    return blocks, pages, seen
+    return result, pages, seen
+
+
+@pytest.mark.parametrize(
+    "ocr, scores",
+    [
+        # the text of a scanned page comes from OCR; a page without a score has no OCR text
+        ("auto", {1: 0.42, 3: 0.97}),
+        # with --ocr force every page is read by OCR
+        ("force", {1: 0.42, 2: 0.88, 3: 0.97}),
+    ],
+)
+def test_the_ocr_score_of_each_page_read_by_ocr_comes_with_the_blocks(
+    tmp_path, monkeypatch, ocr, scores
+):
+    pages_done = [(1, True), (2, True), (3, True), (4, True)]
+    docling = {1: 0.42, 2: 0.88, 3: 0.97, 4: float("nan")}
+    (_, found), _, _ = run_with_fake_convert(
+        tmp_path, monkeypatch, pages_done, ocr=ocr, scanned=frozenset({1, 3, 4}), ocr_scores=docling
+    )
+    assert found == scores
 
 
 def test_only_pages_that_finished_are_reported(tmp_path, monkeypatch):
@@ -427,7 +453,7 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
     from docling.datamodel.pipeline_options import RapidOcrOptions
 
     pages_done = [(2, True), (1, True)]  # pages finish out of order
-    blocks, pages, seen = run_with_fake_convert(
+    (blocks, _), pages, seen = run_with_fake_convert(
         tmp_path, monkeypatch, pages_done, ocr=ocr, scanned=frozenset({1})
     )
 

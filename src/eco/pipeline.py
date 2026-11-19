@@ -44,6 +44,8 @@ from eco.pdf.text import (
 
 EXTRACTOR_VERSION = 7  # bump it when extraction changes: cached book folders then stop matching
 CHUNK_PAGES = 50
+OCR_POOR = 0.5  # an OCR score below this is Docling's grade "poor" (spec section 8.11)
+_UNSURE = "OCR is unsure of the text of this page (confidence {:.2f}); check it against the PDF."
 _LANGUAGE_SAMPLE = 5000
 
 
@@ -147,16 +149,22 @@ def _layout(
         # to cancel takes effect only between chunks. The web GUI stops a worker process instead.
         if cancel():
             raise Cancelled
-        blocks += extract_blocks(
+        found, scores = extract_blocks(
             pdf, models, first=first, last=last, ocr=options.ocr, on_page=on_page, scanned=scanned
         )
+        blocks += found
         message = "This page could not be converted and is missing from the book."
         failed = [
             Finding(n, "page_failed", "warning", message)
             for n in range(first, last + 1)
             if n not in reported
         ]
-        _add(findings, failed, on_event)
+        unsure = [
+            Finding(n, "ocr_low_confidence", "warning", _UNSURE.format(score))
+            for n, score in sorted(scores.items())
+            if score < OCR_POOR
+        ]
+        _add(findings, failed + unsure, on_event)
     if cancel():
         raise Cancelled
     return blocks

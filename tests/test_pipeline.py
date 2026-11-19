@@ -164,6 +164,15 @@ def test_mode_pages_keeps_a_page_of_vector_drawing(tmp_path, fixtures_dir):
     assert [f.page for f in r.findings if f.kind == "blank_page"] == [3]
 
 
+def test_a_page_that_ocr_is_unsure_of_is_a_warning(tmp_path, fixtures_dir, fake_blocks):
+    # Docling grades a score below 0.5 as poor
+    fake_blocks.ocr_scores = {1: 0.42, 3: 0.5}
+    r = convert(fixtures_dir["blank"], tmp_path)
+    low = [f for f in r.findings if f.kind == "ocr_low_confidence"]
+    assert [(f.page, f.level) for f in low] == [(1, "warning")]
+    assert "0.42" in low[0].message
+
+
 def test_second_run_reads_the_cache(tmp_path, fixtures_dir, fake_blocks):
     pdf = fixtures_dir["blank"]
     first = convert(pdf, tmp_path, out="one")

@@ -63,11 +63,13 @@ def fake_blocks(monkeypatch):
     """Docling's stand-in for the fast pipeline tests: no models, no network.
 
     Each call logs itself in `calls`, reports every page of its range and returns the blocks of
-    `blocks` that sit on those pages. A test varies the run through `blocks`, `skip` (pages that
-    never report) and `after` (runs at the end of each call).
+    `blocks` and the OCR scores of `ocr_scores` that are on those pages. A test varies the run
+    through `blocks`, `ocr_scores`, `skip` (pages that never report) and `after` (runs at the end
+    of each call).
     """
     fake = SimpleNamespace(
         blocks=[Block("heading", "One", level=1, page=1), Block("paragraph", "Text.", page=3)],
+        ocr_scores={},
         skip=set(),
         after=lambda: None,
         calls=[],
@@ -81,7 +83,8 @@ def fake_blocks(monkeypatch):
             if number not in fake.skip:
                 on_page(number)
         fake.after()
-        return [b for b in fake.blocks if first <= b.page <= last]
+        scores = {n: s for n, s in fake.ocr_scores.items() if first <= n <= last}
+        return [b for b in fake.blocks if first <= b.page <= last], scores
 
     monkeypatch.setattr("eco.pipeline.extract_blocks", extract_blocks)
     return fake

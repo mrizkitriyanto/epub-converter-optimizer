@@ -8,7 +8,10 @@ from eco.pdf.reading_order import fix_reading_order
 @pytest.mark.slow
 def test_two_column_and_code(fixtures_dir, models):
     path, lines, _ = fixtures_dir["code"]
-    blocks = extract_blocks(path, models, first=1, last=1, ocr="auto", on_page=lambda n: None)
+    blocks, scores = extract_blocks(
+        path, models, first=1, last=1, ocr="auto", on_page=lambda n: None
+    )
+    assert scores == {}  # a page with a text layer is not read by OCR
     # The `code` label is checked by acceptance criterion 3, on the real Forensic and Malware
     # pages: heron does not label a short synthetic listing without a background as code. Here
     # the listing only has to come through in one block. Docling merges its lines, so compare
@@ -17,16 +20,23 @@ def test_two_column_and_code(fixtures_dir, models):
     holders = [b for b in blocks if all(w in "".join(b.text.split()) for w in wanted)]
     assert holders, [b.text for b in blocks]
     pages = []
-    extract_blocks(
-        fixtures_dir["scanned"][0], models, first=1, last=1, ocr="auto", on_page=pages.append
+    _, scores = extract_blocks(
+        fixtures_dir["scanned"][0],
+        models,
+        first=1,
+        last=1,
+        ocr="auto",
+        on_page=pages.append,
+        scanned=frozenset({1}),
     )
     assert pages == [1]
+    assert list(scores) == [1] and 0.5 <= scores[1] <= 1  # a clean scan: no warning
 
 
 @pytest.mark.slow
 def test_code_bbox_matches_the_cropbox_convention(fixtures_dir, models):
     path, _, expected = fixtures_dir["code"]
-    blocks = extract_blocks(path, models, first=1, last=1, ocr="auto", on_page=lambda n: None)
+    blocks, _ = extract_blocks(path, models, first=1, last=1, ocr="auto", on_page=lambda n: None)
     # The `code` label is checked by acceptance criterion 3, on the real Forensic and Malware
     # pages: heron does not label a short synthetic listing without a background as code. So take
     # the block that holds the listing, whatever its kind.
@@ -40,7 +50,7 @@ def test_code_bbox_matches_the_cropbox_convention(fixtures_dir, models):
 @pytest.mark.slow
 def test_two_column_reads_in_order_after_the_fix(fixtures_dir, models):
     path, texts = fixtures_dir["two_column"]
-    blocks = extract_blocks(path, models, first=1, last=1, ocr="auto", on_page=lambda n: None)
+    blocks, _ = extract_blocks(path, models, first=1, last=1, ocr="auto", on_page=lambda n: None)
     blocks, _ = fix_reading_order(blocks, {1: inspect_pdf(path)[0]})
     # Docling may split or join lines, so look for each text in the whole flow, in order.
     flow = " ".join(" ".join(b.text for b in blocks).split())
