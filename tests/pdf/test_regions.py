@@ -285,6 +285,22 @@ def test_the_whole_picture_is_kept_whatever_picture_docling_found_in_it(
     assert [(f.page, f.kind) for f in findings] == [(1, "picture_text_as_image")]
 
 
+def test_text_from_a_picture_inside_a_larger_one_becomes_the_larger_one(fixtures_dir):
+    # the small raster (150, 200)-(250, 250) lies in the large one (100, 150)-(400, 350), and a
+    # Docling picture with a caption shows the small one
+    pdf = fixtures_dir["nested_pictures"]
+    blocks = [
+        Block("heading", "Read in the small picture", page=1, bbox=(160, 210, 240, 240)),
+        Block("picture", page=1, bbox=(151, 201, 249, 249), caption="Figure 2"),
+        Block("paragraph", "Read in the large picture only", page=1, bbox=(110, 300, 390, 340)),
+    ]
+    out, findings = keep_picture_text_as_images(pdf, blocks, _pages(pdf), "auto")
+    assert [(b.kind, [round(v) for v in b.bbox], b.caption) for b in out] == [
+        ("picture", [100, 150, 400, 350], "Figure 2")
+    ]
+    assert [(f.page, f.kind) for f in findings] == [(1, "picture_text_as_image")]
+
+
 def test_a_block_that_holds_text_layer_words_outside_the_picture_keeps_its_text(fixtures_dir):
     pdf = fixtures_dir["picture_text"]
     pages = {info.number: info for info in inspect_pdf(pdf)}

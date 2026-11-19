@@ -162,11 +162,13 @@ def keep_picture_text_as_images(
                 layer = set(_layer_words(textpage, info, block.bbox))
                 if 2 * sum(word in layer for word in words) >= len(words):
                     continue
-                frame = _grow(pictures[inside[0]], _SLACK)
+                # a picture drawn inside a larger one is part of it, whose crop shows both
+                k = max(inside, key=lambda k: _area(pictures[k]))
+                frame = _grow(pictures[k], _SLACK)
                 if any(_layer_words(textpage, info, p) for p in _outside(block.bbox, frame)):
                     continue
-                owner[index] = (number, inside[0])
-                boxes[(number, inside[0])] = pictures[inside[0]]
+                owner[index] = (number, k)
+                boxes[(number, k)] = pictures[k]
     if not owner:
         return blocks, []
 
@@ -191,7 +193,11 @@ def keep_picture_text_as_images(
     gone: set[int] = set()  # Docling pictures inside an added one
     for key in dict.fromkeys(owner.values()):
         page, box = key[0], clip(key[0], boxes[key])
-        shown = [i for i in docling_pictures(page) if _share_inside(box, blocks[i].bbox) >= _MOST]
+        shown = [
+            i
+            for i in docling_pictures(page)
+            if i not in gone and _share_inside(box, blocks[i].bbox) >= _MOST
+        ]
         if shown:
             b = grown.get(shown[0], blocks[shown[0]].bbox)
             grown[shown[0]] = (
@@ -205,7 +211,7 @@ def keep_picture_text_as_images(
         parts = [
             i
             for i in docling_pictures(page)
-            if i not in gone and _share_inside(blocks[i].bbox, frame) >= _MOST
+            if i not in gone and i not in grown and _share_inside(blocks[i].bbox, frame) >= _MOST
         ]
         gone.update(parts)
         caption = " ".join(blocks[i].caption for i in parts if blocks[i].caption)

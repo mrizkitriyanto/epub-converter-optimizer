@@ -602,6 +602,9 @@ error for either.
   whose box holds text-layer words outside the picture keeps its text, since the crop would lose
   them. A raster inside a Form XObject gets its box on the page: PDFium leaves out the matrix of
   the form object around it, so `image_bounds` applies it (the page's image share uses it too).
+- 2026-11-19, fix round 2: a block whose centre lies in a raster drawn inside a larger raster
+  belongs to the larger one, whose crop shows both; a Docling picture can no longer be both grown
+  for one raster and taken into another, so its caption is not written twice.
 
 ## 2026-11-19: A picture page 1 of a digital book is only the cover (T19 proposal P3)
 
