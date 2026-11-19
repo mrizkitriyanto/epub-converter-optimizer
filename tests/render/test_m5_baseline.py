@@ -10,8 +10,7 @@ from eco.style import PageStyle
 def test_m3_default_pages_are_unchanged(tmp_path):
     book = tmp_path / "baseline.md"
     book.write_text(
-        "# One\n\nA calm reading page with café and numbers 123.\n\n"
-        "# Two\n\nAnother paragraph.\n",
+        "# One\n\nA calm reading page with café and numbers 123.\n\n# Two\n\nAnother paragraph.\n",
         encoding="utf-8",
     )
     rendered = render_book(load_source(book), device="x4", style=PageStyle(), view="xtc")
