@@ -2,6 +2,10 @@
 
 Short dated entries. The design spec (`docs/superpowers/specs/`) holds the full reasoning.
 
+## 2026-11-19: Docker model storage
+
+The normal image points `ECO_MODELS` at `/opt/eco-models/models`; `/opt/eco-models` links to `/data`. The setup page can create `/data/models` even on a fresh bind mount, and downloads survive container replacement. `BAKE_MODELS=1` instead creates `/opt/eco-models/models` and downloads there for offline use. The image runs as uid 10001 and checks that `/data` is writable before starting the server.
+
 ## 2026-11-16: Docling is the PDF engine
 
 Chosen after the PDF engine spike (`docs/research/2026-11-16-spike-pdf-engines.md`).
