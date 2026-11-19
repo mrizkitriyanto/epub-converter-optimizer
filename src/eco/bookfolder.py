@@ -14,6 +14,10 @@ _FRONT_MATTER = re.compile(r"---\n(.*?\n)?---[ \t]*(?:\n|\Z)", re.DOTALL)
 _MD_SPECIAL = re.compile(r"[\\`*_\[\]<>#|&]")
 _LINE_START_LIST = re.compile(r"^(\d+)([.)])")
 _LINE_START_MARK = re.compile(r"^[-+=~]")
+# a table's opening tag, and the caption that may follow it
+_TABLE_START = re.compile(
+    r"\A(\s*<table\b[^>]*>)(?:\s*<caption\b.*?</caption>)?", re.DOTALL | re.IGNORECASE
+)
 
 
 class RemovedByAntivirus(Exception):
@@ -159,6 +163,15 @@ def _parse_front_matter(raw: str) -> dict[str, str]:
 def _render(block: Block, delimiter: str = ".") -> str:
     if block.kind == "table":
         body = "\n".join(line for line in block.html.splitlines() if line.strip())
+        # eco writes the caption, in place of one the HTML may have (docling-core's own): then the
+        # table reads the same whether docling-core writes a caption into the HTML or not
+        if block.caption.strip():
+            caption = html.escape(" ".join(block.caption.split()))
+            body, found = _TABLE_START.subn(
+                lambda m: f"{m[1]}<caption>{caption}</caption>", body, count=1
+            )
+            if not found:
+                body = f"<p>{caption}</p>\n{body}"
         return f"<!-- table-image: {block.image} -->\n{body}" if block.image else body
     if block.image:  # picture, formula or code cropped to an image
         alt = " ".join(block.text.split()) or block.kind

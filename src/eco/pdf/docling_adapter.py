@@ -87,10 +87,13 @@ def _picture_footnotes(doc, picture, scanned: frozenset[int]) -> list[Block]:
 
 def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
     """Map a docling_core DoclingDocument to blocks in reading order. Nothing in `doc` changes."""
-    # The HTML of a table already holds the text of its cells, its footnotes and its captions, so
-    # nothing under a table is a block of its own. A picture in a cell is the exception: HTML has
-    # no image, so it keeps a block to be cropped. Form fields in a cell (the extract_form_fields
-    # option, which eco leaves off) are not in the HTML, so turning that on needs a new rule here.
+    # The HTML of a table already holds the text of its cells and its footnotes, so nothing under
+    # a table is a block of its own. Its caption is the block's caption, which write_book puts in
+    # the table itself: docling-core 2.107 writes it into the HTML too, although add_caption=False
+    # asks it not to, and a version that honours the flag would not. A picture in a cell is the
+    # exception: HTML has no image, so it keeps a block to be cropped. Form fields in a cell (the
+    # extract_form_fields option, which eco leaves off) are not in the HTML, so turning that on
+    # needs a new rule here.
     in_table = {
         item.self_ref
         for table in doc.tables

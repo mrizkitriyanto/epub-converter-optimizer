@@ -134,6 +134,35 @@ def test_image_and_figure(tmp_path):
     assert "\nno image here\n" in md
 
 
+@pytest.mark.parametrize(
+    "docling_caption",
+    [
+        # docling-core 2.107 writes the caption although the adapter asks it not to
+        '<caption><div class="caption">Table 1: A &amp; B</div></caption>',
+        "",  # a docling-core that honours add_caption=False
+    ],
+)
+def test_eco_writes_a_table_caption_itself_whatever_docling_core_does(tmp_path, docling_caption):
+    html = (
+        f'<table class="t">{docling_caption}\n<tr><td>1</td></tr>\n</table>'
+        '<div class="footnote">a note \\ 1</div>'
+    )
+    caption = "Table 1: A & B \\1"
+    blocks = [Block("table", html=html, image="images/t.png", page=1, caption=caption)]
+    md = write_book(Book(title="T", blocks=blocks), tmp_path, []).read_text(encoding="utf-8")
+    assert md.endswith(
+        "<!-- table-image: images/t.png -->\n"
+        '<table class="t"><caption>Table 1: A &amp; B \\1</caption>\n<tr><td>1</td></tr>\n</table>'
+        '<div class="footnote">a note \\ 1</div>\n'
+    )
+
+
+def test_a_table_without_a_caption_keeps_its_html(tmp_path):
+    html = "<table><caption>kept</caption><tr><td>1</td></tr></table>"
+    md = write_book(Book(title="T", blocks=[Block("table", html=html)]), tmp_path, [])
+    assert md.read_text(encoding="utf-8").endswith(f"\n{html}\n")
+
+
 def test_table_html_has_no_blank_lines(tmp_path):
     html = "<table>\n\n<tr><td>1</td></tr>\n\n</table>"
     blocks = [Block("table", html=html, image="images/t.png", page=1)]

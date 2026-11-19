@@ -182,7 +182,16 @@ class _Builder:
                 self._note(
                     "table_as_image", "info", f"table with {columns} columns became an image"
                 )
-                markup = f'<p><img src="{_esc(twin)}" alt="table" /></p>'
+                # the image shows the grid only: the caption and what follows the table (its
+                # footnotes) stay text
+                img = f'<img src="{_esc(twin)}" alt="table" />'
+                caption = root.find("{*}table/{*}caption")
+                text = " ".join("".join(caption.itertext()).split()) if caption is not None else ""
+                after = markup.rpartition("</table>")[2]
+                if text:
+                    markup = f"<figure>{img}<figcaption>{_esc(text)}</figcaption></figure>{after}"
+                else:
+                    markup = f"<p>{img}</p>{after}"
             else:
                 self._note(
                     "missing_image", "warning", f"table image not found or unsupported: {twin}"

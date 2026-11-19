@@ -209,6 +209,53 @@ def test_table_columns_count_colspan_and_narrow_tables_stay_html(tmp_path):
     assert [(f.page, f.kind) for f in findings] == [(3, "table_as_image")]
 
 
+@pytest.fixture
+def captioned_table(tmp_path):
+    """A book folder with a 6-column table that has a caption and a footnote, as the adapter
+    gives it: the caption in Block.caption, the footnote after the table in its HTML."""
+    folder = tmp_path / "wide.book"
+    (folder / "images").mkdir(parents=True)
+    Image.new("L", (600, 120), 200).save(folder / "images" / "p0001-table-1.png")
+    row = "<tr>" + "".join(f"<td>c{n}</td>" for n in range(6)) + "</tr>"
+    html = (
+        f'<table><tbody>{row}{row}</tbody></table><div class="footnote">Source: lab, week 3</div>'
+    )
+    blocks = [
+        Block("heading", "One", level=1, page=1),
+        Block(
+            "table",
+            html=html,
+            image="images/p0001-table-1.png",
+            page=1,
+            caption="Table 4.2: Ports seen",
+        ),
+    ]
+    write_book(Book(title="Wide", blocks=blocks), folder, [])
+    return folder
+
+
+def test_a_wide_table_keeps_its_caption_and_footnote_as_text_beside_its_image(
+    tmp_path, captioned_table
+):
+    z, findings = build_book(tmp_path, captioned_table, "x4")
+    root = ET.fromstring(xhtml(z)["OEBPS/text/ch001.xhtml"])
+    figure = root.find(".//h:figure", NS)
+    assert figure.find("h:img", NS).get("alt") == "table"
+    assert figure.findtext("h:figcaption", namespaces=NS) == "Table 4.2: Ports seen"
+    assert root.find(".//h:table", NS) is None
+    assert "Source: lab, week 3" in "".join(root.itertext())
+    assert [f.kind for f in findings] == ["table_as_image"]
+
+
+def test_general_keeps_the_caption_inside_the_table(tmp_path, captioned_table):
+    z, findings = build_book(tmp_path, captioned_table, "general")
+    root = ET.fromstring(xhtml(z)["OEBPS/text/ch001.xhtml"])
+    table = root.find(".//h:table", NS)
+    assert table[0].tag == tag("caption") and table[0].text == "Table 4.2: Ports seen"
+    assert "Source: lab, week 3" in "".join(root.itertext())
+    assert findings == []
+
+
 def test_missing_table_image_keeps_the_table(tmp_path):
     md = "# A\n\n<!-- table-image: gone.png -->\n<table><tr>" + "<td>x</td>" * 6 + "</tr></table>\n"
     z, findings = build(tmp_path, md, "x4")
