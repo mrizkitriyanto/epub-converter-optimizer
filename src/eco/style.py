@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from functools import lru_cache
 from pathlib import Path
 
@@ -31,13 +31,17 @@ RANGES: dict[str, tuple[int, int]] = {
     "font_size": (16, 64),
     "line_height": (100, 250),  # percent
     "margin": (0, 80),
+    "margin_x": (0, 80),
+    "margin_y": (0, 80),
+    "paragraph_spacing": (0, 300),
+    "first_line_indent": (0, 400),
     "dither_strength": (0, 100),
     "bar_font_size": (8, 32),
     "bar_edge_margin": (0, 40),
     "bar_side_margin": (0, 80),
 }
 CHOICES: dict[str, tuple] = {
-    "align": ("justify", "left"),
+    "align": ("justify", "left", "center"),
     "mode": ("xth", "xtg"),
     "bar_position": ("bottom", "top", "off"),
     "orientation": (0, 90, 180, 270),
@@ -55,7 +59,11 @@ class PageStyle:
     font_size: int = 32
     font_weight: int = 400
     line_height: int = 135
-    margin: int = 16
+    margin: int = field(default=16, compare=False)  # legacy constructor input
+    margin_x: int = 16
+    margin_y: int = 16
+    paragraph_spacing: int = 120
+    first_line_indent: int = 0
     align: str = "justify"
     hyphenate: bool = True
     lang: str = "auto"
@@ -80,6 +88,9 @@ class PageStyle:
     def __post_init__(self):
         """Everything but the family and its weights: those depend on the uploaded fonts of the
         job, so `from_json` takes them."""
+        if self.margin != 16 and self.margin_x == self.margin_y == 16:
+            object.__setattr__(self, "margin_x", self.margin)
+            object.__setattr__(self, "margin_y", self.margin)
         for f in fields(self):
             value, name = getattr(self, f.name), f.name
             if name in RANGES:
@@ -102,6 +113,16 @@ class PageStyle:
         right."""
         if not isinstance(d, dict):
             raise ValueError("style must be an object")  # noqa: TRY004
+        if "margin" in d:
+            low, high = RANGES["margin"]
+            if not (_whole(d["margin"]) and low <= d["margin"] <= high):
+                raise ValueError(f"margin must be a whole number from {low} to {high}")
+            d = {
+                **d,
+                "margin_x": d.get("margin_x", d["margin"]),
+                "margin_y": d.get("margin_y", d["margin"]),
+            }
+            del d["margin"]
         names = {f.name for f in fields(cls)}
         for key in d:
             if key not in names:
@@ -115,7 +136,9 @@ class PageStyle:
         return style
 
     def to_json(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        del result["margin"]
+        return result
 
 
 @lru_cache(maxsize=1)

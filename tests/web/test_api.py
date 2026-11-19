@@ -552,7 +552,9 @@ def test_a_job_of_m2_is_shown_and_rebuilt_with_its_font_size_in_the_style(tmp_pa
 
 def test_missing_options_mean_the_defaults(tmp_path):
     job = post(client(tmp_path), ("a.md", b"# A")).json()
-    assert job["options"] == {**asdict(Options()), "formats": ["epub"]}
+    assert job["options"] == {
+        **asdict(Options()), "formats": ["epub"], "style": PageStyle().to_json()
+    }
 
 
 def test_options_may_come_after_the_files(tmp_path):
@@ -613,7 +615,7 @@ BAD_OPTIONS = [
         {"style": {"font": "Comic Sans"}},
         "font must be a bundled font, Libertinus Serif or an uploaded font",
     ),
-    ({"style": {"align": "right"}}, "align must be one of: justify, left"),
+    ({"style": {"align": "right"}}, "align must be one of: justify, left, center"),
     ({"style": {"dither": "yes"}}, "dither must be true or false"),
     ({"style": [1]}, "style must be an object"),
     ({"style": None}, "style must be an object"),

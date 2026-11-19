@@ -390,8 +390,8 @@ def _bar(style: PageStyle, width: int, height: int) -> tuple[str, str]:
         return "", ""
     top = style.bar_position == "top"
     edge, side, size = style.bar_edge_margin, style.bar_side_margin, style.bar_font_size
-    origin_x = style.margin
-    origin_y = 0 if top else height - style.margin - _bar_area(style)
+    origin_x = style.margin_x
+    origin_y = 0 if top else height - style.margin_y - _bar_area(style)
     row_w = width - 2 * side
     line_x, line_w = (0, width) if style.bar_full_width else (side, row_w)
 
@@ -492,18 +492,20 @@ class _Converter:
         first one."""
         s = self.style
         width, height = self._page_size()
-        top = s.margin + self.bar_area * (s.bar_position == "top")
-        bottom = s.margin + self.bar_area * (s.bar_position == "bottom")
+        top = s.margin_y + self.bar_area * (s.bar_position == "top")
+        bottom = s.margin_y + self.bar_area * (s.bar_position == "bottom")
         bar, bar_arguments = _bar(s, width, height)
         return (
             f"{bar}"
             f"#set page(width: {width}pt, height: {height}pt, "
-            f"margin: (x: {s.margin}pt, top: {top}pt, bottom: {bottom}pt){bar_arguments})\n"
+            f"margin: (x: {s.margin_x}pt, top: {top}pt, bottom: {bottom}pt){bar_arguments})\n"
             f'#set text(font: "{_str(s.font)}", weight: {int(s.font_weight)}, '
             f'size: {s.font_size}pt, lang: "{_str(self._lang())}", '
             f"hyphenate: {str(s.hyphenate).lower()})\n"
             f"#set par(justify: {str(s.align == 'justify').lower()}, "
-            f"leading: {(s.line_height - 100) / 100:g}em)\n"
+            f"leading: {(s.line_height - 100) / 100:g}em"
+            f"{f', spacing: {s.paragraph_spacing / 100:g}em' if s.paragraph_spacing != 120 else ''}"
+            f"{f', first-line-indent: {s.first_line_indent / 100:g}em' if s.first_line_indent else ''})\n"
             "#set smartquote(enabled: false)\n"
             '#show raw: set text(font: "DejaVu Sans Mono", size: 0.62em)\n'
             f"{self._raw_wrap()}\n"
@@ -515,7 +517,7 @@ class _Converter:
     def _raw_wrap(self) -> str:
         """A raw line that is wider than the page runs past the edge. Zero-width spaces between the
         characters of any run of `fit` characters or more let it wrap at the page edge."""
-        width = self._page_size()[0] - 2 * self.style.margin
+        width = self._page_size()[0] - 2 * self.style.margin_x
         fit = max(8, int(width / (_MONO_EM * _RAW_EM * self.style.font_size)))
         return (
             "#show raw: it => {\n"
@@ -578,7 +580,8 @@ class _Converter:
         if kind == "heading_open":
             return self._heading(int(token.tag[1]), inner[0], nested)
         if kind == "paragraph_open":
-            return self._inline(inner[0].children or [])
+            text = self._inline(inner[0].children or [])
+            return f"#align(center)[{text}]" if self.style.align == "center" else text
         if kind in ("bullet_list_open", "ordered_list_open"):
             return self._list(token, inner)
         if kind == "blockquote_open":
@@ -708,8 +711,8 @@ class _Converter:
         image and its caption fit on one page body."""
         s = self.style
         page_w, page_h = self._page_size()
-        body_w = page_w - 2 * s.margin
-        body_h = page_h - 2 * s.margin - self.bar_area
+        body_w = page_w - 2 * s.margin_x
+        body_h = page_h - 2 * s.margin_y - self.bar_area
         reserve = 0.0
         if caption:
             lines = math.ceil(len(caption) / max(1, int(body_w / (s.font_size * _GLYPH_EM))))

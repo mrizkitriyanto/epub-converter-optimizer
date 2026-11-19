@@ -249,7 +249,9 @@ class JobStore:
     ) -> JobInfo:
         job = job or self.reserve()
         try:
-            info = JobInfo(job.name, "queued", time.time(), asdict(options), fill(job / "input"), 0)
+            stored_options = asdict(options)
+            stored_options["style"] = options.style.to_json()
+            info = JobInfo(job.name, "queued", time.time(), stored_options, fill(job / "input"), 0)
             self.save(info)
         except BaseException:
             shutil.rmtree(job, ignore_errors=True)

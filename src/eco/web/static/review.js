@@ -3,7 +3,9 @@ import { apply, findingParts, isConverted } from './job.js';
 
 const STYLE_IDS = {
   font: 'font', font_size: 'style-font-size', font_weight: 'font-weight', line_height: 'line-height',
-  margin: 'margin', align: 'align', hyphenate: 'hyphenate', lang: 'style-lang', mode: 'color-mode',
+  margin_x: 'margin-x', margin_y: 'margin-y', paragraph_spacing: 'paragraph-spacing',
+  first_line_indent: 'first-line-indent', align: 'align', hyphenate: 'hyphenate',
+  lang: 'style-lang', mode: 'color-mode',
   dither: 'dither', dither_strength: 'dither-strength', negative: 'negative', bar_position: 'bar-position',
   bar_line: 'bar-line', bar_page: 'bar-page', bar_book_percent: 'bar-book-percent',
   bar_chapter_page: 'bar-chapter-page', bar_chapter_percent: 'bar-chapter-percent',
@@ -16,7 +18,8 @@ const STYLE_FLAGS = new Set([
   'bar_chapter_page', 'bar_chapter_percent', 'bar_chapter_title', 'bar_chapter_marks', 'bar_full_width',
 ]);
 const STYLE_NUMBERS = new Set([
-  'font_size', 'font_weight', 'line_height', 'margin', 'dither_strength', 'bar_font_size',
+  'font_size', 'font_weight', 'line_height', 'margin_x', 'margin_y', 'paragraph_spacing',
+  'first_line_indent', 'dither_strength', 'bar_font_size',
   'bar_edge_margin', 'bar_side_margin', 'orientation',
 ]);
 

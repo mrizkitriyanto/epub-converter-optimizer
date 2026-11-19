@@ -34,7 +34,10 @@ def test_every_default_of_the_table():
         "font_size": 32,
         "font_weight": 400,
         "line_height": 135,
-        "margin": 16,
+        "margin_x": 16,
+        "margin_y": 16,
+        "paragraph_spacing": 120,
+        "first_line_indent": 0,
         "align": "justify",
         "hyphenate": True,
         "lang": "auto",
@@ -95,7 +98,11 @@ def test_weights():
 )
 def test_a_number_takes_its_whole_range_and_nothing_else(name, low, high):
     for ok in (low, high):
-        assert getattr(PageStyle.from_json({name: ok}), name) == ok
+        style = PageStyle.from_json({name: ok})
+        if name == "margin":
+            assert (style.margin_x, style.margin_y) == (ok, ok)
+        else:
+            assert getattr(style, name) == ok
     for bad in (low - 1, high + 1, True, "32", 32.0, 32.5, None, [32]):
         with pytest.raises(ValueError, match=f"{name} must be a whole number from {low} to {high}"):
             PageStyle.from_json({name: bad})

@@ -246,8 +246,11 @@
             <div class="field stack"><label for="font-weight">{{ strings.font_weight_label }}</label><select id="font-weight"></select></div>
             <div class="field stack"><label for="style-font-size">{{ strings.live_font_label }}</label><input id="style-font-size" type="number" min="16" max="64" step="1"></div>
             <div class="field stack"><label for="line-height">{{ strings.line_height_label }}</label><input id="line-height" type="number" min="100" max="250" step="1"></div>
-            <div class="field stack"><label for="margin">{{ strings.margin_label }}</label><input id="margin" type="number" min="0" max="80" step="1"></div>
-            <div class="field stack"><label for="align">{{ strings.align_label }}</label><select id="align">{{ choices([("justify", strings.align_justify), ("left", strings.align_left)]) }}</select></div>
+            <div class="field stack"><label for="margin-x">{{ strings.margin_x_label }}</label><input id="margin-x" type="number" min="0" max="80" step="1"></div>
+            <div class="field stack"><label for="margin-y">{{ strings.margin_y_label }}</label><input id="margin-y" type="number" min="0" max="80" step="1"></div>
+            <div class="field stack"><label for="paragraph-spacing">{{ strings.paragraph_spacing_label }}</label><input id="paragraph-spacing" type="number" min="0" max="300" step="1"></div>
+            <div class="field stack"><label for="first-line-indent">{{ strings.first_line_indent_label }}</label><input id="first-line-indent" type="number" min="0" max="400" step="1"></div>
+            <div class="field stack"><label for="align">{{ strings.align_label }}</label><select id="align">{{ choices([("justify", strings.align_justify), ("left", strings.align_left), ("center", strings.align_center)]) }}</select></div>
             <label class="check"><input id="hyphenate" type="checkbox"> {{ strings.hyphenate_label }}</label>
             <div class="field stack"><label for="style-lang">{{ strings.style_lang_label }}</label><input id="style-lang" type="text" maxlength="3" autocomplete="off"></div>
           </fieldset>
