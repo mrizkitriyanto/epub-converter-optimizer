@@ -5,7 +5,8 @@ two-column page into a grid whose rows pair entries of both columns. On a page w
 the entries are read again from that layer, one entry per line. The text runs are grouped into
 lines by their height on the page; a page is read in columns only where its text has a gutter
 (`_gutter`), and then a full-width line ends the columns above it, which are read left column
-first. Otherwise the lines are read top to bottom, each left to right."""
+first; on a contents page a chapter number set apart does too (agent decision Q-28). Otherwise
+the lines are read top to bottom, each left to right."""
 
 import re
 import statistics
@@ -27,6 +28,7 @@ _ALIGN = 1.0  # pt: lines whose text starts this close together start a column
 # less the gutter is 0.35 or more on Threat Hunting and the fixtures, and the first of three
 # columns about 0.3. A column of labels beside their titles ("Chapter 1") spans 0.1 to 0.15.
 _COLUMN = 0.2
+_CHAPTER = 1.25  # a chapter number is at least this many times as high as the median text
 _ROMAN = re.compile(r"m{0,3}(c[md]|d?c{0,3})(x[cl]|l?x{0,3})(i[xv]|v?i{0,3})")
 _LEADER = r"(?:[.\u00b7\u2026]\s*){4,}"  # a dot leader: four dots or more; "What next..." has three
 _NUMBER_RUN = re.compile(rf"({_LEADER})?(\d+|[ivxlcdm]+)")
@@ -123,9 +125,24 @@ def _numbered(part: list[_Run]) -> bool:
     return bool(found and _page_number(found[2]))
 
 
-def _chapter_start(row: list[_Run], x: float) -> bool:
-    """A chapter number alone at the left starts a new two-column chapter zone."""
-    return len(row) == 1 and row[0].left < x - _EDGE and row[0].text.isdigit()
+def _chapter_starts(rows: list[list[_Run]], x: float, gap: float) -> set[int]:
+    """The indexes of the lines that start a numbered chapter zone (agent decision Q-28): a number
+    alone in its line left of the right column's edge `x`, and clearly a chapter number, at least
+    `_CHAPTER` times as high as the median text `gap` (Threat Hunting's chapter numbers are 1.3 to
+    1.7 times as high as its text). None when a line whose left part is only numbers has a run of
+    the right column level with it: the numbers are not set apart then, as on a page where a
+    chapter's entries flow on at the top of the next column."""
+    right = [run for row in rows for run in row if run.left >= x - _EDGE]
+    alone = []
+    for index, row in enumerate(rows):
+        left = [r for r in row if r.left < x - _EDGE]
+        if not left or not all(r.text.isdigit() for r in left):
+            continue
+        top, bottom = min(r.top for r in left), max(r.bottom for r in left)
+        if any(min(r.bottom, bottom) > max(r.top, top) for r in right):
+            return set()
+        alone.append(index)
+    return {i for i in alone if len(rows[i]) == 1 and rows[i][0].height >= _CHAPTER * gap}
 
 
 def _gutter(runs: list[_Run], width: float) -> tuple[float, float, float] | None:
@@ -194,8 +211,9 @@ def _reading_order(
     runs: list[_Run], width: float, *, chapter_starts: bool = False
 ) -> list[list[_Run]]:
     """The lines of `runs` in reading order, on a page `width` wide. In columns a full-width line
-    ends the columns above it, which are read left column first; each column is read the same
-    way, so a third column is found inside the second."""
+    ends the columns above it, which are read left column first; with `chapter_starts` so does a
+    chapter number set apart (`_chapter_starts`). Each column is read the same way, so a third
+    column is found inside the second."""
     found = _gutter(runs, width)
     if found is None:
         return _rows(runs)
@@ -203,8 +221,10 @@ def _reading_order(
     lines: list[list[_Run]] = []
     left: list[_Run] = []
     right: list[_Run] = []
-    for row in _rows(runs):
-        if _full_width(row, x, gap, start) or (chapter_starts and _chapter_start(row, x)):
+    rows = _rows(runs)
+    starts = _chapter_starts(rows, x, gap) if chapter_starts else set()
+    for index, row in enumerate(rows):
+        if _full_width(row, x, gap, start) or index in starts:
             lines += _reading_order(left, width) + _reading_order(right, width) + [row]
             left, right = [], []
         else:
@@ -263,14 +283,10 @@ def rebuild_contents(
             continue
         info = pages.get(block.page)
         readable = info is not None and not info.is_scanned and block.bbox is not None
+        runs = _runs(pdf, info, block.bbox) if readable else []
+        # chapter zones belong to contents; the letter headings of an index sit inside a column
         lines = (
-            _reading_order(
-                _runs(pdf, info, block.bbox),
-                info.width,
-                chapter_starts=block.page <= last / 2,
-            )
-            if readable
-            else []
+            _reading_order(runs, info.width, chapter_starts=block.page <= last / 2) if runs else []
         )
         if not lines:
             out.append(replace(block, kind="table"))

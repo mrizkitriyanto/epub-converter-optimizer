@@ -228,6 +228,43 @@ def test_numbered_chapter_zones_finish_both_columns_before_the_next_chapter(fixt
     ]
 
 
+@pytest.mark.parametrize(
+    "page, box, lines",
+    [
+        # newspaper flow: chapter 4's entries go on at the top of the right column, level with
+        # the "3", so the chapter numbers do not stand alone and the columns are read in turn
+        (
+            1,
+            (62, 92, 548, 290),
+            ["3", "Team Construct", "Roles performed within a team", "Team lead"]
+            + ["Summary of roles", "4", "Communication Breakdown", "Internal team communication"]
+            + ["Talking to stakeholders", "Scenario A", "Scenario B", "Review questions"],
+        ),
+        # a page number alone on its line is no taller than the text: no chapter number
+        (
+            2,
+            (62, 92, 548, 210),
+            ["Alpha steps", "Beta steps", "Gamma steps", "Detecting lateral movement with"]
+            + ["remote services", "12", "Delta steps", "Zeta notes", "Eta notes", "Theta notes"],
+        ),
+        # in the back half (an index) chapter zones are read as plain columns
+        (
+            4,
+            (62, 92, 548, 280),
+            ["3", "Team Construct", "Roles performed within a team", "Team lead", "4"]
+            + ["Communication Breakdown", "Internal team communication"]
+            + ["Communicating with stakeholders", "Ways to organize a team", "Summary"]
+            + ["Scenario A", "Review questions"],
+        ),
+    ],
+)
+def test_a_number_alone_starts_a_chapter_zone_only_when_it_is_clearly_a_chapter_number(
+    fixtures_dir, page, box, lines
+):
+    out = rebuilt(fixtures_dir["chapter_layouts"], page, box)
+    assert [text for _, text in out] == lines
+
+
 def test_contents_py_holds_no_invisible_character():
     # a literal U+FFFE that an editor drops would make `.replace("", "-")` of the hyphen marker
     source = Path(contents.__file__).read_text(encoding="utf-8")
