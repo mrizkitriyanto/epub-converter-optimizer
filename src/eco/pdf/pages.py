@@ -131,9 +131,31 @@ def pdf_metadata(path: Path) -> dict[str, str]:
     return {key: value.strip() for key, value in values.items() if value.strip()}
 
 
+def page_count(path: Path) -> int:
+    """The number of pages, without reading any of them."""
+    with _open(path) as pdf:
+        return len(pdf)
+
+
 def render_page(path: Path, page: int, scale: float = 2.0, grayscale: bool = False) -> Image.Image:
     with _open(path) as pdf:
         image = pdf[page - 1].render(scale=scale, grayscale=grayscale).to_pil()
+    image.load()
+    return image
+
+
+def render_page_fit(path: Path, page: int, width: int, max_height: int) -> Image.Image:
+    """Page `page` drawn `width` px wide, or smaller when that would make it more than
+    `max_height` px tall: a page 1 pt wide and 14,400 pt tall is not drawn 8,640,000 px tall (PDFium
+    refuses a bitmap that size), so the picture of any page stays bounded."""
+    with _open(path) as pdf:
+        try:
+            pdf_page = pdf[page - 1]
+            w, h = pdf_page.get_size()
+            scale = min(width / max(w, 1.0), max_height / max(h, 1.0))
+            image = pdf_page.render(scale=scale).to_pil()
+        except pdfium.PdfiumError as error:
+            raise PdfOpenError(f"Page {page} cannot be drawn: {path.name}") from error
     image.load()
     return image
 

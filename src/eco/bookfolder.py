@@ -182,23 +182,30 @@ def _render(block: Block, delimiter: str = ".") -> str:
             )
         return f"![{_md(alt)}]({block.image})"
     if block.kind == "heading":
-        return "#" * min(max(block.level, 1), 6) + " " + _md(" ".join(block.text.split()))
+        title = _md(" ".join(block.text.split()), block.markdown)
+        return "#" * min(max(block.level, 1), 6) + " " + title
     if block.kind == "list_item":
         start = "- " if block.number is None else f"{block.number}{delimiter} "
-        return start + _md(block.text).replace("\n", "\n" + " " * len(start))
+        return start + _md(block.text, block.markdown).replace("\n", "\n" + " " * len(start))
     if block.kind == "code":
         return _fenced(block.text)
-    return _md(block.text)  # paragraph, plus kinds the format does not list
+    return _md(block.text, block.markdown)  # paragraph, plus kinds the format does not list
 
 
 def _footnote(text: str) -> str:
     return f'<p class="footnote">{html.escape(" ".join(text.split()))}</p>'
 
 
-def _md(text: str) -> str:
+def escape_md(text: str) -> str:
+    """Backslash the characters Markdown reads as markup, for text inside a line."""
+    return _MD_SPECIAL.sub(r"\\\g<0>", text)
+
+
+def _md(text: str, escaped: bool = False) -> str:
+    """`escaped` text is Markdown already (see Block.markdown): only its line starts are guarded."""
     lines = []
     for line in text.split("\n"):
-        line = _MD_SPECIAL.sub(r"\\\g<0>", line.strip())
+        line = line.strip() if escaped else escape_md(line.strip())
         line = _LINE_START_LIST.sub(r"\1\\\2", line)
         lines.append(_LINE_START_MARK.sub(r"\\\g<0>", line))
     return "\n".join(lines)

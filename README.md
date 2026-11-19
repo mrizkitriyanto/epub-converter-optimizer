@@ -2,9 +2,9 @@
 
 [Bahasa Indonesia](README.id.md)
 
-eco converts PDF and Markdown files to EPUB. It tunes the result for Xteink e-readers (X4, X4 Pro, X4 v2 Classic, X3) and for general e-readers. It can reflow text, keep fixed pages, run OCR on scanned PDFs, and shrink images and file size.
+eco converts PDF and Markdown files to EPUB and optimizes EPUB files. It tunes the result for Xteink e-readers (X4, X4 Pro, X4 v2 Classic, X3) and for general e-readers. It can reflow text, keep fixed pages, run OCR on scanned PDFs, and shrink images and file size.
 
-Today it is a command-line tool. A web GUI and XTC output are planned.
+eco is a command-line tool with a web GUI that runs on your own computer. XTC output is planned.
 
 ## Requirements
 
@@ -56,9 +56,44 @@ Extract a PDF to an editable Markdown book folder (`book.book/`) without buildin
 eco extract book.pdf -o out/
 ```
 
+## Web GUI
+
+```bash
+eco web
+```
+
+This starts a local server and opens `http://127.0.0.1:8000/` in your browser. Add PDF, Markdown or EPUB files (up to 200 per upload), choose the device and the settings, and start. Progress shows the stage and the page, and you can cancel a running conversion. Review shows the findings next to the original page and a preview of the e-reader page. A click on a finding moves both. "Change settings" converts again with other settings; a PDF is not read again. Then download the EPUBs. Everything is processed on this computer. The page is in English only.
+
+Options of `eco web`:
+
+- `--host ADDRESS`: address to listen on. The default is `127.0.0.1`, this computer only. See "Network access" below.
+- `--port N`: port to listen on (default 8000).
+- `--token TOKEN`: access token, at least 16 characters, each one of A-Z, a-z, 0-9, `-` or `_`. `ECO_TOKEN` does the same.
+- `--max-upload-mb MB`: largest upload in MiB, for all files of one upload together, a whole number above 0 (default 500).
+- `--no-browser`: do not open a browser. The address is printed as `Open: ...`.
+- `--data DIR`: data folder for the models and the jobs (default: `ECO_DATA` or the app folder).
+
+If the AI models are missing, the first page asks for them (about 417 MB: layout 172 MB, tables 213 MB, OCR 32 MB). It downloads them only after you click "Download models". "Continue without models" skips this: Markdown, EPUB and PDF files with Layout set to "Page images" convert without models.
+
+Converted files stay in the data folder as jobs, so the page can list them as recent conversions. Jobs are deleted after 7 days (checked every hour while the server runs). To delete one sooner, with its uploads, EPUB files and previews, open it and click "Delete conversion" in Review (cancel a conversion that is still running first). One `eco web` can run per data folder; a second one stops with an error.
+
+### Network access
+
+An address other than `127.0.0.1`, `localhost` or `::1` needs a token. Without `--token`, eco makes one up and prints it:
+
+```bash
+eco web --host 0.0.0.0
+```
+
+It prints `Open: http://127.0.0.1:8000/?token=...`, the address for this computer, and a line saying that another device uses this computer's network address in place of `127.0.0.1` (for example `http://192.168.1.20:8000/?token=...`). A request without the token gets 401. The first request with `?token=` sets a cookie, and the page removes the token from the address bar. The connection is plain HTTP, so use it only on a network you trust. Some limits to know:
+
+- A `?token=` link opened from another website shows 401 once, because the cookie is `SameSite=Strict`. Reload the page, or paste the link.
+- The `eco_token` cookie belongs to the host, not the port. Other HTTP services on the same host receive it over plain HTTP.
+- The page removes the token from the address bar, but the first address can stay in the browser's history and autocomplete, and on the command line that opened the browser.
+
 ## Privacy
 
-Conversion never uses the network. Only `eco setup` downloads models, and only after it asks. Models load only as data formats (`.safetensors`, `.onnx`, `.npz`); pickle files are rejected. Dependencies are hash-locked and checked against a vulnerability database in CI.
+Conversion never uses the network. Only `eco setup` and the "Download models" button of `eco web` download models, and only after you agree. Models load only as data formats (`.safetensors`, `.onnx`, `.npz`); pickle files are rejected. Dependencies are hash-locked and checked against a vulnerability database in CI.
 
 ## License
 

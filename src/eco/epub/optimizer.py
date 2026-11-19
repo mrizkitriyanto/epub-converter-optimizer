@@ -20,7 +20,7 @@ from PIL import Image
 from eco.epub.css import rewrite_css
 from eco.epub.images import ImageResult, transform_image
 from eco.epub.split import anchors, split_document
-from eco.epub.zipio import write_epub_zip
+from eco.epub.zipio import check_expansion, write_epub_zip
 from eco.events import Finding
 from eco.options import CHAPTER_LIMIT_BYTES, DEVICES, Options, image_profile
 
@@ -279,7 +279,10 @@ class _Package:
         self.dropped = 0
         self.small: set[str] = set()  # images removed for being too small to see
         self._read(src)
-        self._load()
+        try:
+            self._load()
+        except RecursionError as exc:  # XML nested thousands of levels deep
+            raise self._unreadable() from exc
 
     def _note(self, kind: str, level: str, message: str) -> None:
         self.findings.append(Finding(0, kind, level, message))
@@ -291,6 +294,7 @@ class _Package:
         unsafe = 0
         try:
             with zipfile.ZipFile(src) as z:
+                check_expansion(z, self.name)
                 infos = [info for info in z.infolist() if not info.is_dir()]
                 # zipfile reads no more than the size an entry declares, so this bounds memory
                 big = max((info.file_size for info in infos), default=0) > _MAX_ENTRY
@@ -306,7 +310,10 @@ class _Package:
                     if _unsafe_name(info.filename):
                         unsafe += 1
                     else:
-                        self.files[info.filename] = z.read(info)
+                        # a bounded read: z.read(info) lets one decompress call run to 1 GiB when
+                        # the directory understates the size
+                        with z.open(info) as entry:
+                            self.files[info.filename] = entry.read(info.file_size)
         except (zipfile.BadZipFile, zlib.error, RuntimeError, NotImplementedError) as exc:
             raise self._unreadable() from exc
         if unsafe:

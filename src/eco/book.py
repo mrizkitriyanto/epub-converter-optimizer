@@ -26,6 +26,7 @@ class Block:
     image: str = ""  # path relative to the book folder
     caption: str = ""
     ocr: bool = False
+    markdown: bool = False  # text is Markdown that is already escaped (the EPUB reader)
     number: int | None = None  # a list item's own number (0 too), when its marker was a plain one
 
 

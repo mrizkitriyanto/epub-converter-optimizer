@@ -275,7 +275,7 @@ def extract_pdf(
     return folder
 
 
-def _page_book(
+def page_book(
     pdf: Path,
     options: Options,
     folder: Path,
@@ -345,7 +345,7 @@ def convert_file(
             built = path
         else:
             if kind == "pdf" and options.mode == "pages":
-                source_path = _page_book(
+                source_path = page_book(
                     path, options, scratch / "pages.book", on_event, cancel, findings
                 )
             elif kind == "pdf":

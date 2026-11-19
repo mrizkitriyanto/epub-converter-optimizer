@@ -377,6 +377,434 @@ error for either.
   skips the test, so the public repo holds no book text. On Windows the models folder is linked into
   each fresh data folder with a junction, which needs no admin rights.
 
+## 2026-11-18: Web jobs: worker process, end status, restart, upload names (M2-R4, M2-R10)
+
+- Each job runs in a fresh `spawn` worker process; the runner thread converts one job at a time,
+  first in first out. `Runner(worker=...)` defaults to `_work`, looked up when the Runner is made,
+  so a test swaps `jobs._work` for a module-level fake that the spawned child imports by name.
+  Cancel is `terminate()`, `join(5)`, `kill()`, `join(5)`; the worker is the base interpreter
+  itself (multiprocessing skips the venv launcher, bpo-35797) and eco's conversion starts no other
+  process, so nothing outlives it. If it turns out wrong: a library that starts its own process
+  needs a Windows job object or a POSIX process group.
+- A file that fails gets `JobFile.error` and the next file goes on. A job ends `done` if any file
+  converted, else `failed`; `cancelled` only by Cancel. A worker that dies without its `end` event
+  gives its unconverted files `The conversion stopped unexpectedly (exit code N).`
+- When the server stops, or a new server finds a job left `running`, that job is not run again: its
+  unconverted files get `The server stopped before this file was converted.` and it ends by the
+  rule above. Jobs left `queued` never started, so they keep their place, oldest first. `purge`
+  skips only `running` jobs. If it turns out wrong: an interrupted job is rebuilt by hand.
+- Outputs are converted into the worker's `tmp/` and moved into `output/` under the upload's name
+  (`output_path`, never the name of an earlier output), so `output/` never holds half a file.
+- Upload names (M2-R10, plus): besides the ruling's rules, a Windows device name (`nul.pdf`) gets a
+  `_` in front, because the output is named after the upload, and a name is cut to 120 characters,
+  type kept, so the paths stay under Windows' 260. If it turns out wrong: an odd stored name.
+
+## 2026-11-18: Web app guard and `eco web` (M2-R11)
+
+- One ASGI layer, `_Guard`, sits outside all of FastAPI's own middleware (`build_middleware_stack`
+  of a FastAPI subclass), so it runs before routing and every response passes it, the 500 of an
+  unhandled error too. It sets CSP, nosniff and no-referrer on every response.
+- Local mode (no token): a request must be addressed to `127.0.0.1`, `localhost` or `[::1]` with
+  the port the server listens on (the ASGI `server` address; no port only when that is 80), else
+  403. This stops DNS rebinding. Network mode (a token): `Authorization: Bearer` or the
+  `eco_token` cookie, compared as bytes with `hmac.compare_digest`, else 401 on every path;
+  `GET /?token=` sets an `HttpOnly; SameSite=Strict; Path=/` session cookie and redirects to `/`.
+  Both modes refuse a POST, PUT, PATCH or DELETE whose `Origin` is not `<scheme>://<Host>`: 403.
+  If it turns out wrong: a reverse proxy in front of a loopback server must use network mode.
+- `eco web` treats only `127.0.0.1`, `localhost` and `::1` as this computer. Any other `--host`,
+  `127.0.0.2` too, gets a token (`--token`, else `ECO_TOKEN`, else `secrets.token_urlsafe(24)`).
+  For `0.0.0.0` and `::` the browser opens at `127.0.0.1` or `[::1]`, which a browser can reach;
+  it opens after 1 s so the server already listens, and not at all if the server stopped first.
+- FastAPI's `/docs`, `/redoc` and `/openapi.json` are off: their pages load scripts from a CDN.
+
+## 2026-11-18: One server per data folder; no framing (M2-R12, M2-R13)
+
+- uvicorn runs the app's startup before it binds the port, so a second `eco web` on the same data
+  folder used to run `purge()` and `runner.start()` before it failed, and settled the first
+  server's running job as stopped. Now `server_lock(data)` holds an OS lock on
+  `<data>/jobs/server.lock` (msvcrt on Windows, flock elsewhere; it ends with the process, so a
+  crash leaves no stale lock). The app's lifespan holds it around purge, start and the whole run;
+  `eco web` tries it first, so a second server prints `error: Another eco web is already using
+  <data>` and exits 1 before it starts. Two `eco web` started at the same instant: the loser
+  passes the first try and its lifespan fails (uvicorn's startup error, exit 3), still before it
+  touches a job. Only a held lock gives that message; any other lock error is shown as it is.
+  If it turns out wrong: a file system without locks (some network shares) stops `eco web` with
+  the OS's error.
+- Every response also carries `X-Frame-Options: DENY`, so no other site can frame the app. The
+  plan's CSP string stays exactly as it is.
+
+## 2026-11-18: The guard refuses websockets; `eco web` tokens are strong (M2-R14)
+
+- `_Guard` lets only `lifespan` and `http` scopes reach the app. A `websocket` scope is closed
+  with code 1008 before any route, whatever its Host or token: the GUI uses SSE, and a websocket
+  route would otherwise skip the Host, token and Origin checks. Any other scope type is dropped.
+  If a later task wants a websocket: give it the same checks in the guard first.
+- A token given to `eco web` (`--token` or `ECO_TOKEN`, local or network mode) must be at least 16
+  characters, each one of `A-Z a-z 0-9 - _`. Otherwise `eco web` prints `error: The token must
+  be at least 16 characters, each one of A-Z, a-z, 0-9, - or _.` and exits 2 before it makes the
+  data folder. An empty value still means no token. Such a token is URL-safe as it is, so the
+  printed `?token=` needs no quoting, and it is ASCII, so a Bearer header carries it (Starlette
+  reads headers as latin-1). `create_app` itself takes any token. There is no rate limit on 401;
+  16 characters of that alphabet are what keeps an online guess from the LAN out of reach.
+  A token that starts with `-` must be written `--token=-...` (argparse).
+
+## 2026-11-18: Jobs API: streamed uploads, one error shape, no paths of the server (M2-R15)
+
+- An upload is read with python-multipart's own parser (`_Upload`), and each file is written, as it
+  arrives, into a folder that `JobStore.reserve()` made. Starlette's form parser is not used: it
+  writes every file to a temporary file before the route runs, so a limit could only be checked
+  after the whole upload was on the disk. The limit (`--max-upload-mb`; 1 MB is 1 MiB) is for all
+  the files of a request together, and it is checked before each write, so the disk never holds a
+  byte over it. A `Content-Length` of more than the limit plus 1 MiB (what framing and the options
+  may take) is refused with 413 before the body is read. A body that goes over the limit, or over
+  that sum with other parts, while it arrives is refused at that moment, and the folder is
+  deleted. A folder without a job.json (the server died in the middle) is no job, and the next
+  start removes it (M2-R18). If it turns out wrong: a client whose framing is over 1 MiB is
+  refused; raise `_OVERHEAD`.
+- The type check is by suffix and case does not matter. The 400 message names the file as it was
+  uploaded. The `options` field is JSON, before or after the files. An unknown key, a value of the
+  wrong kind, or a `font_size` that is not a whole number from 8 to 96 is 422 (`font_size` goes
+  into Typst source, and `Options` does not check it); a device or the like that does not exist
+  gives the message of `Options`. Nothing posted gives the defaults, and a blank title, author or
+  language is not set. The `options` of a job as the API shows it can be posted back as they are.
+- No path of the server leaves through the API. A job shows names, indexes, sizes, options,
+  positions and errors. A file's `outputs` (format to name) and `sizes` (format to bytes) are what
+  its `file` event shows too, so the page reads both the same way; the event has no `book_dir`.
+  In an error text the data folder is `<data>`. A path outside the data folder in an error text
+  is not cut out. If it turns out wrong: a path leaks that way, cut it in `_scrubber`.
+- Every error is `{"error": "<plain English>"}`: FastAPI's own 404, 405 and 422, and a 500 too.
+  Cancel answers 202 with the job, or 409 when the job has finished. A rebuild takes the options as
+  JSON (none means the defaults) and answers 201 with the new job. A download has a
+  `Content-Disposition` with the name in ASCII and in UTF-8 (M2-R19); `{n}` is a plain decimal
+  index, `{fmt}` is only looked up in the job's outputs, and the file must lie in the job's
+  `output/` folder.
+- An event stream subscribes in its own generator and unsubscribes in `finally`, so a client that
+  goes, a job that never ends and a response that the server cancels leave no queue behind. It
+  looks at its queue every 50 ms: the queue is the runner thread's. It also ends when the server
+  is asked to stop (M2-R16).
+
+## 2026-11-18: Prompt shutdown, file cap, hourly expiry, download name fallback (M2-R16 to M2-R19)
+
+- M2-R16: uvicorn waits for the responses in flight before it stops, and an event stream does not
+  end by itself, so Ctrl+C during a conversion with the page open needed a second Ctrl+C (measured:
+  a server with a stream open was still running 12 s after `should_exit`). `eco web` now runs
+  `eco.web.app.Server`, a `uvicorn.Server` whose `handle_exit` sets `app.state.stopping` (a
+  `threading.Event` that `create_app` makes) and then does what uvicorn does. Every event stream
+  looks at the flag at each of its looks and ends, with no `end` event because the job has not
+  ended; a browser that reconnects finds no server. `timeout_graceful_shutdown=5` is the backstop
+  for what the flag does not end, an upload or a download in flight: after 5 s uvicorn cancels it
+  (and logs it). One Ctrl+C measured: the real `eco web` with a stream open stopped in 0.2 s, exit
+  code 0, nothing on stderr. If it turns out wrong: a second Ctrl+C still forces the stop, as
+  before.
+- M2-R17 (a product decision: the spec sets only the size limit): at most `MAX_FILES = 200` files
+  in one upload request. The 201st file part is refused with 400 `Too many files (limit 200)` as
+  its headers end, before a byte of it is written, and nothing of the request stays. Without a
+  cap a request of 500 MB could make millions of empty files in one job folder. If it turns out
+  wrong: raise the constant.
+- M2-R18: the spec says a job older than 7 days is deleted by itself, and `purge` ran only at the
+  start, so a server that runs for weeks never expired a job. At start (the lock held, before
+  `runner.start()`) `purge(orphans=True)` also removes a folder without a readable job.json
+  whatever its age: no request is in flight yet, so it is an upload that a hard kill cut. Then,
+  once in `PURGE_EVERY` (an hour), `purge(keep_queued=True)` runs while the server does. It leaves
+  the queued jobs (the runner has them in its queue) and the running ones (their worker uses the
+  folder), and a folder without job.json goes by its age, so an upload that is coming in stays.
+  It is a task of the lifespan (`anyio`), on a thread, off the event loop. It stops with the
+  lifespan, and it does not change the runner. A timer in the runner's thread would not have run
+  while a conversion runs, and that can be hours. A purge that fails is logged and the next one
+  tries again. If it turns out wrong: a job that has run for more than 7 days is removed within
+  an hour after it ends, because it is older than that by then.
+- M2-R19: a download has `Content-Disposition: attachment; filename="<ascii>";
+  filename*=UTF-8''<percent-encoded>`. In the ASCII name each non-ASCII character, `"`, `\` and
+  control character is `_` (RFC 6266, section 4.3), for a client that does not read `filename*`
+  (curl's `-J` reads only `filename`). An event stream sends the comment `: keepalive` after 15 s
+  with no event, so a proxy does not close it for being idle and a server that follows ASGI spec
+  2.4 finds a client that has gone. A browser ignores a comment.
+
+## 2026-11-18: Preview API (M2-R20 to M2-R27, M2-R32)
+
+The rulings fix the routes, the caches (`<job>/preview/<n>/`), the numbering (pages from 1, chapters
+from 0) and the state (409 before the conversion). These are the choices they leave open.
+
+- A source page is drawn 600 px wide and at most 6,000 px tall. A page 1 pt wide and 14,400 pt tall
+  would be 8,640,000 px tall at 600 px wide, and PDFium refuses a bitmap that size; such a page is
+  drawn smaller. "At most 10 times as tall as it is wide" cannot hold for it at any scale, so it is
+  read as 10 times the 600 px. If it turns out wrong: two constants, `SOURCE_WIDTH` and
+  `SOURCE_MAX_HEIGHT`.
+- A book with no `#` heading is chapter 0 of the live preview, though its `chapters` list is empty
+  (M2-R26 calls it one chapter, and without this it would have no chapter to ask for). Text before
+  the first `#` is no chapter: `chapter=0` is the chapter of the first heading. `X-Excerpt-Index`
+  counts from 0 (the page of the excerpt) and `X-Excerpt-Pages` is the number of pages of the
+  excerpt.
+- Statuses the rulings leave open. An unknown `size` is 400 `Unknown size: <s>`, like a view and a
+  format. A `font_size` outside 8 to 96 is 422 with the text of the upload options. A `page` of a
+  file that is not a PDF is 404 like `source`; a `page` the PDF does not have is 404 `No such
+  page`, `page=0` too. A PDF that cannot be read is 422 `This PDF could not be read`. A file whose
+  book cannot be found or built (a reflow PDF whose extraction folder is gone, an EPUB that cannot
+  be read) is 404 `No preview is available for this file`, and for its text `This file has no text
+  to show`. A request is checked in this order: job, file, the values it gives (400, 422), the
+  state (409), then the page or chapter (404).
+- The text route sends the book as the file holds it: the uploaded Markdown, or the `book.md` of an
+  EPUB's book folder or of a reflow PDF's. It has its front matter, and CRLF line endings where
+  `write_book` wrote it on Windows (text mode), and no size limit. The page shows it with
+  `textContent`. If it turns out wrong: cut it at a length, or drop the front matter, in the route.
+- PDFium is not thread-safe, and the routes run on a pool of threads, so every use of PDFium in the
+  server process (the page count, a source page, the page book of a pages-mode PDF) holds one lock.
+  The page book of a long pages-mode PDF therefore makes the source pages wait.
+- An image of more than `Image.MAX_IMAGE_PIXELS` pixels (89.5 million) is left out of a preview,
+  like an unreadable one. PIL refuses only more than twice that, and for the sizes between it warns
+  and decodes the picture whole; an EPUB's images are copied as they are, and a PNG of 90 million
+  pixels takes 400 KB. The check is in `md2typst`, on the header, before any decoding.
+- The routes send no cache headers. The live preview keeps its last 32 answers on the server, and a
+  page that the browser asks for again is a small file.
+
+## 2026-11-18: Uploads keep their own name on disk (M2-R36)
+
+- An upload is stored as `<job>/input/<n>/<name>`: a folder for each file number, and the file in
+  it under its own name (`safe_name`, M2-R10). It was `input/<n>-<name>`. M1 takes names from the
+  path it reads: a PDF that has no title of its own, and a Markdown file that has none in its front
+  matter, get `path.stem` as their title, and `epub_to_book` writes the file name as the `source`
+  of the book it makes. So `book.md` became an EPUB titled `0-book`, which the e-reader's library
+  shows, and the text of an EPUB in the preview said `0-name.epub`. The output names were right
+  already (`_work` names them after the upload, never like an earlier output).
+- A folder for each file also keeps two uploads with one name apart, as the prefix did. The layout
+  is one function, `input_path(inputs, n, name)`, used by `JobStore.create`, `adopt` (for the files
+  that `_Upload` wrote there) and `rebuild`. `rebuild` links by number and the name the job shows,
+  so it does not read the path of the old job: a job of the old layout can still be rebuilt, and
+  its rebuild has the new one. Nothing moves a job folder of the old layout, since M2 is not
+  released. `purge`, the orphan rule at start and the cap of 200 files are as they were.
+- `safe_name`'s rule for a Windows device name (`nul.pdf` gets a `_`) is now the only guard of the
+  stored name: the `<n>-` that came first used to be one as well. If it turns out wrong: a name that
+  the rule does not know (`COM¹`, `CONIN$`) is stored as it is.
+
+## 2026-11-18: Model setup API (M2-R28 to M2-R31)
+
+- `POST /api/setup/download` takes an optional `{"ipv4": true}` (the page's retry, as `eco setup
+  --ipv4`); any other key or a non-boolean is 422. The download runs on one daemon thread, so Ctrl+C
+  does not wait for it and finished files resume on the next run. The start and the "already
+  running" check are one step under a lock, so two POSTs at once start one run (the other is 409).
+- The event stream replays the whole last run to a reader that joins late, then goes live, and ends
+  after `end`; the log of a run stays until the next POST. With no run since the server started it is
+  404. Progress lines are the `eco.models` logger's (one per retry) plus one start line: there is no
+  percentage, because `download_models` reports none. The `end` message of a failure is the error's
+  text with the data folder cut out; M1's text ends with "run eco setup again", which is the CLI's
+  advice and still true.
+- A POST is accepted when the models are already ready (it runs the downloader again, which checks the
+  files and repairs a damaged one); the page offers the button only when they are missing.
+- The code is in `eco.web.models_setup`, not `setup.py` (tools treat that name as a packaging script).
+
+## 2026-11-18: The workspace page (Task 9, M2-R34, M2-R35)
+
+What the page does where the rulings leave a choice. Vanilla HTML, CSS and JavaScript, no build step;
+the texts are in `strings.py`.
+
+- The setup gate is the first screen only when the address holds no job. A job in the address
+  (`#job=`) opens at once, since a finished job needs no model. The gate hides the stepper and
+  replaces Select files completely, so Markdown and EPUB files wait for the models too, as the brief's
+  "gate" says (M2-R39, below, adds a way past it). A reload in the middle of a download shows the
+  button again; a click gets 409 and opens the stream, which replays the log.
+- The stepper: Select files and Settings are links once they are done (to the start). Processing is
+  not a link when it is done: a finished job opens Review (M2-R34), so there is nowhere to go back to.
+- A file that is not `.pdf`, `.md` or `.epub` is refused when it is added, with the server's text
+  (`Unsupported file type: <name>`), so no upload starts for it. The server's 400 stays the backstop and
+  is shown the same way, under the drop zone, as is any other upload error (413, 200 files).
+- Processing lists only the stages a file goes through: a PDF has Reading PDF, Recognizing page layout,
+  Fixing code, formulas and reading order, Building EPUB and Optimizing and compressing (page images
+  skip Fixing), a Markdown file has the last two, an EPUB the last. `Creating XTC` is added only when
+  XTC is asked for. A stage that sent no event because the PDF was read before (the extraction cache)
+  is shown as done, with "already done", as soon as a later stage starts.
+- The bar is the share of stages done, plus the share of pages while the layout stage runs. The time left
+  comes from the page rate, measured between live page events at least 0.5 s apart and averaged. The
+  events of a replay (a reload) only move the starting point: they arrive within a moment, and their rate
+  would be absurd. So there is no estimate before the second live page event.
+- The feed in Processing shows the findings of the file being converted; Review shows those of the file
+  selected. A finding with no source page is plain text, not a button. With several files, Review has a
+  file select, and the chips, download and previews follow it. A file that was not converted shows its
+  error. When no file converted (failed, cancelled, stopped by a restart), the one primary button is
+  `Try again`, which rebuilds with the job's own options.
+- `Apply changes` is a secondary button, so Review keeps one primary button, `Download EPUB`. The panel
+  starts at the job's own values and shows the page as converted; the live picture appears after the first
+  change, and returning to the job's values shows the stored page again. The live picture of a PDF is the
+  source page being shown; for Markdown and EPUB it is the first page of the chapter that holds the page
+  being viewed (the API gives no other page of a chapter), and its caption says "page X of Y of this
+  chapter". The picture of a request is shown as a `data:` URL, since CSP allows no other for a fetched
+  image.
+- "View as" starts from the firmware the job was made for (Not sure and CrossPoint: CrossPoint; CrossInk;
+  Stock). Changing it asks for the pages again and keeps the place: the same source page, or the chapter's
+  first page.
+- The font size is a preview setting in M2 (the EPUB is not changed by it), and its hint says so. M3 adds
+  the XTC page style to the same panel.
+- A stream that ends without `end` shows "The eco server stopped" and is not reopened: a browser would
+  reconnect and replay the whole log. After a restart the user reloads, and the job shows as stopped.
+- Colours. The success, warning and error tokens are 2.1 to 3.6 : 1 on white and the border token is
+  1.5 : 1, too weak for text and for the edge of a control. Text uses `#1a7f37`, `#8a4b00` and
+  `#d70015`, control edges `#86868b`, and accent text and the hover of the primary button `#0062c4`
+  (white on `#0077ed` is 4.3 : 1). The tokens of DESIGN.md stay for fills and decoration. Steps and chips
+  use the control radius, not pills.
+- `create_app` sets the type of `.js` to `text/javascript`: StaticFiles asks the system, and
+  `/etc/mime.types` or the Windows registry may say `application/javascript`.
+- The page has an empty `data:` icon, so the browser does not ask for `/favicon.ico` and log a 404 on
+  every load.
+- Not done: remembering the settings between visits, an upload progress bar, a chapter picker, and a
+  reconnect after a restart.
+
+## 2026-11-18: Continue without the models (M2-R39)
+
+- Spec §8.14 asks the setup page to list the models with their sizes and total, to ask for consent, and
+  to say clearly at conversion when the models are missing. It does not block an input that needs no
+  model. Markdown and EPUB files need none, and neither does a PDF read as page images, so a 417 MB
+  download must not be the price of converting them.
+- The setup gate is still the first view while `/api/setup` is not ready and the address holds no job.
+  It has a second, secondary button, `Continue without models`, beside the primary `Download models
+  (~417 MB)`. The button opens Select files for this page load only. The page keeps a flag in memory,
+  so a reload shows the gate again, and until then every return to the start (the stepper links, a bad
+  address) goes to Select files.
+- While the models are missing, Select files shows one muted line, `Without the AI models, PDFs
+  convert only with Layout set to Page images.`, and a secondary `Download models` button that goes
+  back to the gate, where the sizes and the consent are. The line goes when a download that was started
+  finishes, also when the user left the gate while it ran. (M2-R41, below, gives the line two more
+  texts: a download is running, and a download failed.)
+- Markdown, EPUB and Page images PDFs convert as usual. A PDF in another layout mode starts, then ends
+  `failed` with the message the server already gives (`AI models are not installed. Run: eco setup`).
+  There is no check at upload and no server change. (M2-R43, below, adds a warning on the row of a
+  PDF, which the page works out from the Layout alone.)
+- The gate keeps what a download made of it (a running download, a failure, the log) while the user is
+  on Select files. Showing the gate no longer resets its buttons: that let the first button start a
+  second download, and it lost a failure that came while the gate was hidden.
+- This replaces the sentence of "The workspace page" that made Markdown and EPUB files wait for the
+  models. If it turns out wrong: remove the one button, the one line and the one control.
+
+## 2026-11-18: File rows show pages, scan state and an estimate (M2-R41, M2-R43)
+
+Spec 8.13 item 1 asks each file of Select files to show its page count, whether it is digital or
+scanned, and an estimated time. The plan cut the rows to a name and a size. This adds the rest, through
+a new route.
+
+- `POST /api/inspect` takes one PDF in the field `file` and answers `{"pages", "scanned_pages",
+  "seconds_per_page": {"digital", "scanned", "pages"}}`. The upload is the job upload's: streamed to
+  disk by `_PdfUpload` (a subclass of `_Upload` that takes one `.pdf` in the field `file`), with the
+  same limit and 413 text, the refusal by `Content-Length` before the body is read, and the same name
+  rule. A file that is not a PDF is 400 `Only PDF files can be inspected`, a second file is 400 `Too
+  many files (limit 1)`, and a PDF that M1 cannot open (damaged, password-protected) is 400 with M1's
+  own message (`Not a readable PDF: <name>`, `PDF is password-protected: <name>`).
+- The PDF is stored in a reserved job folder (`JobStore.reserve()`), which is no job: it has no
+  job.json, so a server that is killed in the middle leaves what the orphan purge at the next start
+  removes. The folder is deleted before the answer, on success and on every error. `describe_pdf` in
+  `preview.py` reads it with M1's `inspect_pdf()` under the same `_PDFIUM` lock as the previews, since
+  PDFium is not thread-safe. `scanned_pages` counts `PageInfo.is_scanned`, the rule the `read` stage
+  of the pipeline uses. A generated PDF of 801 text pages took 1.6 s to read on this computer.
+- The rates are `SECONDS_PER_PAGE` in `preview.py`: digital 0.7, scanned 2.1 and page images 0.2
+  seconds a page. Provisional. The first two are the PDF engine spike on the owner's M3 Mac (Docling:
+  8 to 10 s for 13 digital pages and 27 s for 13 scanned ones); page images have not been measured.
+  The acceptance run recalibrates all three. The server owns them, so a new calibration changes no
+  file of the page.
+- The page works the estimate out from the answer and the current settings, the way the pipeline will
+  run: page images (Layout set to Page images) cost pages x the page-image rate; otherwise OCR off costs
+  pages x digital, `Every page` costs pages x scanned, and `Automatic` costs the digital pages at the
+  digital rate and the scanned ones at the scanned rate. It is worked out again when Device, Layout or
+  OCR changes. The pipeline chooses page images by the Layout alone, and the device only sets the
+  screen the images are cut to, so the device has no term yet; its listener is there so that one
+  needs no change of the page. Under 45 s the row says `under a minute`, else `about 6 min`.
+- The words. `<size> · <n> pages · Digital PDF · about 6 min`. A PDF with most of its pages scanned (more
+  than half) says `Scanned, uses OCR`, or `Scanned, no OCR` when OCR will not run (OCR off, or Layout set
+  to Page images); one with fewer says `Partly scanned (3 of 40 pages)`. Markdown and EPUB rows show
+  `<size> · Markdown` or `<size> · EPUB`: they have no pages and convert in seconds, so they are not
+  read.
+- One PDF at a time. The page sends the PDFs to the route in a queue and never beside the upload of the
+  job: Start stops a reading in progress, and the PDF is read again if the job's upload fails. Removing a
+  file aborts its request. A row that waits or is being read says `Reading…`. An answer, a new setting
+  and the end of a download change only the text of the rows, never the rows, so a Remove button that has
+  the keyboard focus keeps it. An error shows in the row as a muted warning with the server's text; the
+  file stays in the list, and Start stays enabled, since the conversion reports the same error.
+- Known cost: each PDF travels twice, once to be read and once with the job. On this computer both go
+  to the same disk, and the first copy is deleted at once. The later fix is to stage uploads: keep the
+  file from the first transfer and let the job point at it. That needs a store of staged uploads, the
+  rule for when an unused one expires, and a purge, so it is not done here.
+- M2-R43 (extends M2-R39). While `/api/setup` says the models are not ready and the Layout is not Page
+  images (the pipeline sends a PDF to page images only for that Layout), the row of a PDF shows a muted
+  `Needs the AI models. Download them, or set Layout to Page images.` in place of the estimate. It goes
+  back to the estimate when the models become ready or the Layout is Page images. Review is unchanged.
+  The page still has no server check: a PDF whose extraction is already in the cache would convert
+  without the models, and its row warns all the same.
+- The note of Select files (M2-R39) has three texts, by what became of the download this page started:
+  the models are missing (the default), a download is running, and a download did not finish. Before,
+  the failure went into the hidden gate and the note read the same in all three cases. The note is a
+  status region, so a screen reader hears the change. When the models become ready while the keyboard
+  focus is on `Download models`, the focus moves to the heading of Select files before the note goes.
+  A page that is reloaded in the middle of a download still shows the first text, since `/api/setup` has
+  no `running` key.
+
+## 2026-11-18: Preview and EPUB rules: line-start markup, 1 GiB cap, page starts, image size (M2-R2, M2-R5, M2-R8, M2-R9)
+
+- Line-start markup (M2-R2). The Typst writer escapes more than the special characters: a text line
+  that starts with `<digits>.`, `-`, `+` or `=` gets a backslash, so "1. Introduction" in book.md
+  shows as text and not as a numbered list item (`/` is escaped everywhere, as are the other special
+  characters). Spec section 5 allows no content to change without a warning. If it turns out wrong:
+  a few extra backslashes in the Typst source.
+- EPUB size cap (M2-R5). An EPUB whose entries add up to more than 1 GiB (`MAX_EPUB_BYTES`) when
+  unpacked is refused, by the optimizer and by `epub_to_book` (so by the CLI and the GUI) with
+  `EPUB expands to more than 1 GiB: <name>`. The sizes come from the zip directory and the check
+  runs before any entry is read, so a zip bomb never unpacks. The CLI prints it as one error line; the
+  GUI shows it as the file's error. It had to be there before the GUI took uploads (spec sections
+  6.5 and 8.13). If it turns out wrong: a legitimate giant EPUB is refused with a clear message; raise
+  the constant.
+- Page starts (M2-R8). Only a top-level `#` heading starts a preview page and gets a `<chap>` marker,
+  like the EPUB builder, which makes chapters from top-level h1 only. A `#` inside a blockquote or a
+  list item is an ordinary level-2 heading with no page break, since a page break cannot sit inside a
+  quote and one valid Markdown line must not break the whole render. If it turns out wrong: such
+  headings look like level-2 headings in previews.
+- Image size in previews (M2-R9). An image renders at most at its natural pixel size (1 px is 1 pt)
+  and at most the body width, never enlarged, as in the M1 never-upscale rule. With a caption, the
+  image height is capped so that the image and its caption fit on one page body (a floor of a
+  quarter of the body height). The plan's `image(width: 100%, fit: "contain")` clipped captions under
+  tall images, which loses content, and enlarged 40x30 px formula crops to the full width. If it turns
+  out wrong: previews show smaller images than a reader that scales them up.
+
+## 2026-11-18: Delete a conversion, bounded tables in previews, sturdier jobs (M2-R45 and the final review)
+
+- Delete by hand (M2-R45; spec section 8.13 "dan bisa juga dihapus manual", section 6.5). A `DELETE`
+  of `/api/jobs/{id}` removes a job that has ended (done, failed, cancelled): 204. A queued or
+  running job is 409 "This conversion has not finished. Cancel it before you delete it."; no such
+  job is 404. job.json goes first, under the store's lock, so the job leaves every route at once;
+  then the folder, tried again for about 1.5 s on Windows. What still will not go is a folder
+  without job.json, which the next start purges. A preview that races the delete (or the 7-day
+  purge) must not make the job's folder again: preview folders are made one level at a time inside
+  the job's folder, `render_book` makes nothing above its cache folder, and a book that M1 builds
+  (an EPUB, a pages-mode PDF) is built in a reserved folder of its own and moved into the job by a
+  rename, which fails when the job is gone. Whatever fails while the job goes answers 404 "No such
+  job". Review has a secondary "Delete conversion" button: a `window.confirm` first, then Select
+  files, which reads Recent conversions again; a failure shows the server's text, and a job already
+  gone counts as deleted. Why: "manual" in a GUI means a control, and a private document should not
+  wait 7 days. If it turns out wrong: one route and one button to remove.
+- Tables in previews (final review, Important 1). A colspan is cut to 1..1000 and a rowspan to the
+  rows left (0 runs to the end), the way browsers read them; the columns come from a walk of the
+  grid that respects rowspans, and each row is filled to the width where it really ends. A colspan
+  stops before a column that a rowspan above takes, since Typst refuses overlapping cells and one
+  sloppy table stopped the whole preview. Beyond the review's fix: a table of more than 20,000
+  places (rows times columns) shows its image twin, or a box "Table too large to preview". Typst
+  pays for every place that holds a cell, an empty one too: after the cut, 20 KB of HTML (one
+  colspan of 1000 above 1000 short rows) still took 94 s and 6.3 GB, while 20,000 places take 2 to 3
+  s and at most 260 MB. The EPUB keeps the table. If it turns out wrong: a real table of more than
+  20,000 places shows the box in the preview; raise `_MAX_TABLE_PLACES`.
+- job.json (final review, Minor 3; Task 4 minors). It is flushed to the disk before the rename, and
+  on Windows the rename is tried again for about 1.5 s while an antivirus or the indexer holds the
+  file. A save that fails after the `end` event writes no second `end`: the next try, or the next
+  start, only saves job.json with the status that the `end` gave. The start purge removes at once
+  only a folder with no job.json at all; a job.json that is there but cannot be read (another
+  version of eco, a power loss) goes by the 7-day age rule, so one schema change cannot delete every
+  job.
+- Stored names (final review, Minor 2). `safe_name` also marks COM0, LPT0, COM and LPT with the
+  superscript digits 1 to 3, CONIN$, CONOUT$ and a device name with spaces before the dot, and it
+  cuts a long name to 200 bytes of UTF-8 (the `_` included), at a character, keeping the type. 120
+  characters of CJK or emoji were up to 480 bytes, and Linux and macOS take 255.
+- The worker (final review, Minor 1). Every worker starts through `_worker_main`, which ignores
+  SIGINT (the console's Ctrl+C reached the worker, which failed the job with "exit code 1" and a
+  traceback, against M2-R16) and starts a thread that waits for the server's process and ends the
+  worker when it goes (a killed server left its worker running, to hang later on a full pipe of
+  events). It is a wrapper for every worker rather than lines in `_work`, so the tests' stand-in
+  workers run it too and the tests can see it work.
+- `eco web` on the any-address (`0.0.0.0`, `::`) prints the loopback address that this computer
+  opens and the line "On another device, use this computer's network address in place of 127.0.0.1."
+  (no device can open `0.0.0.0`). `--max-upload-mb` takes a whole number above 0 only.
 ## 2026-11-18: Headings: a chapter label matches a bare chapter number (AC1)
 
 - When the fix stage matches a PDF bookmark to a heading, a leading "Chapter N:" or "Bab N" in

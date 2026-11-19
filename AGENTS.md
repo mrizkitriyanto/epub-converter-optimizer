@@ -6,7 +6,8 @@ This file is the source of truth for every agent and every human working on this
 
 eco converts PDF and Markdown files to EPUB, tuned for Xteink e-readers and for general e-readers.
 Milestone M1 is the core library and the `eco` CLI (`setup`, `convert`, `extract`).
-A web GUI, XTC output and a Docker image follow in later milestones.
+Milestone M2 adds the local web GUI (`eco web`). XTC output and a Docker image follow in later
+milestones.
 
 ## Golden rules
 
@@ -47,20 +48,21 @@ uv run ruff format
 ```
 src/eco/__init__.py          version
 src/eco/__main__.py          python -m eco
-src/eco/cli.py               argparse: setup, convert, extract
+src/eco/cli.py               argparse: setup, convert, extract, web
 src/eco/options.py           Options, DEVICES, ImageProfile, image_profile(), resolve_data_dir()
 src/eco/events.py            Finding, StageEvent, PageEvent, FindingEvent, STAGES, Cancelled
 src/eco/book.py              Block, Book
 src/eco/bookfolder.py        write_book(), load_source(), BookSource, write_report()
 src/eco/models.py            model setup/download/offline
-src/eco/pipeline.py          extract_pdf(), convert_file(), output_path(), Result
+src/eco/pipeline.py          extract_pdf(), page_book(), convert_file(), output_path(), Result
 src/eco/epub/builder.py      build_epub()
 src/eco/epub/images.py       transform_image()
 src/eco/epub/optimizer.py    optimize_epub(), OptimizeReport, DRMError
 src/eco/epub/css.py          rewrite_css()
 src/eco/epub/split.py        split_document(), anchors()
-src/eco/epub/zipio.py        write_epub_zip()
-src/eco/pdf/pages.py         PageInfo, inspect_pdf(), bookmarks(), pdf_metadata(), render_page(), crop(), to_pdfium_rect()
+src/eco/epub/zipio.py        write_epub_zip(), check_expansion(), MAX_EPUB_BYTES
+src/eco/epub/reader.py       epub_to_book()
+src/eco/pdf/pages.py         PageInfo, inspect_pdf(), bookmarks(), pdf_metadata(), page_count(), render_page(), render_page_fit(), crop(), to_pdfium_rect()
 src/eco/pdf/docling_adapter.py  extract_blocks()
 src/eco/pdf/reading_order.py fix_reading_order()
 src/eco/pdf/code.py          reextract_code(), fix_code_blocks()
@@ -68,6 +70,14 @@ src/eco/pdf/contents.py      rebuild_contents()
 src/eco/pdf/regions.py       leave_out_the_cover_page(), keep_picture_text_as_images(), materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
+src/eco/render/md2typst.py   to_typst(), RenderSettings, VIEWS
+src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered, ChapterNotFound
+src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild, delete, purge), Runner, JobInfo, JobFile, safe_name(), input_path(), server_lock(), RETENTION_DAYS, _worker_main() and _work() (worker process)
+src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs, /api/inspect (pages of one PDF for Select files) and /api/setup routes, _Upload and _PdfUpload (streamed uploads), Server (uvicorn that tells the app to stop)
+src/eco/web/models_setup.py  ModelSetup (the one background model download, its event log and readers), used by the /api/setup routes
+src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError, describe_pdf() and SECONDS_PER_PAGE (the rows of Select files)
+src/eco/web/strings.py       STRINGS: every English text of the GUI
+src/eco/web/templates/index.html  src/eco/web/static/app.css  src/eco/web/static/app.js (the workspace: setup gate, select and settings, processing, review)
 tests/conftest.py  tests/fixtures/{make.py,links.py}  tests/**/test_*.py  tests/acceptance/{metrics.py,test_samples.py}
 ```
 

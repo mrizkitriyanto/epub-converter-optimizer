@@ -1,8 +1,11 @@
 import argparse
 import json
+import os
 import re
+import secrets
 import shutil
 import sys
+import threading
 from collections import Counter
 from pathlib import Path
 
@@ -21,6 +24,11 @@ from eco.options import (
 
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
+_LOOPBACK = ("127.0.0.1", "localhost", "::1")
+_ANY_ADDRESS = {"0.0.0.0": "127.0.0.1", "::": "[::1]"}  # and the loopback that reaches it
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{16,}")
+_TOKEN_RULE = "The token must be at least 16 characters, each one of A-Z, a-z, 0-9, - or _."
+_BROWSER_DELAY = 1.0  # seconds: the server listens by then
 
 
 def _error(e: Exception) -> None:
@@ -188,8 +196,68 @@ def _setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _web(args: argparse.Namespace) -> int:
+    import webbrowser
+
+    import uvicorn
+
+    from eco.web.app import Server, create_app  # imported late: FastAPI is for this command only
+    from eco.web.jobs import server_lock
+
+    token = args.token or os.environ.get("ECO_TOKEN") or None
+    if token is not None and not _TOKEN.fullmatch(token):
+        print(f"error: {_TOKEN_RULE}", file=sys.stderr)
+        return 2
+    if token is None and args.host not in _LOOPBACK:
+        token = secrets.token_urlsafe(24)
+    data = resolve_data_dir(args.data)
+    with server_lock(data):  # a second eco web on these jobs stops here, with one error line
+        pass  # the app holds the lock while it runs
+    app = create_app(data, token=token, max_upload_mb=args.max_upload_mb)
+    host = f"[{args.host}]" if ":" in args.host else args.host
+    query = f"?token={token}" if token else ""  # URL-safe: _TOKEN or token_urlsafe
+    # no device can open the any-address; this computer's loopback reaches the server, and other
+    # devices reach it at this computer's own address on the network
+    local = _ANY_ADDRESS.get(args.host, host)
+    print(f"Open: http://{local}:{args.port}/{query}", flush=True)
+    if args.host in _ANY_ADDRESS:
+        print(
+            f"On another device, use this computer's network address in place of {local}.",
+            flush=True,
+        )
+    browser = threading.Timer(
+        _BROWSER_DELAY, webbrowser.open, [f"http://{local}:{args.port}/{query}"]
+    )
+    browser.daemon = True
+    if not args.no_browser:
+        browser.start()
+    # `Server` ends the event streams at Ctrl+C, which uvicorn would wait for; the timeout is for
+    # whatever else is in flight (an upload, a download): after 5 s uvicorn cancels it
+    config = uvicorn.Config(
+        app, host=args.host, port=args.port, log_level="warning", timeout_graceful_shutdown=5
+    )
+    try:
+        Server(config).run()
+    except KeyboardInterrupt:  # uvicorn raises the Ctrl+C that stopped it again, once it has
+        pass
+    finally:
+        browser.cancel()  # the server stopped first, for example because the port is taken
+    return 0
+
+
+def _megabytes(value: str) -> int:
+    """`--max-upload-mb`: a whole number above 0. With 0 every upload would be too large."""
+    if not value.isdigit() or int(value) == 0:
+        raise argparse.ArgumentTypeError("must be a whole number of MB above 0")
+    return int(value)
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="eco", description="Convert PDF and Markdown to EPUB.")
+    parser = argparse.ArgumentParser(
+        prog="eco",
+        description="Convert PDF and Markdown to EPUB and optimize EPUB files, on the command "
+        "line or in a web browser (eco web).",
+    )
     parser.add_argument("--version", action="store_true", help="show the version and exit")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
@@ -225,6 +293,28 @@ def _parser() -> argparse.ArgumentParser:
     extract.add_argument("input", metavar="INPUT.pdf")
     extract.add_argument("-o", "--output", metavar="DIR", help="folder for the book folder")
     extract.add_argument("--ocr", choices=OCR_MODES, default="auto")
+
+    web = commands.add_parser("web", parents=[common], help="open the converter in a web browser")
+    web.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="address to listen on (default: 127.0.0.1, this computer only; "
+        "an address other than 127.0.0.1, localhost or ::1 needs a token)",
+    )
+    web.add_argument("--port", type=int, default=8000, help="port to listen on (default: 8000)")
+    web.add_argument(
+        "--token",
+        help="access token, 16 or more of A-Z a-z 0-9 - _ (default: ECO_TOKEN; "
+        "made up and printed when another address needs one)",
+    )
+    web.add_argument("--no-browser", action="store_true", help="do not open a browser")
+    web.add_argument(
+        "--max-upload-mb",
+        type=_megabytes,
+        default=500,
+        metavar="MB",
+        help="largest upload in MB (default: 500)",
+    )
     return parser
 
 
@@ -236,13 +326,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"eco {__version__}")
             return 0
         if args.command is None:
-            parser.error("a command is required: setup, convert or extract")
+            parser.error("a command is required: setup, convert, extract or web")
         if args.command == "convert" and args.landscape and args.device == "general":
             parser.error("--landscape needs an Xteink device, not --device general")
     except SystemExit as e:  # argparse exits on a usage error; main returns the code instead
         return e.code
     try:
-        return {"setup": _setup, "convert": _convert, "extract": _extract}[args.command](args)
+        commands = {"setup": _setup, "convert": _convert, "extract": _extract, "web": _web}
+        return commands[args.command](args)
     except Exception as e:  # noqa: BLE001  every failure ends as one error line
         _error(e)
         return 1
