@@ -708,3 +708,12 @@ error for either.
 - An entry name with a drive (`C:/x`, `C:x`) or a backslash is skipped with the `unsafe_path`
   warning, like a root or a ".." part. Python reads a backslash as "/" on Windows only, so on other
   systems such a name reached the output.
+
+## 2026-11-19: CSS: a declaration starts only after "{", ";" or the start of the text
+
+- `rewrite_css` looks for a declaration only at the start of the text or after "{" or ";" (after
+  any white space and comments, which it keeps), and steps over a string, group or comment outside
+  a declaration whole. An unclosed comment runs to the end of the text, as CSS reads it. Tried at
+  every position, crafted CSS took quadratic time: `a:a:a:...{` of 16 KB took 15.6 s, and an
+  unclosed comment after every "{" took 0.8 s at 16 KB on Xteink; each now takes milliseconds,
+  and the stylesheets of the tests come out the same.

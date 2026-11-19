@@ -1,3 +1,7 @@
+import time
+
+import pytest
+
 from eco.epub.css import rewrite_css
 
 
@@ -70,6 +74,35 @@ def test_data_uris_with_semicolons_stay_in_one_piece():
 
     assert rewrite_css(css, spy, xteink=True) == css
     assert seen == ["data:image/png;base64,AAAA;BBB"]
+
+
+def test_a_declaration_after_a_comment_still_follows_a_rename():
+    css = ".a { /* the logo */ background: url(a.png) }\n.b {color: red; /* x */ float: left}"
+    assert rewrite_css(css, renamed) == css.replace("a.png", "a.jpg")
+    assert rewrite_css(css, renamed, xteink=True) == (
+        ".a {  background: url(a.jpg) }\n.b {color: red;  }"
+    )
+
+
+@pytest.mark.parametrize(
+    "css",
+    [
+        "a:" * 16000 + "{",  # took 15.6 s at half this size
+        "{a:(" * 8000,
+        '{a:"' * 8000,
+        "{/*" * 10000,
+        "{" + "a:b*/" * 6400,
+    ],
+)
+def test_crafted_css_takes_linear_time(css):
+    start = time.perf_counter()
+    for xteink in (False, True):
+        rewrite_css(css, keep, xteink)
+    assert time.perf_counter() - start < 1
+
+
+def test_an_unclosed_comment_runs_to_the_end_of_the_text():
+    assert rewrite_css("p { color: red } /* float: left", keep, xteink=True) == "p { color: red } "
 
 
 def test_a_style_attribute_is_just_a_declaration_list():

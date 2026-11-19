@@ -1,13 +1,21 @@
 import re
 from collections.abc import Callable
 
-_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+# an unclosed comment runs to the end of the text, as in CSS, so a scan for "*/" is never repeated
+_COMMENT = re.compile(r"/\*.*?(?:\*/|\Z)", re.DOTALL)
 _FONT_FACE = re.compile(r"@font-face\s*\{[^}]*\}", re.IGNORECASE)
-# name: value, up to ";", "}" or the end; strings and (...) groups, like url(data:...;base64,...),
-# are atomic
+# A declaration, name: value, up to ";", "}" or the end. It starts only at the start of the text
+# or after "{" or ";", where `lead` takes the white space and comments before it: tried at every
+# position, a run like "a:a:a:...{" took quadratic time. Strings and (...) groups, like
+# url(data:...;base64,...), are atomic. Outside a declaration `skip` steps over a string, group
+# or comment whole, to the end of the text if it is not closed, so one that never closes is
+# scanned once.
 _DECLARATION = re.compile(
+    r"""(?P<lead>(?:\A|(?<=[{;]))(?:\s|/\*.*?\*/)*)"""
     r"""(?P<head>(?P<name>[-\w]+)\s*:\s*)(?P<value>(?:[^;{}()"']|"[^"]*"|'[^']*'|\([^)]*\))*)"""
     r"(?P<end>;|(?=\})|$)"
+    r"""|(?P<skip>"[^"\n]*"?|'[^'\n]*'?|\([^)]*\)?|/\*.*?(?:\*/|\Z))""",
+    re.DOTALL,
 )
 _URL = re.compile(r"""url\(\s*(["']?)(.*?)\1\s*\)""", re.IGNORECASE)
 _LAYOUT = re.compile(r"(?:-\w+-)?(?:float|position|columns|column-count)", re.IGNORECASE)
@@ -27,13 +35,15 @@ def rewrite_css(text: str, retarget: Callable[[str], str | None], xteink: bool =
 
 
 def _declaration(m: re.Match, retarget: Callable[[str], str | None], xteink: bool) -> str:
-    name, value = m["name"], m["value"]
+    if m["skip"] is not None:
+        return m[0]
+    lead, name, value = m["lead"], m["name"], m["value"]
     if xteink and (
         _LAYOUT.fullmatch(name)
         or name.lower() == "display"
         and _FLEX_OR_GRID.fullmatch(value.split("!")[0].strip())
     ):
-        return ""
+        return lead
     gone = False
 
     def swap(url: re.Match) -> str:
@@ -44,4 +54,4 @@ def _declaration(m: re.Match, retarget: Callable[[str], str | None], xteink: boo
         return url[0] if new is None or new == url[2] else f"url({url[1]}{new}{url[1]})"
 
     value = _URL.sub(swap, value)
-    return "" if gone else m["head"] + value + m["end"]
+    return lead if gone else lead + m["head"] + value + m["end"]
