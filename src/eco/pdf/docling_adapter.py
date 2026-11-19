@@ -112,7 +112,7 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
             continue
         page, bbox = _position(doc, item)
         tabular = kind in ("table", "contents")
-        level = number = 0
+        level, number = 0, None
         if kind == "heading":
             level = 1 if item.label == "title" else item.level
         elif kind == "list_item" and item.enumerated and item.marker:

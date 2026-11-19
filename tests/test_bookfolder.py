@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from markdown_it import MarkdownIt
 
 from eco.book import Block, Book
 from eco.bookfolder import RemovedByAntivirus, load_source, read_report, write_book
@@ -81,6 +82,32 @@ def test_escaping_keeps_pdf_text_from_becoming_markup(tmp_path):
     assert "1\\. not a list\n\\- nor this\n\\+ or this" in md
     assert "- one \\*two\\*\n- three" in md
     assert "## A \\# B" in md
+
+
+@pytest.mark.parametrize(
+    "numbers, markdown, lists",
+    [
+        ([3, 4, 5], "3. x\n4. x\n5. x", [(3, 3)]),
+        ([1, 2, 1, 2, 3], "1. x\n2. x\n1) x\n2) x\n3) x", [(1, 2), (1, 3)]),  # starts again
+        ([5, 7], "5. x\n7) x", [(5, 1), (7, 1)]),  # a number skipped
+        ([0, 1], "0. x\n1. x", [(0, 2)]),  # a list that starts at 0
+        ([2, 1, 2, 9], "2. x\n1) x\n2) x\n9. x", [(2, 1), (1, 2), (9, 1)]),
+    ],
+)
+def test_a_numbered_item_that_does_not_follow_on_starts_a_new_list(
+    tmp_path, numbers, markdown, lists
+):
+    """book.md is plain CommonMark: any renderer shows each item with its own number."""
+    blocks = [Block("list_item", "x", number=n, page=1) for n in numbers]
+    md = write_book(Book(title="T", blocks=blocks), tmp_path, []).read_text()
+    assert markdown in md
+    found = []  # (start, number of items) of each ordered list
+    for token in MarkdownIt("commonmark").parse(load_source(tmp_path).markdown):
+        if token.type == "ordered_list_open":
+            found.append((token.attrs.get("start", 1), 0))
+        elif token.type == "list_item_open":
+            found[-1] = (found[-1][0], found[-1][1] + 1)
+    assert found == lists
 
 
 def test_code_fence_choice(tmp_path):

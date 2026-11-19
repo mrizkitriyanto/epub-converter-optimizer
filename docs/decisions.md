@@ -515,8 +515,13 @@ error for either.
   5).
 - A numbered item and a bullet item next to each other are separated by a blank line in book.md,
   so each starts its own list; an ordered list that does not start at 1 cannot continue a
-  paragraph in Markdown. Items of one `<ol>` are numbered from its start, one by one, so a list
-  whose own numbers skip one shows them in sequence. If it turns out wrong: write "- " again.
+  paragraph in Markdown. If it turns out wrong: write "- " again.
+- 2026-11-19, fix round: Markdown numbers the items of one list from its first number, one by one,
+  so `1. 2. 1. 2. 3.` showed 1 to 5 and `5. 7.` showed 5, 6. Now an item whose number is not the
+  previous item's plus one starts a new list: book.md switches its delimiter between "." and ")"
+  (`1. a`, `2. b`, `1) c`), which any CommonMark renderer reads as a new list, and the EPUB has one
+  `<ol start>` for each run, so every item shows the book's number. A list may start at 0: "no
+  number" is `None`, not 0. `EXTRACTOR_VERSION` is 7.
 
 ## 2026-11-19: Contents and index pages are read again from the text layer (Q-23)
 

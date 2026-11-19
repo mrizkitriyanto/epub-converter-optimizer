@@ -26,7 +26,7 @@ class Block:
     image: str = ""  # path relative to the book folder
     caption: str = ""
     ocr: bool = False
-    number: int = 0  # a list item's own number, when its marker was a plain number
+    number: int | None = None  # a list item's own number (0 too), when its marker was a plain one
 
 
 @dataclass

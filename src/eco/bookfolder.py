@@ -55,6 +55,7 @@ def write_book(book: Book, folder: Path, findings: list[Finding]) -> Path:
     footnotes: list[tuple[int, str]] = []  # (level of the section they belong to, text)
     section_level = 7  # before the first heading: flushed by any heading
     page = 0
+    delimiter, previous = ".", None  # previous: the number of the item just written, if any
     for block in book.blocks:
         if block.kind == "footnote":
             footnotes.append((section_level, block.text))
@@ -67,9 +68,19 @@ def write_book(book: Book, folder: Path, findings: list[Finding]) -> Path:
         if block.page > 0 and block.page != page:
             page = block.page
             chunks.append(("page", f"<!-- page: {page} -->"))
-        # a numbered item is a chunk of its own kind, so it is joined only to numbered items
-        kind = "numbered_item" if block.kind == "list_item" and block.number else block.kind
-        chunks.append((kind, _render(block)))
+        if block.kind == "list_item" and block.number is not None:
+            # CommonMark numbers a list one by one from its first item, so an item that does not
+            # follow on from the one before starts a new list, which a new delimiter does
+            if previous is None:
+                delimiter = "."
+            elif block.number != previous + 1:
+                delimiter = ")" if delimiter == "." else "."
+            previous = block.number
+            # a chunk of its own kind, so it is joined only to numbered items
+            chunks.append(("numbered_item", _render(block, delimiter)))
+        else:
+            previous = None
+            chunks.append((block.kind, _render(block)))
     chunks.extend(("footnote", _footnote(text)) for _, text in footnotes)
 
     out = chunks[0][1]
@@ -145,7 +156,7 @@ def _parse_front_matter(raw: str) -> dict[str, str]:
     return meta
 
 
-def _render(block: Block) -> str:
+def _render(block: Block, delimiter: str = ".") -> str:
     if block.kind == "table":
         body = "\n".join(line for line in block.html.splitlines() if line.strip())
         return f"<!-- table-image: {block.image} -->\n{body}" if block.image else body
@@ -160,7 +171,7 @@ def _render(block: Block) -> str:
     if block.kind == "heading":
         return "#" * min(max(block.level, 1), 6) + " " + _md(" ".join(block.text.split()))
     if block.kind == "list_item":
-        start = f"{block.number}. " if block.number else "- "
+        start = "- " if block.number is None else f"{block.number}{delimiter} "
         return start + _md(block.text).replace("\n", "\n" + " " * len(start))
     if block.kind == "code":
         return _fenced(block.text)

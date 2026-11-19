@@ -567,6 +567,13 @@ def test_the_page_of_a_chapter_with_replaced_characters_is_not_left_for_later_fi
     assert builder.page == 9  # where the text ended, as before the findings
 
 
+def numbered(*items):
+    """A paragraph, then one list item per (number, text)."""
+    return [Block("paragraph", "Next:", page=1)] + [
+        Block("list_item", text, number=n, page=1) for n, text in items
+    ]
+
+
 def test_numbered_list_items_become_ordered_lists_that_keep_their_start(tmp_path):
     blocks = [
         Block("heading", "H", level=1, page=1),
@@ -574,6 +581,10 @@ def test_numbered_list_items_become_ordered_lists_that_keep_their_start(tmp_path
         Block("list_item", "second\nline", number=4, page=1),
         Block("list_item", "A. a lettered item", page=1),
         Block("list_item", "fifth", number=5, page=1),
+        *numbered((1, "a"), (2, "b"), (1, "c"), (2, "d"), (3, "e")),  # a list that starts again
+        *numbered((5, "f"), (7, "g")),  # a number skipped
+        *numbered((0, "h"), (1, "i")),  # a list that starts at 0
+        *numbered((3, "j"), (4, "k"), (5, "l")),
     ]
     folder = tmp_path / "n.book"
     write_book(Book(title="T", blocks=blocks), folder, [])
@@ -594,4 +605,10 @@ def test_numbered_list_items_become_ordered_lists_that_keep_their_start(tmp_path
         ("ol", "3", ["first", "second line"]),
         ("ul", None, ["A. a lettered item"]),
         ("ol", "5", ["fifth"]),
+        ("ol", None, ["a", "b"]),
+        ("ol", None, ["c", "d", "e"]),
+        ("ol", "5", ["f"]),
+        ("ol", "7", ["g"]),
+        ("ol", "0", ["h", "i"]),
+        ("ol", "3", ["j", "k", "l"]),
     ]

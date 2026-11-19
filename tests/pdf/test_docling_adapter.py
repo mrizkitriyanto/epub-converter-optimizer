@@ -103,10 +103,11 @@ def adds_list_item(doc, p):
     [
         (True, "3.", TEXT, 3),
         (True, "12)", TEXT, 12),
-        (True, "A.", f"A. {TEXT}", 0),  # not a plain number: the marker stays as text
-        (True, "(i)", f"(i) {TEXT}", 0),
-        (False, "\u2022", TEXT, 0),  # a bullet
-        (False, None, TEXT, 0),
+        (True, "0.", TEXT, 0),  # a list can start at 0
+        (True, "A.", f"A. {TEXT}", None),  # not a plain number: the marker stays as text
+        (True, "(i)", f"(i) {TEXT}", None),
+        (False, "\u2022", TEXT, None),  # a bullet
+        (False, None, TEXT, None),
     ],
 )
 def test_a_numbered_list_item_keeps_its_number(enumerated, marker, text, number):
