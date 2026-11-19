@@ -128,7 +128,7 @@ Entry format:
 
 ### Q-1 (applied on Windows): local EPUBCheck, measured sizes
 - Date, milestone, task: 2026-11-17, M1 T19 (acceptance AC7).
-- Answer: Done as Q-1 says, outside the repo in `C:\Users\RizkiT\tools`: Temurin JRE 21.0.13+9 for Windows x64 (`OpenJDK21U-jre_x64_windows_hotspot_21.0.13_9.zip`, 49,106,397 bytes, SHA-256 checked against Adoptium's published value; 146 MB unpacked) and EPUBCheck 5.4.0 (`epubcheck-5.4.0.zip`, 33,093,170 bytes; 35 MB unpacked). Total download 82.2 MB, 181 MB on disk; the zips were deleted after unpacking. The acceptance suite finds them through `ECO_JAVA` and `ECO_EPUBCHECK_JAR` (ruling R-56 in the M1 ledger).
+- Answer: Done as Q-1 says, outside the repo in `<user folder>\tools`: Temurin JRE 21.0.13+9 for Windows x64 (`OpenJDK21U-jre_x64_windows_hotspot_21.0.13_9.zip`, 49,106,397 bytes, SHA-256 checked against Adoptium's published value; 146 MB unpacked) and EPUBCheck 5.4.0 (`epubcheck-5.4.0.zip`, 33,093,170 bytes; 35 MB unpacked). Total download 82.2 MB, 181 MB on disk; the zips were deleted after unpacking. The acceptance suite finds them through `ECO_JAVA` and `ECO_EPUBCHECK_JAR` (ruling R-56 in the M1 ledger).
 - Why: Q-1.
 - Cost if wrong: 181 MB of disk; delete the two folders.
 - Recorded by: controller (Claude Opus 5.5), owner's Windows laptop.
@@ -137,7 +137,7 @@ Entry format:
 - Date, milestone, task: 2026-11-17, M1 setup (the fast suite gave 389 passed, 6 failed, 4 errors; all 10 are this one cause).
 - Answer:
   - Do not run Microsoft's installer: it is a system-level install that needs admin rights (same reason as Q-9).
-  - On this machine only, put the official runtime DLLs next to the uv-managed Python 3.12 (`C:\Users\RizkiT\AppData\Roaming\uv\python\cpython-3.12.16-windows-x86_64-none`), where Python already keeps its own `vcruntime140.dll`. Windows looks for a process's DLLs in that folder first. The DLLs come from the `msvc-runtime` 14.51.36231 wheel (PyPI, 2,052,033 bytes); each one must carry a valid Authenticode signature from Microsoft Corporation before it is copied. This changes nothing in the repo, and the wheel is never a project dependency (its licence is proprietary).
+  - On this machine only, put the official runtime DLLs next to the uv-managed Python 3.12 (`<user folder>\AppData\Roaming\uv\python\cpython-3.12.16-windows-x86_64-none`), where Python already keeps its own `vcruntime140.dll`. Windows looks for a process's DLLs in that folder first. The DLLs come from the `msvc-runtime` 14.51.36231 wheel (PyPI, 2,052,033 bytes); each one must carry a valid Authenticode signature from Microsoft Corporation before it is copied. This changes nothing in the repo, and the wheel is never a project dependency (its licence is proprietary).
   - Product side: a clean Windows machine can lack this runtime (spec §5 anti-goal "fragile install on Windows", §9 criterion 11). PyTorch already prints Microsoft's download link when its DLLs fail, so eco adds no code for it; the README (both languages) states the prerequisite and the link.
 - Why: without the runtime nothing PDF-related runs here: no `eco setup`, no slow tests, no acceptance. User-level and reversible beats an admin install the owner has not approved.
 - Cost if wrong: none for the code. To undo, delete the copied DLLs from that Python folder (listed in the M1 ledger). The owner may prefer to install the redistributable from https://aka.ms/vs/17/release/vc_redist.x64.exe, after which the copies can go.
