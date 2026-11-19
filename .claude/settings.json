@@ -1,0 +1,7 @@
+{
+  "extraKnownMarketplaces": {
+    "ponytail": { "source": { "source": "github", "repo": "DietrichGebert/ponytail" } },
+    "anti-slop": { "source": { "source": "github", "repo": "miqdadbadjuber/anti-slop" } }
+  },
+  "enabledPlugins": { "ponytail@ponytail": true, "antislop@anti-slop": true }
+}

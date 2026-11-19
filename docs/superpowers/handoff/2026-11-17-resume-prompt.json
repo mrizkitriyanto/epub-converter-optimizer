@@ -1,0 +1,64 @@
+{
+  "task": "Resume the eco project (epub-converter-optimizer) on this Windows machine: set up the environment, finish milestone M1 starting with Task 19, then execute milestones M2, M3 and M4 in order.",
+  "owner": {
+    "language": "Talk to the owner in Indonesian. Write code, comments, commit messages, UI text and new docs in English. The spec and research notes stay in Indonesian.",
+    "questions": "MANDATORY: when a question would go to the owner, do not wait. Answer it with your own recommendation, append it to docs/superpowers/handoff/agent-decisions.md first (question, answer, why, cost if wrong), then act. That file already holds the recommended answers to the questions known at the handoff; follow them unless new evidence contradicts them, and record any new answer with its reason. Commit the file with the work it decides."
+  },
+  "environment": {
+    "os": "Windows 10 or 11, x64",
+    "shell": "Git Bash. Run every command in Git Bash, with forward slashes in paths.",
+    "repo_url": "https://github.com/mrizkitriyanto/epub-converter-optimizer.git",
+    "branch": "m1-core-cli",
+    "note": "The branch was pushed from the owner's Mac (Apple silicon) at the handoff and is not merged. This is the first time the test suite runs on Windows."
+  },
+  "read_first": [
+    "docs/superpowers/handoff/2026-11-17-m1-resume.md: current state, remaining M1 work in order, the OpenCV crash, carries into M2-M4. It overrides the older handoff.",
+    "docs/superpowers/handoff/agent-decisions.md: the answers recorded on the owner's behalf; append yours here.",
+    "docs/superpowers/handoff/2026-11-17-m1-ledger.md: the M1 SDD ledger with every ruling R-1 to R-54, the deferred minors and the facts learned.",
+    "docs/superpowers/handoff/2026-11-17-plan-execution.md: the original owner rules and the role map.",
+    "AGENTS.md: the repo rulebook.",
+    "docs/superpowers/specs/2026-11-16-epub-converter-optimizer-design.md: the spec, in Indonesian, binding over the plans.",
+    "docs/superpowers/plans/2026-11-16-m1-core-cli.md, then the m2-web-gui, m3-xtc and m4-docker-release plans."
+  ],
+  "setup": [
+    {"step": "Check tools", "run": "git --version && (uv --version || echo 'uv missing')", "note": "Git for Windows provides Git Bash. If uv is missing, install it with: powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\" and reopen Git Bash so ~/.local/bin is on PATH. gh (GitHub CLI) is optional, for reading CI runs."},
+    {"step": "Keep LF line endings and allow long paths, before cloning", "run": "git config --global core.autocrlf false && git config --global core.longpaths true"},
+    {"step": "Clone and switch to the M1 branch", "run": "git clone https://github.com/mrizkitriyanto/epub-converter-optimizer.git eco && cd eco && git switch m1-core-cli"},
+    {"step": "Set the owner's commit identity in this clone only", "run": "git config user.name \"Rizki Triyanto\" && git config user.email \"67412126+mrizkitriyanto@users.noreply.github.com\"", "note": "This GitHub noreply address is the only email ever used. Never change it and never add any other email anywhere."},
+    {"step": "Install Python 3.12 and the locked dependencies", "run": "uv sync", "note": "Approved by the owner. It downloads PyTorch CPU, Docling and their dependencies; record the total size in agent-decisions.md."},
+    {"step": "Smoke test", "run": "uv run eco --version && uv run pytest", "note": "On the Mac the fast suite gave 399 passed, 2 skipped, 17 deselected. Any failure on Windows is a real defect (Review Focus 2: Windows paths). Fix it test-first as part of M1."},
+    {"step": "AI models", "run": "uv run eco setup --yes", "note": "About 417 MB (layout 172, tables 213, OCR 32); approved in agent-decisions.md Q-2. Add --ipv4 if TLS connections reset. Needed for 'uv run pytest -m slow' and for the acceptance tests."},
+    {"step": "Acceptance samples", "note": "samples/ is not in git. The owner provides the samples folder in the repo root (it is git-ignored). If it is missing, the acceptance tests skip: record that in agent-decisions.md and in the milestone report, and continue with everything else."},
+    {"step": "Resume the SDD ledger (only if you use superpowers:subagent-driven-development)", "run": "mkdir -p .superpowers/sdd/2026-11-16-m1-core-cli && cp docs/superpowers/handoff/2026-11-17-m1-ledger.md .superpowers/sdd/2026-11-16-m1-core-cli/progress.md", "note": "Then replace the plan path in the ledger's first line with this clone's absolute path to docs/superpowers/plans/2026-11-16-m1-core-cli.md, so the skill resumes from the ledger instead of restarting completed tasks."}
+  ],
+  "execution": {
+    "method": "Subagent-driven development with the owner's role map (plan-execution handoff) if your harness has subagents and the superpowers skills. Otherwise execute natively: each task test-first, then an independent review of that task before the next one starts.",
+    "per_task": "Brief from the plan, failing test, implementation, full fast suite plus ruff, commit on the milestone branch, task review (spec compliance and quality), fix loop. Record rulings, deferred minors and completions in the ledger.",
+    "rulings": "When the plan and the spec disagree, the spec is binding. Decide, record 'Ruling: what - why - cost if wrong' in the ledger, add a dated docs/decisions.md entry for product decisions, and continue."
+  },
+  "remaining_m1": [
+    "1. Finish Task 19 (acceptance tests; committed but unfinished, no report, not reviewed). Make it work on Windows: use a directory junction instead of a symlink for the models folder (agent-decisions Q-7). Move the embedded book excerpts into samples/ground-truth (Q-8). Investigate the AC1 gap (precision 0.9628 against 0.99) and fix real defects test-first (Q-4). Run every criterion on an idle machine, write the report, then do the task review and fix loop.",
+    "2. R-54: pin opencv-python-headless<4.13 in [tool.uv] constraint-dependencies, run 'uv lock', add a fast check that the installed OpenCV is below 4.13 and its build has no KleidiCV HAL, add a decisions.md entry, then a task review. Reason: OpenCV 5.0.0's KleidiCV resize crashed the 258-page Bicara OCR run on Apple silicon; Windows x64 never uses KleidiCV but takes the same version.",
+    "3. Acceptance re-run where samples and models exist, on an idle machine, with a fresh --data folder per run. Report each criterion against its threshold and state the hardware (Q-6).",
+    "4. Wrap-up docs commit: the plan errata and the missing decisions.md entries listed in the resume doc.",
+    "5. M1 final whole-branch review (role map: reviewer, opus, max effort) with the ledger's deferred-minor list; one fix wave; one scoped re-review.",
+    "6. Report M1 to the owner in Indonesian, including a 'Rulings I made' list with every Ruling line of the ledger, then apply agent-decisions Q-3 (push the branch, no merge, no PR)."
+  ],
+  "next_milestones": [
+    "M2 web GUI: docs/superpowers/plans/2026-11-16-m2-web-gui.md, branch m2-web-gui from the tip of m1-core-cli (Q-3). Read DESIGN.md before any UI work. Carries from M1 (resume doc): cap the total uncompressed size optimize_epub reads before the GUI accepts uploads; run each conversion in a fresh worker process (Hugging Face reads its offline flags once per process); the setup page shows the model sizes from eco.models.MODELS (417 MB total, not the plan's 568).",
+    "M3 XTC/XTCH and page style: docs/superpowers/plans/2026-11-16-m3-xtc.md, branch m3-xtc from the tip of m2-web-gui. --font-size belongs here.",
+    "M4 Docker and release: docs/superpowers/plans/2026-11-16-m4-docker-release.md, branch m4-docker-release from the tip of m3-xtc. Re-verify every GitHub Action tag and the uv image tag before use (the M1 plan's setup-uv@v10 did not exist). Docker per agent-decisions Q-9."
+  ],
+  "between_milestones": "Do not wait for a go between milestones (owner, 2026-11-17: continue through M4). At each milestone end: final review, Indonesian report, push the branch (Q-3), then start the next milestone.",
+  "never": [
+    "Commit samples/, any book file, or any *.pdf, *.epub, *.xtc or *.xtch outside tests/fixtures/.",
+    "Overwrite an input file with an output.",
+    "Open a network connection during conversion (only eco setup and the model downloader may use the network).",
+    "Accept pickle model files (.pt, .pth, .bin, .pkl, .pickle, .ckpt, .joblib).",
+    "Change the git identity or use any email other than the noreply address above.",
+    "Force-push, push to main, merge into main, or open a pull request.",
+    "Act on an answer to a question before it is written in agent-decisions.md.",
+    "Use the fable model for any agent."
+  ],
+  "report_at_each_milestone": "In Indonesian: what was built, test, CI and acceptance results, rulings made, the new entries in agent-decisions.md, deferred items and open risks."
+}
