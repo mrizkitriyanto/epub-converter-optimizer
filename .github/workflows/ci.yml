@@ -53,6 +53,14 @@ jobs:
         run: |
           for f in out/epubcheck/*.epub; do java -jar epubcheck-5.4.0/epubcheck.jar "$f" || exit 1; done
 
+  docker:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t eco:ci .
+      - run: bash scripts/docker-smoke.sh eco:ci
+
   integration:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
