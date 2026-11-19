@@ -128,6 +128,28 @@ def encrypted_pdf(fixtures_dir, tmp_path):
 
 
 @pytest.fixture
+def platform_is(monkeypatch):
+    """`platform_is("win32")` makes eco.models see that platform, so a test can run the Windows
+    code of the Visual C++ check anywhere. Only eco.models reads it, and `sys.platform` itself
+    stays as it is: on Linux and macOS a changed one would show Windows to every library that
+    checks it while the test runs."""
+
+    def set_platform(name):
+        monkeypatch.setattr("eco.models.sys", SimpleNamespace(platform=name))
+
+    return set_platform
+
+
+@pytest.fixture
+def vc_message():
+    """The one text that says the Visual C++ Redistributable is missing, as every layer shows it."""
+    return (
+        "The Microsoft Visual C++ Redistributable (x64) is missing. "
+        "Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe and try again."
+    )
+
+
+@pytest.fixture
 def home(tmp_path, monkeypatch):
     """`~` points at tmp_path: HOME for POSIX, USERPROFILE for Windows (which ignores HOME)."""
     monkeypatch.setenv("HOME", str(tmp_path))

@@ -863,6 +863,30 @@ output {
   font-variant-numeric: tabular-nums;
 }
 
+#page-style {
+  display: grid;
+  gap: 12px;
+}
+
+.style-group {
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.style-group legend {
+  padding: 0 8px 0 0;
+  font-weight: 600;
+}
+
+.style-checks {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
 /* Smaller screens */
 
 @media (max-width: 1100px) {
@@ -874,6 +898,10 @@ output {
   #findings,
   #settings-panel {
     grid-column: 1 / -1;
+  }
+
+  #page-style {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -905,6 +933,10 @@ output {
   .review-actions {
     margin-left: 0;
   }
+
+  #page-style {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 520px) {
@@ -933,7 +965,8 @@ output {
   }
 
   .link-button,
-  .finding {
+  .finding,
+  .check {
     min-height: 44px;
   }
 }

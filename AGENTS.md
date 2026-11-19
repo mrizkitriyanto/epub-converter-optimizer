@@ -70,8 +70,8 @@ src/eco/pdf/contents.py      rebuild_contents()
 src/eco/pdf/regions.py       leave_out_the_cover_page(), keep_picture_text_as_images(), materialize_regions(), render_cover(), page_slices()
 src/eco/pdf/text.py          normalize(), dehyphenate(), clean_heading_artifacts(), join_split_paragraphs(), detect_language()
 src/eco/pdf/structure.py     assign_heading_levels()
-src/eco/render/md2typst.py   to_typst(), RenderSettings, VIEWS
-src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered, ChapterNotFound
+src/eco/render/md2typst.py   to_typst(), VIEWS (the whole PageStyle, the progress bar, the image boxes)
+src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered (with image_boxes), ChapterNotFound
 src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild, delete, purge), Runner, JobInfo, JobFile, safe_name(), input_path(), server_lock(), RETENTION_DAYS, _worker_main() and _work() (worker process)
 src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs, /api/inspect (pages of one PDF for Select files) and /api/setup routes, _Upload and _PdfUpload (streamed uploads), Server (uvicorn that tells the app to stop)
 src/eco/web/models_setup.py  ModelSetup (the one background model download, its event log and readers), used by the /api/setup routes

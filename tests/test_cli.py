@@ -1,11 +1,13 @@
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
 
 from eco import __version__
 from eco.cli import main
+from eco.models import MARKER
 from eco.pdf.pages import pdf_metadata
 
 
@@ -134,6 +136,28 @@ def test_drm_epub(tmp_path, capsys, drm_epub):
 def test_models_missing_message(tmp_path, capsys, fixtures_dir):
     assert convert(tmp_path, fixtures_dir["blank"], "-o", tmp_path / "o") == 1
     assert "error: AI models are not installed. Run: eco setup" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["convert", "extract"])
+def test_conversion_names_the_missing_vc_runtime(
+    tmp_path, capsys, monkeypatch, fixtures_dir, platform_is, vc_message, command
+):
+    platform_is("win32")
+    data = tmp_path / "d"
+    (data / "models").mkdir(parents=True)
+    (data / "models" / MARKER).write_text(version("docling"))  # the models are installed
+
+    def convert(self, source, **kwargs):
+        raise ImportError(
+            "DLL load failed while importing onnxruntime_pybind11_state: "
+            "The specified module could not be found."
+        )
+
+    monkeypatch.setattr("docling.document_converter.DocumentConverter.convert", convert)
+    args = [command, str(fixtures_dir["blank"]), "-o", str(tmp_path / "o"), "--data", str(data)]
+    assert main(args) == 1
+    err = capsys.readouterr().err
+    assert f"error: {vc_message}\n" in err and "Traceback" not in err
 
 
 def test_folder_input_expands_without_recursion(tmp_path, capsys, small_book):

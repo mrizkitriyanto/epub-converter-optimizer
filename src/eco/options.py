@@ -1,8 +1,10 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import platformdirs
+
+from eco.style import RANGES, PageStyle
 
 DEVICES: dict[str, tuple[int, int] | None] = {
     "x4": (480, 800),
@@ -15,7 +17,7 @@ FIRMWARES = ("any", "stock", "crosspoint", "crossink")
 SIZES = ("small", "balanced", "best")
 MODES = ("auto", "reflow", "pages")
 OCR_MODES = ("auto", "force", "off")
-FORMATS = ("epub",)  # M3 adds "xtch", "xtc"
+FORMATS = ("epub", "xtch", "xtc")
 CHAPTER_LIMIT_BYTES = 100_000
 
 _GENERAL_PX = {"small": 1200, "balanced": 1600, "best": 2048}
@@ -35,7 +37,7 @@ class Options:
     title: str | None = None
     author: str | None = None
     lang: str | None = None
-    font_size: int = 32
+    style: PageStyle = field(default_factory=PageStyle)
 
     def __post_init__(self):
         checks = {
@@ -50,6 +52,29 @@ class Options:
             for v in values:
                 if v not in allowed:
                     raise ValueError(f"unknown {name}: {v!r}")
+
+
+def upgrade_options(options: dict) -> dict:
+    """The options of a job.json that M2 wrote, which holds `font_size` and no `style`, in the
+    form of today: the size is the style's, kept within its range."""
+    if "font_size" not in options:
+        return options
+    options = dict(options)
+    low, high = RANGES["font_size"]
+    size = min(high, max(low, options.pop("font_size")))
+    options.setdefault("style", PageStyle(font_size=size).to_json())
+    return options
+
+
+def options_from_dict(options: dict, font_extra_dirs: tuple[Path, ...] = ()) -> Options:
+    """`Options` from `asdict(Options)` after a trip through JSON."""
+    return Options(
+        **{
+            **options,
+            "formats": tuple(options["formats"]),
+            "style": PageStyle.from_json(options["style"], font_extra_dirs),
+        }
+    )
 
 
 @dataclass(frozen=True)

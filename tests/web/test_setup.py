@@ -17,7 +17,7 @@ import pytest
 from fakes import sse, wait_for, wire
 from fastapi.testclient import TestClient
 
-from eco.models import MODELS, ModelInfo, models_dir
+from eco.models import MODELS, ModelInfo, download_models, models_dir
 from eco.web import app as web_app
 from eco.web import models_setup
 from eco.web.app import create_app
@@ -401,6 +401,30 @@ def test_an_error_without_text_still_ends_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr(models_setup, "download_models", fake_download([], fail=OSError()))
     events = run_to_end(client(tmp_path))
     assert events[-1] == {"type": "end", "status": "failed", "message": "The download failed."}
+
+
+def test_a_missing_vc_runtime_ends_the_run_with_its_message_and_tells_the_page_it_is_not_ipv4(
+    tmp_path, monkeypatch, platform_is, vc_message
+):
+    def fail(**kwargs):
+        raise OSError("could not find or load spatialindex_c-64.dll")
+
+    monkeypatch.setattr("eco.models._docling_download", fail)  # the real download_models runs
+    monkeypatch.setattr(models_setup, "download_models", download_models)
+    platform_is("win32")
+    c = client(tmp_path)
+    events = run_to_end(c)
+    assert [e["type"] for e in events] == ["progress", "end"]  # no retry was tried
+    assert events[-1] == {
+        "type": "end",
+        "status": "failed",
+        "message": vc_message,
+        "vc_runtime_missing": True,
+    }
+    assert c.get("/api/setup").json()["ready"] is False
+    idle(c)
+    assert c.post("/api/setup/download").status_code == 202  # the plain retry stays
+    sse(c.get("/api/setup/events").text)
 
 
 @pytest.mark.parametrize("form", ["plain", "slashes", "oserror"])

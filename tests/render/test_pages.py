@@ -4,11 +4,12 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
+import eco.render.md2typst as md2typst_module
 import eco.render.pages as pages_module
 from eco.bookfolder import load_source
 from eco.options import Options, image_profile
-from eco.render.md2typst import RenderSettings
 from eco.render.pages import Rendered, render_book, render_chapter
+from eco.style import PageStyle
 
 
 def book(tmp_path, markdown):
@@ -19,15 +20,13 @@ def book(tmp_path, markdown):
 
 def render(src, **kw):
     kw.setdefault("device", "x4")
-    kw.setdefault("settings", RenderSettings())
+    kw.setdefault("style", PageStyle())
     kw.setdefault("view", "crosspoint")
     return render_book(src, **kw)
 
 
 def test_render_sizes_and_map(small_book):
-    r = render_book(
-        load_source(small_book), device="x3", settings=RenderSettings(), view="crosspoint"
-    )
+    r = render_book(load_source(small_book), device="x3", style=PageStyle(), view="crosspoint")
     im = Image.open(BytesIO(r.pages[0]))
     assert im.size == (528, 792) and im.mode == "L"
     assert len(r.page_map) == len(r.pages) and r.chapters[0][1] == 0
@@ -38,19 +37,17 @@ def test_long_code_line_stays_inside_page(tmp_path):
     md.write_text("# C\n\n```\n" + "x" * 160 + "\n```\n")
     im = Image.open(
         BytesIO(
-            render_book(
-                load_source(md), device="x4", settings=RenderSettings(), view="crosspoint"
-            ).pages[0]
+            render_book(load_source(md), device="x4", style=PageStyle(), view="crosspoint").pages[0]
         )
     )
     assert all(im.getpixel((479 - dx, y)) > 200 for dx in range(8) for y in range(0, 800, 4))
 
 
 def test_chapter_excerpt_matches_full_render(small_book):
-    src, st = load_source(small_book), RenderSettings(status_bar=False)
-    full = render_book(src, device="x4", settings=st, view="crosspoint")
+    src, st = load_source(small_book), PageStyle(bar_position="off")
+    full = render_book(src, device="x4", style=st, view="crosspoint")
     part, idx = render_chapter(
-        src, device="x4", settings=st, view="crosspoint", source_page=full.page_map[-1]
+        src, device="x4", style=st, view="crosspoint", source_page=full.page_map[-1]
     )
     assert part.pages[idx] == full.pages[-1]
 
@@ -94,32 +91,30 @@ def test_renders_with_and_without_an_image_profile(small_book):
 def test_chapter_excerpt_holds_one_chapter(small_book):
     src = load_source(small_book)
     part, idx = render_chapter(
-        src, device="x4", settings=RenderSettings(), view="crosspoint", source_page=1
+        src, device="x4", style=PageStyle(), view="crosspoint", source_page=1
     )
     assert len(part.pages) == 1 and idx == 0
     assert part.chapters == [("One", 0)]
     part, idx = render_chapter(
-        src, device="x4", settings=RenderSettings(), view="crosspoint", source_page=3
+        src, device="x4", style=PageStyle(), view="crosspoint", source_page=3
     )
     assert part.chapters == [("Two", 0)] and part.page_map == [3] and idx == 0
 
 
 def test_chapter_excerpt_without_a_marker_below_the_page_uses_the_first_chapter(tmp_path):
     src = book(tmp_path, "# One\n\ntext\n\n<!-- page: 5 -->\n\n# Two\n\nmore\n")
-    part, _ = render_chapter(
-        src, device="x4", settings=RenderSettings(), view="crosspoint", source_page=2
-    )
+    part, _ = render_chapter(src, device="x4", style=PageStyle(), view="crosspoint", source_page=2)
     assert part.chapters == [("One", 0)]
 
 
 def test_chapter_excerpt_matches_inside_a_book_with_pictures_and_profile(small_book):
-    src, st = load_source(small_book), RenderSettings(status_bar=False)
+    src, st = load_source(small_book), PageStyle(bar_position="off")
     profile = image_profile(Options(device="x4", size="small"))
-    full = render_book(src, device="x4", settings=st, view="crosspoint", image_profile=profile)
+    full = render_book(src, device="x4", style=st, view="crosspoint", image_profile=profile)
     part, idx = render_chapter(
         src,
         device="x4",
-        settings=st,
+        style=st,
         view="crosspoint",
         source_page=1,
         image_profile=profile,
@@ -127,16 +122,45 @@ def test_chapter_excerpt_matches_inside_a_book_with_pictures_and_profile(small_b
     assert part.pages[idx] == full.pages[0]
 
 
+def test_chapter_excerpt_checks_only_its_own_svg(tmp_path, monkeypatch):
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"></svg>'
+    (tmp_path / "one.svg").write_bytes(svg)
+    second = svg.replace(b'width="20"', b'width="21"')
+    (tmp_path / "two.svg").write_bytes(second)
+    src = book(
+        tmp_path,
+        "# One\n\n![one](one.svg)\n\n# Two\n\n![two](two.svg)\n",
+    )
+    checked = []
+    real = md2typst_module._typst_reads_svg
+
+    def spy(data):
+        checked.append(data)
+        return real(data)
+
+    monkeypatch.setattr(md2typst_module, "_typst_reads_svg", spy)
+
+    render_chapter(
+        src,
+        device="x4",
+        style=PageStyle(),
+        view="crosspoint",
+        chapter=0,
+    )
+
+    assert checked == [svg]
+
+
 def test_chapter_excerpt_matches_when_footnotes_are_numbered_across_chapters(tmp_path):
     src = book(
         tmp_path,
         "# One\n\nText[^1].\n\n<!-- page: 2 -->\n\n# Two\n\nMore[^2].\n\n[^1]: First.\n\n[^2]: Second.\n",
     )
-    st = RenderSettings(status_bar=False)
-    full = render_book(src, device="x4", settings=st, view="crosspoint")
-    part, idx = render_chapter(src, device="x4", settings=st, view="crosspoint", source_page=2)
+    st = PageStyle(bar_position="off")
+    full = render_book(src, device="x4", style=st, view="crosspoint")
+    part, idx = render_chapter(src, device="x4", style=st, view="crosspoint", source_page=2)
     assert part.pages[idx] == full.pages[-1]
-    first, idx = render_chapter(src, device="x4", settings=st, view="crosspoint", source_page=1)
+    first, idx = render_chapter(src, device="x4", style=st, view="crosspoint", source_page=1)
     assert first.pages[idx] == full.pages[0]
 
 
@@ -144,7 +168,7 @@ def test_excerpt_with_the_status_bar_compiles(small_book):
     part, _ = render_chapter(
         load_source(small_book),
         device="x4",
-        settings=RenderSettings(),
+        style=PageStyle(),
         view="crosspoint",
         source_page=3,
     )
@@ -212,7 +236,7 @@ def test_a_cache_whose_folder_is_gone_is_not_made_again(tmp_path, small_book):
     assert not gone.exists()
     files = {"images/a.png": b"png", "main.typ": b"x"}  # the cache folder went after it was made
     with pytest.raises(FileNotFoundError):
-        pages_module._compile(files, gone / "preview")
+        pages_module._compile(files, PageStyle(), (), gone / "preview")
     assert not gone.exists()
 
 
@@ -228,13 +252,13 @@ def test_rerender_drops_pages_left_by_a_longer_book(tmp_path, small_book):
 
 
 def chapter_of(src, chapter, **kw):
-    kw.setdefault("settings", RenderSettings(status_bar=False))
+    kw.setdefault("style", PageStyle(bar_position="off"))
     return render_chapter(src, device="x4", view="crosspoint", chapter=chapter, **kw)
 
 
 def test_chapter_by_index_is_laid_out_as_in_the_book(small_book):
-    src, st = load_source(small_book), RenderSettings(status_bar=False)
-    full = render_book(src, device="x4", settings=st, view="crosspoint")
+    src, st = load_source(small_book), PageStyle(bar_position="off")
+    full = render_book(src, device="x4", style=st, view="crosspoint")
     (first, i), (second, j) = chapter_of(src, 0), chapter_of(src, 1)
     assert (i, j) == (0, 0)  # the first page of the chapter
     assert (first.chapters, second.chapters) == ([("One", 0)], [("Two", 0)])
@@ -267,7 +291,7 @@ def test_a_book_without_a_heading_is_one_chapter(tmp_path):
 def test_a_chapter_is_asked_for_by_page_or_by_index_not_both(small_book, kw):
     with pytest.raises(ValueError, match="source_page or chapter"):
         render_chapter(
-            load_source(small_book), device="x4", settings=RenderSettings(), view="crosspoint", **kw
+            load_source(small_book), device="x4", style=PageStyle(), view="crosspoint", **kw
         )
 
 

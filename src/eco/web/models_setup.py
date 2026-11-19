@@ -9,6 +9,11 @@ The events are `{"type": "progress", "message": str}` and one last
 `{"type": "end", "status": "done" | "failed", "message": str}`. The progress lines are one line
 when the run starts and each line that `download_models` logs on the `eco.models` logger (one per
 retry) while the run lasts.
+
+A run that failed because the Microsoft Visual C++ Redistributable is missing has one more key in
+its `end` event, `"vc_runtime_missing": true`, and its `message` is the text to show. The page
+tells it from the other failures by that key: downloading over IPv4 cannot help it, so the page
+offers no IPv4 retry. The `end` event of any other run has no such key.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from eco.models import MODELS, download_models, models_dir, models_ready
+from eco.models import MODELS, VcRuntimeMissing, download_models, models_dir, models_ready
 from eco.web.strings import STRINGS
 
 
@@ -112,13 +117,16 @@ class ModelSetup:
         handler = _Progress(self._say)
         log.addHandler(handler)
         status, message = "failed", STRINGS["setup_failed"]
+        extra = {}  # what else the page needs to know about the end
         try:
             download_models(self._dir, ipv4=ipv4)
             status, message = "done", STRINGS["setup_done"]
         except Exception as e:  # noqa: BLE001  the page must hear of the end, whatever failed
             message = self._scrub(str(e)) or message
+            if isinstance(e, VcRuntimeMissing):
+                extra["vc_runtime_missing"] = True
         finally:
             log.removeHandler(handler)  # before `end`: nothing is said after it
             with self._lock:
                 self._running = False  # in the same step, so a POST after `end` is accepted
-                self._publish({"type": "end", "status": status, "message": message})
+                self._publish({"type": "end", "status": status, "message": message, **extra})

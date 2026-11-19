@@ -805,6 +805,103 @@ a new route.
 - `eco web` on the any-address (`0.0.0.0`, `::`) prints the loopback address that this computer
   opens and the line "On another device, use this computer's network address in place of 127.0.0.1."
   (no device can open `0.0.0.0`). `--max-upload-mb` takes a whole number above 0 only.
+
+## 2026-11-18: The renderer honours the page style: bar, boxes, orientation (M3 Task 2, M3-R3, M3-R9, M3-R10, M3-R11)
+
+`render_book`, `render_chapter` and `to_typst` take a `PageStyle` and `RenderSettings` is gone. These are
+the choices the rulings and the spec leave open.
+
+- Text as written (M3-R10). A `-` before a number (Typst makes a minus sign U+2212 of it, also before a
+  superscript or an Arabic-Indic digit) and `...` (an ellipsis) are escaped like `--`, `---` and `-?`
+  were, and `smartquote` is off, so quotes stay as typed. A dot is escaped when two more follow it, so
+  no run of dots is left with three. A `-` or a `.` that ends a piece of text is always escaped: a
+  link's text is escaped on its own, and what follows a piece could join it (`a -[5](#n)` was a minus
+  sign). An XTC page is the book's text as a picture, and a changed
+  character would be content that changed without a warning (spec section 5). If it turns out wrong:
+  straight quotes look less typographic; one regex and one `set` rule.
+- Strings in the source (M3-R9). The font family, the language and the chapter titles (the `<chap>`
+  markers, which the bar reads as data) go through `_str`, and the weight is written as `int(...)`, so
+  a style built in code (only `from_json` checks a weight) cannot put anything else into the source.
+  `lang: auto` takes the book's language when its first subtag is two or three lowercase letters, and
+  "en" (Typst's default) otherwise.
+- The progress bar takes `bar_font_size + 2 * bar_edge_margin` px at its edge, and `margin` more lies
+  between it and the text; with the bar off nothing is kept (M2 kept 22 px with its status bar off).
+  That is the least (M3-R11): with a line the text starts 4 px inside the edge margin, so the side
+  that the line is on takes `max(bar_edge_margin, 4)`, and the area always holds all that is drawn.
+  From the edge inwards: the edge margin, the line (2 px; the read part black, the rest light gray 170,
+  a level XTH has), its chapter ticks (6 px, black, reaching 2 px past the line on both sides, at the
+  first page of each chapter but page 1), and the row of text, which starts at the edge margin when
+  there is no line. `bar_side_margin` is the distance of the text and the line from the sides of the
+  page, not from the text margin (both are 16 by default), and `bar_full_width` runs the line from side
+  to side. The row is one string, left-aligned: title, `x / y`, book percent, chapter `x / y`, chapter
+  percent, joined by two spaces, a middle dot and two spaces. A title that does not fit is cut at a
+  character, so that the numbers stay. Numbers that do not fit the row are left out from the end,
+  whole (half of one would read as another), and a first number that alone does not fit is left out
+  too: the row is one line inside its own area, never wrapped over the page. Text before the first
+  heading counts as a chapter with no title.
+  It is a `footer` (`header` at the top) with a descent of 0, and `place` puts each part. If it turns out
+  wrong: the geometry is in `_bar`.
+- Image boxes. `#show image` wraps each image in a `box` with a `<imgbox>` marker (`here().position()`
+  and `measure`). Without the box a figure whose caption is wider than the image reports the start of
+  the line that the image is centered in, 31 px to the left in a test. An image of relative width (a
+  vector image) measures 0 wide alone, so it is measured at the width of its container, which
+  `layout` gives inside a `place` (a quote or a list takes some of the body's width, and the box is
+  its frame). A box takes every pixel the image touches, so an image between
+  pixels has a box 1 px bigger. The stock view's placeholder, a table that is too large and the text
+  have no box. The boxes are kept in `map.json`, and a cache without them is rendered again.
+- Orientation. A page is laid out with its width and height swapped for 90 and 270 and then turned
+  clockwise (PIL `transpose`, no resampling), and its boxes are turned with it. EPUB previews are never
+  turned: M3-R3 lists the style fields that simulate and an EPUB has no orientation.
+- Preview caches are `<format>-<view>-<style>`, the style being the first 12 hex digits of the SHA-256
+  of its JSON with sorted keys, so two styles never share a folder and the folder of an M2 job's old
+  pages (`epub-crosspoint-32`, another font) is not read again.
+- An SVG that Typst cannot read (width and height 0, for one) fails the whole compile, and without an
+  image profile nothing else reads it: each SVG is compiled alone on a 10 pt page first, and the
+  verdict is kept by the SHA-256 of its bytes. One that fails is left out like any image that cannot
+  be read.
+- Hyphenation (spec section 8.9, "check for `id`"): Typst 0.15 has no Indonesian patterns. With `lang`
+  `id`, `ind` or `ms` the `hyphenate` switch changes nothing, and English, German and Dutch hyphenate.
+
+## 2026-11-18: A missing Visual C++ runtime is named, and the page does not suggest IPv4 (M3-N3, Q-20)
+
+On a clean Windows machine the PDF engine cannot load without the Microsoft Visual C++ Redistributable.
+On the owner's laptop the model download ended with "could not find or load spatialindex_c-64.dll"
+(rtree loads before PyTorch, so PyTorch's own hint never showed), and the page offered "Try again over
+IPv4", which failed the same way. Spec section 5 lists a fragile install on Windows as an anti-goal, and
+section 8.14 asks for a clear message.
+
+- `eco.models.vc_runtime_missing(e)` says whether an error means that. It is true only on Windows, and
+  only for these forms, in the error or in any error it was raised from (`__cause__`, `__context__`):
+  an `OSError` whose message holds "could not find or load" and ".dll" (rtree); an `OSError` with
+  `winerror` 126, or a message holding "Error loading" and ".dll" (PyTorch); an `ImportError` whose
+  message holds "DLL load failed" (onnxruntime and other extension modules).
+- Such an error becomes `VcRuntimeMissing`, raised from the original, with one message: "The Microsoft
+  Visual C++ Redistributable (x64) is missing. Install it from
+  https://aka.ms/vs/17/release/vc_redist.x64.exe and try again." `download_models` raises it at once,
+  with no retry and no `--ipv4` hint. `extract_blocks` raises it for anything that goes wrong while it
+  imports and runs Docling, because the DLLs load at different steps. So `eco setup`, `eco convert`,
+  `eco extract`, the GUI download and the GUI jobs each show that text where they show any error.
+- The `end` event of a GUI download that stopped this way has `"vc_runtime_missing": true`; no other
+  `end` event has the key. The page then shows the message alone, with no "Try again over IPv4" and no
+  IPv4 hint. "Try again" stays, for after the install.
+- eco does not look for the runtime when it starts. It names the failure where it happens, so on
+  Windows a DLL that fails to load in these forms gets this message whichever DLL it was. The original
+  error stays chained. If it turns out wrong: the forms are in one function.
+
+## 2026-11-19: XTC device behavior awaits owner verification (M3 Task 8)
+
+The container writes one-based chapter page numbers while eco's internal `Chapter` values remain
+zero-based. `XTH_VALUES` currently maps the four displayed levels using the CrossPoint layout proven
+by the codec vectors. Both choices still need a real-device check; `docs/device-check.md` is the
+repeatable procedure.
+
+| Firmware and version | Gray order | Chapter jumps | CSS and images | Large chapter | Result |
+| --- | --- | --- | --- | --- | --- |
+| CrossPoint (record version) | Not checked | Not checked | Not checked | Not checked | Pending owner check |
+| CrossInk (record version) | Not checked | Not checked | Not checked | Not checked | Pending owner check |
+
+Record the large chapter's load time in its column. If light and dark gray are reversed, exchange the
+85 and 170 mappings in `XTH_VALUES`, regenerate the kit, rerun the tests, and repeat this check.
 ## 2026-11-18: Headings: a chapter label matches a bare chapter number (AC1)
 
 - When the fix stage matches a PDF bookmark to a heading, a leading "Chapter N:" or "Bab N" in

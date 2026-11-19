@@ -1,8 +1,19 @@
+import json
+from dataclasses import asdict
+
 import pytest
 
 from eco.book import Block, Book
 from eco.events import Finding
-from eco.options import Options, image_profile, resolve_data_dir
+from eco.options import (
+    FORMATS,
+    Options,
+    image_profile,
+    options_from_dict,
+    resolve_data_dir,
+    upgrade_options,
+)
+from eco.style import PageStyle
 
 
 def test_profiles():
@@ -78,3 +89,34 @@ def test_model_defaults():
 def test_data_dir_expands_the_home_folder(home, tmp_path):
     assert resolve_data_dir("~/x") == tmp_path / "x"
     assert (tmp_path / "x").is_dir()
+
+
+def test_the_style_is_part_of_the_options():
+    assert Options().style == PageStyle()
+    assert Options(style=PageStyle(font_size=40)).style.font_size == 40
+    assert not hasattr(Options(), "font_size")
+
+
+def test_xtc_formats_are_known():
+    assert Options(formats=("xtch", "xtc")).formats == ("xtch", "xtc")
+    assert FORMATS == ("epub", "xtch", "xtc")
+
+
+def test_options_come_back_from_their_json():
+    options = Options(device="x3", formats=("epub", "xtc"), style=PageStyle(font="Bitter"))
+    assert options_from_dict(json.loads(json.dumps(asdict(options)))) == options
+
+
+@pytest.mark.parametrize("old, size", [(32, 32), (40, 40), (8, 16), (15, 16), (96, 64), (65, 64)])
+def test_options_of_m2_keep_their_font_size(old, size):
+    """A job.json of M2 has `font_size` in its options and no `style`."""
+    m2 = {**asdict(Options()), "formats": ["epub"], "font_size": old}
+    del m2["style"]
+    assert upgrade_options(m2)["style"] == {**PageStyle().to_json(), "font_size": size}
+    assert "font_size" not in upgrade_options(m2)
+    assert options_from_dict(upgrade_options(m2)).style.font_size == size
+
+
+def test_options_that_have_a_style_are_not_changed_by_the_upgrade():
+    options = asdict(Options(style=PageStyle(font_size=40)))
+    assert upgrade_options(options) == options

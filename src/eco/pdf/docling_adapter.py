@@ -8,7 +8,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 from eco.book import Block
-from eco.models import ModelsMissing, models_ready, offline_env
+from eco.models import ModelsMissing, explain_vc_runtime, models_ready, offline_env
 
 # Keep in step with the docling pin in pyproject.toml. The mapping below reads Docling's output
 # as it is in this version.
@@ -193,11 +193,12 @@ def extract_blocks(
     `on_page` gets the number of each page Docling finishes without error, in the order they
     finish. A page that failed is not reported, so the caller can see which pages are missing.
     `scanned` holds the scanned pages: their blocks are marked as OCR. Raises ModelsMissing, before
-    anything else, when `eco setup` has not run.
+    anything else, when `eco setup` has not run, and VcRuntimeMissing when Docling cannot load a DLL
+    for want of the Visual C++ Redistributable.
     """
     if not models_ready(models):
         raise ModelsMissing()
-    with offline_env():
+    with offline_env(), explain_vc_runtime():
         # huggingface_hub reads the offline flags when it first loads, so import Docling in here.
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions

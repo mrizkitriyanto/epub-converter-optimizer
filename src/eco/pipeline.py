@@ -17,6 +17,7 @@ from eco.book import Block, Book
 from eco.bookfolder import load_source, read_report, write_book
 from eco.epub.builder import build_epub
 from eco.epub.optimizer import optimize_epub
+from eco.epub.reader import epub_to_book
 from eco.events import Cancelled, Event, Finding, FindingEvent, PageEvent, StageEvent
 from eco.models import models_dir
 from eco.options import DEVICES, Options, image_profile
@@ -41,6 +42,10 @@ from eco.pdf.text import (
     join_split_paragraphs,
     normalize,
 )
+from eco.render.pages import render_book
+from eco.xtc.codec import encode_xtg, encode_xth
+from eco.xtc.container import Chapter, write_container
+from eco.xtc.quantize import quantize_page
 
 EXTRACTOR_VERSION = 8  # bump it when extraction changes: cached book folders then stop matching
 CHUNK_PAGES = 50
@@ -246,8 +251,8 @@ def extract_pdf(
     holds a report.json and a book.md is complete: it is reused, and only its findings are reported
     again. One without book.md, which a virus scanner can remove, is extracted again. The stages
     are `read`, `layout` and `fix`. Raises PdfOpenError for a PDF that cannot be read,
-    ModelsMissing when `eco setup` has not run, Cancelled when `cancel()` says so and
-    RemovedByAntivirus when Windows refuses to write book.md.
+    ModelsMissing when `eco setup` has not run, VcRuntimeMissing for a missing Visual C++ runtime,
+    Cancelled when `cancel()` says so and RemovedByAntivirus if book.md is blocked.
     """
     try:
         digest = _sha256(pdf)
@@ -312,6 +317,60 @@ def _override(meta: dict[str, str], options: Options) -> None:
             meta[key] = value
 
 
+def _write_xtc(
+    source,
+    path: Path,
+    options: Options,
+    out_dir: Path,
+    formats: Sequence[str],
+    inputs: Sequence[Path],
+    font_extra_dirs: Sequence[Path],
+) -> dict[str, Path]:
+    if not source.markdown.strip():
+        raise ValueError("Nothing to render")
+    rendered = render_book(
+        source,
+        device=options.device,
+        style=options.style,
+        view="xtc",
+        image_profile=None,
+        font_extra_dirs=font_extra_dirs,
+    )
+    if not rendered.pages:
+        raise ValueError("Nothing to render")
+    starts = rendered.chapters
+    chapters = [
+        Chapter(
+            title, start, starts[n + 1][1] - 1 if n + 1 < len(starts) else len(rendered.pages) - 1
+        )
+        for n, (title, start) in enumerate(starts)
+    ]
+    outputs = {}
+    for fmt in formats:
+        style = replace(options.style, mode="xth" if fmt == "xtch" else "xtg")
+        quantized = [
+            quantize_page(png, boxes, style)
+            for png, boxes in zip(rendered.pages, rendered.image_boxes, strict=True)
+        ]
+        encode = encode_xth if fmt == "xtch" else encode_xtg
+        pages = [encode(page) for page in quantized]
+        out = output_path(path, out_dir, options.device, fmt, (*inputs, path, *outputs.values()))
+        out.write_bytes(
+            write_container(
+                pages,
+                hq=fmt == "xtch",
+                width=quantized[0].width,
+                height=quantized[0].height,
+                title=source.meta.get("title", path.stem),
+                author=source.meta.get("author", ""),
+                language=source.meta.get("language", ""),
+                chapters=chapters,
+            )
+        )
+        outputs[fmt] = out
+    return outputs
+
+
 def convert_file(
     path: Path,
     options: Options,
@@ -321,8 +380,9 @@ def convert_file(
     on_event: Callable[[Event], None] = lambda e: None,
     cancel: Callable[[], bool] = lambda: False,
     inputs: Sequence[Path] = (),
+    font_extra_dirs: Sequence[Path] = (),
 ) -> Result:
-    """Convert a PDF, Markdown file, book folder or EPUB into an EPUB in `out_dir`.
+    """Convert a PDF, Markdown file, book folder or EPUB into the requested formats in `out_dir`.
 
     `inputs` are all the files of the batch: the output never takes the name of one of them. A PDF
     goes through `extract_pdf` first (or, with `--mode pages`, becomes images of its pages), and
@@ -330,8 +390,8 @@ def convert_file(
     reflow` is the same as `auto`.
 
     Raises ValueError for an input of another kind, and what `extract_pdf` and the optimizer raise:
-    PdfOpenError, ModelsMissing, Cancelled, RemovedByAntivirus (book.md cannot be written or
-    read, or is gone right after the extraction), DRMError.
+    PdfOpenError, ModelsMissing, VcRuntimeMissing, Cancelled, RemovedByAntivirus (book.md cannot
+    be written or read, or is gone right after extraction), DRMError.
     """
     start = time.monotonic()
     kind = "book" if path.is_dir() else path.suffix.lower().lstrip(".")
@@ -341,8 +401,14 @@ def convert_file(
     book_dir = path if kind == "book" else None
     with tempfile.TemporaryDirectory() as tmp:
         scratch = Path(tmp)
+        source = None
         if kind == "epub":
             built = path
+            if any(fmt in options.formats for fmt in ("xtch", "xtc")):
+                source_path = scratch / "source.book"
+                _add(findings, epub_to_book(path, source_path), on_event)
+                source = load_source(source_path)
+                _override(source.meta, options)
         else:
             if kind == "pdf" and options.mode == "pages":
                 source_path = page_book(
@@ -362,11 +428,36 @@ def convert_file(
                 source.meta["title"] = path.stem
             _override(source.meta, options)
             built = scratch / "built.epub"
-            with _stage(on_event, "epub"):
-                _add(findings, build_epub(source, built, device=options.device), on_event)
+            if "epub" in options.formats:
+                with _stage(on_event, "epub"):
+                    _add(findings, build_epub(source, built, device=options.device), on_event)
         out_dir.mkdir(parents=True, exist_ok=True)
-        out = output_path(path, out_dir, options.device, "epub", (*inputs, path))
-        with _stage(on_event, "optimize"):
-            _add(findings, optimize_epub(built, out, options).findings, on_event)
+        outputs = {}
+        if "epub" in options.formats:
+            out = output_path(path, out_dir, options.device, "epub", (*inputs, path))
+            with _stage(on_event, "optimize"):
+                _add(findings, optimize_epub(built, out, options).findings, on_event)
+            outputs["epub"] = out
+        xtc_formats = tuple(fmt for fmt in options.formats if fmt in ("xtch", "xtc"))
+        if xtc_formats:
+            with _stage(on_event, "xtc"):
+                outputs.update(
+                    _write_xtc(
+                        source,
+                        path,
+                        options,
+                        out_dir,
+                        xtc_formats,
+                        inputs,
+                        font_extra_dirs,
+                    )
+                )
     seconds = time.monotonic() - start
-    return Result(path, {"epub": out}, book_dir, findings, seconds, {"epub": out.stat().st_size})
+    return Result(
+        path,
+        outputs,
+        book_dir,
+        findings,
+        seconds,
+        {fmt: out.stat().st_size for fmt, out in outputs.items()},
+    )
