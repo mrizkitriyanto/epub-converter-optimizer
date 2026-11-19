@@ -1,6 +1,7 @@
 """Docling adapter: runs Docling's PDF pipeline offline and maps its document to blocks.
 Docling is imported inside `extract_blocks`, never at module level."""
 
+import re
 from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
@@ -29,9 +30,38 @@ _KIND = {
     "picture": "picture",
     "chart": "picture",
     "table": "table",
-    "document_index": "table",  # Docling's label for a contents page. The item is a table.
+    # Docling's label for a page of contents or an index. The item is a table; the fix stage
+    # reads it again from the text layer (contents.py), or keeps the table on a scanned page.
+    "document_index": "contents",
     "footnote": "footnote",
 }
+
+
+_NUMBER_MARKER = re.compile(r"(\d+)[.)]")
+_LINE_END_HYPHEN = re.compile(r"\w[-–—]$")
+# RapidOCR's line classifier turned some upright lines of a scanned book upside down, and Docling's
+# check of the whole region reads a badly read one again at 90, 180 and 270 degrees instead. Its
+# detector scales a crop up until the short side is 736 px, which split a one-line heading into
+# overlapping pieces ("1.1 Respons s yang"); 32 leaves each crop at its own size.
+_OCR = {"use_cls": False, "detect_orientation": True, "rapidocr_params": {"Det.limit_side_len": 32}}
+
+
+def _keep_line_end_hyphens(lines: list[str]) -> list[str]:
+    """Join each line that ends in a hyphen, en dash or em dash after a word to the next line,
+    keeping the dash and the line break.
+
+    Docling joins the lines of a block and drops every hyphen that ends a line between two words,
+    so `guru-` and `guru` became `guruguru` and `end-of-` and `season` became `end-ofseason`.
+    Kept as `guru-\\nguru`, the split reaches the fix stage, whose dehyphenate decides it by the
+    spec's rule. Every other line end is left to Docling.
+    """
+    out: list[str] = []
+    for line in lines:
+        if out and _LINE_END_HYPHEN.search(out[-1]):
+            out[-1] += "\n" + line
+        else:
+            out.append(line)
+    return out
 
 
 def _position(doc, item):
@@ -78,12 +108,19 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
         text = getattr(item, "text", "")  # pictures and tables have none
         # Docling leaves a formula's text empty (the text layer goes to `orig`), and a formula,
         # picture or table is cropped from the page later, so those three are kept without text.
-        if not text.strip() and kind not in ("formula", "picture", "table"):
+        if not text.strip() and kind not in ("formula", "picture", "table", "contents"):
             continue
         page, bbox = _position(doc, item)
-        level = 0
+        tabular = kind in ("table", "contents")
+        level, number = 0, None
         if kind == "heading":
             level = 1 if item.label == "title" else item.level
+        elif kind == "list_item" and item.enumerated and item.marker:
+            # "3." or "3)" is the item's number; "A.", "(i)" and the like stay at the start
+            if found := _NUMBER_MARKER.fullmatch(item.marker.strip()):
+                number = int(found[1])
+            else:
+                text = f"{item.marker.strip()} {text}"
         blocks.append(
             Block(
                 kind,
@@ -91,14 +128,46 @@ def _to_blocks(doc, scanned: frozenset[int]) -> list[Block]:
                 level=level,
                 page=page,
                 bbox=bbox,
-                html=item.export_to_html(doc, add_caption=False) if kind == "table" else "",
-                caption=item.caption_text(doc) if kind in ("table", "picture") else "",
+                html=item.export_to_html(doc, add_caption=False) if tabular else "",
+                caption=item.caption_text(doc) if tabular or kind == "picture" else "",
                 ocr=page in scanned,
+                number=number,
             )
         )
         if kind == "picture":
             blocks.extend(_picture_footnotes(doc, item, scanned))
     return blocks
+
+
+def _pipeline_class():
+    """Docling's PDF pipeline, changed in the two places where Docling joins a hyphen at a line
+    end: the page assembly applies `_keep_line_end_hyphens` first, and the reading order keeps the
+    hyphen and a line break when it merges a text that a page or column break cut. Docling is
+    loaded by then: extract_blocks calls this inside offline_env."""
+    from docling.models.stages.page_assemble.page_assemble_model import (
+        PageAssembleModel,
+        PageAssembleOptions,
+    )
+    from docling.models.stages.reading_order.readingorder_model import ReadingOrderModel
+    from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+
+    class Assemble(PageAssembleModel):
+        def sanitize_text(self, lines):
+            return super().sanitize_text(_keep_line_end_hyphens(lines))
+
+    class ReadingOrder(ReadingOrderModel):
+        def _merge_elements(self, element, merged_elem, new_item, page_height):
+            if _LINE_END_HYPHEN.search(new_item.text):
+                new_item.text += "\n"  # no longer ends in "-", so Docling joins with a space
+            super()._merge_elements(element, merged_elem, new_item, page_height)
+
+    class Pipeline(StandardPdfPipeline):
+        def _init_models(self):
+            super()._init_models()
+            self.assemble_model = Assemble(options=PageAssembleOptions())
+            self.reading_order_model = ReadingOrder(options=self.reading_order_model.options)
+
+    return Pipeline
 
 
 def extract_blocks(
@@ -130,16 +199,19 @@ def extract_blocks(
         options = PdfPipelineOptions(
             artifacts_path=models,
             do_ocr=ocr != "off",
-            ocr_options=RapidOcrOptions(mode="full_page") if ocr == "force" else RapidOcrOptions(),
+            ocr_options=(
+                RapidOcrOptions(mode="full_page", **_OCR)
+                if ocr == "force"
+                else RapidOcrOptions(**_OCR)
+            ),
             do_table_structure=True,
             do_code_enrichment=False,
             do_formula_enrichment=False,
             generate_page_images=False,
             generate_picture_images=False,
         )
-        converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
-        )
+        pdf_format = PdfFormatOption(pipeline_options=options, pipeline_cls=_pipeline_class())
+        converter = DocumentConverter(format_options={InputFormat.PDF: pdf_format})
 
         def report(event):
             if isinstance(event, PageCompletedProgress) and event.success:

@@ -138,6 +138,7 @@ def _convert(args: argparse.Namespace) -> int:
 
 
 def _extract(args: argparse.Namespace) -> int:
+    from eco.bookfolder import read_book_md
     from eco.pdf.pages import pdf_metadata
     from eco.pipeline import extract_pdf
 
@@ -161,15 +162,13 @@ def _extract(args: argparse.Namespace) -> int:
     n = 0
     while (dest := out_dir / f"{pdf.stem}{f'-{n}' if n else ''}.book").exists():
         n += 1
+    markdown = read_book_md(folder, just_written=True)  # a virus scanner is named plainly
     shutil.copytree(folder, dest)
     if "title" not in pdf_metadata(pdf):
         # the cache holds the file name its first extraction saw; this file may be named otherwise
-        md = dest / "book.md"
         title = f"title: {json.dumps(pdf.stem, ensure_ascii=False)}"
-        text = re.sub(
-            r"^title: .*$", lambda _: title, md.read_text(encoding="utf-8"), 1, re.MULTILINE
-        )
-        md.write_text(text, encoding="utf-8")
+        text = re.sub(r"^title: .*$", lambda _: title, markdown, 1, re.MULTILINE)
+        (dest / "book.md").write_text(text, encoding="utf-8")
     print(dest)
     _print_findings(findings)
     return 0

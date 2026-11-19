@@ -159,6 +159,279 @@ def shapes_pdf(directory: Path) -> tuple[Path, Bbox]:
     return _write(directory, "shapes.pdf", _compile(source)), (100.0, 100.0, 320.0, 160.0)
 
 
+def contents_pdf(directory: Path) -> Path:
+    """Three pages: a contents page (full-width part titles, two columns of entries with dot
+    leaders and print page numbers), a page of text, and an index in two columns."""
+
+    def at(x: int, y: int, text: str, size: int = 11) -> str:
+        return f"#place(top + left, dx: {x}pt, dy: {y}pt)[#text(size: {size}pt)[{text}]]\n"
+
+    contents = at(72, 50, "Contents", 18) + at(
+        72, 100, "Part One: Getting Ready for the Long Walk", 16
+    )
+    for n, (left, right) in enumerate(
+        [("Alpha steps", "Delta notes"), ("Beta steps", "Epsilon notes"), ("Preface", "Zeta notes")]
+    ):
+        y = 130 + 16 * n
+        number = "xi" if left == "Preface" else str(3 + n)
+        contents += at(72, y, f"{left} . . . . . . {number}") + at(330, y, f"{right} {20 + n}")
+    contents += at(72, 190, "Part Two: Coming Home Again Much Later", 16)
+    contents += at(72, 220, "Eta work 31") + at(330, 220, "Iota work 35")
+    index = at(72, 50, "Index", 18)
+    for n, (left, right) in enumerate([("apple 12, 14", "banana 7"), ("pie 15", "cherry 3, 9")]):
+        index += at(72, 100 + 16 * n, left) + at(330, 100 + 16 * n, right)
+    source = PAGE + SERIF + contents + "#pagebreak()\n" + at(72, 72, "A page of ordinary text.")
+    source += "#pagebreak()\n" + index
+    return _write(directory, "contents.pdf", _compile(source))
+
+
+def contents_layouts_pdf(directory: Path) -> Path:
+    """Four pages with the layouts `contents_pdf` does not have. Page 1: one column of contents
+    whose page numbers are runs of their own at the right margin, with lines that end in a word
+    that looks like a number. Page 2: two columns whose page numbers are runs of their own at the
+    right edge of each column (280 and 540 pt), and a short part title centred over the gutter.
+    Page 3: text. Page 4: an index whose commas are runs of their own. Text is set as Typst
+    strings, so "..." stays three dots."""
+
+    def at(x: float, y: float, text: str, size: int = 11) -> str:
+        return f'#place(top + left, dx: {x}pt, dy: {y}pt)[#text(size: {size}pt, "{text}")]\n'
+
+    def ending_at(x: float, y: float, text: str) -> str:
+        return f'#place(top + right, dx: {x - 612}pt, dy: {y}pt)[#text(size: 11pt, "{text}")]\n'
+
+    one = at(72, 100, "Part One: Basics of the work", 14)
+    for n, (x, title, number) in enumerate(
+        [
+            (72, "Preface", "xi"),
+            (72, "Hunting on Windows 10", "45"),
+            (72, "Lab mix", "50"),
+            (72, "Editing with vi", ""),  # the first line of an entry of two lines
+            (84, "and other tools", "52"),
+            (72, "What next...", ""),
+            (72, "Chapter Two Is A Long Title That Runs Across", "60"),
+            (72, "Chapter 3 Basics ........ 117", ""),  # the number in the run, after a leader
+        ]
+    ):
+        one += at(x, 130 + 16 * n, title) + (ending_at(540, 130 + 16 * n, number) if number else "")
+    two = at(72, 100, "Part One: Getting Ready for the Long Walk", 16)
+    rows = [
+        (130, ("Alpha steps", "3"), ("Delta notes", "20")),
+        (146, ("Beta steps", "5"), ("Epsilon notes", "22")),
+        (162, ("Gamma steps", "8"), ("Zeta notes", "25")),
+        (220, ("Eta work", "31"), ("Iota work", "35")),
+        (236, ("Theta work", "33"), ("Kappa work", "37")),
+    ]
+    for y, (left, left_number), (right, right_number) in rows:
+        two += at(72, y, left) + ending_at(280, y, left_number)
+        two += at(330, y, right) + ending_at(540, y, right_number)
+    two += '#place(top + center, dy: 190pt)[#text(size: 14pt, "Part Two")]\n'
+    # the comma touches "116", and its glyph box sits 6 pt below the top of the line
+    index = at(72, 50, "Index", 18) + at(72, 100, "protecting 116") + at(136.3, 100, ",")
+    index += at(141, 100, "117") + at(72, 114, "pyramid 3") + at(80, 128, "of pain 5")
+    source = PAGE + SERIF + one + "#pagebreak()\n" + two + "#pagebreak()\n"
+    source += at(72, 72, "A page of ordinary text.") + "#pagebreak()\n" + index
+    return _write(directory, "contents_layouts.pdf", _compile(source))
+
+
+LABELS = ["Introduction", "Methods", "Results", "Discussion", "Summary"]
+
+
+def column_layouts_pdf(directory: Path) -> Path:
+    """Twelve pages of layouts that decide between one column and two, with no full-width line.
+    Contents (pages 1-5): (1) a short last column, two lines on the right beside five on the
+    left, page numbers as runs at the right edge of each column (280 and 540 pt); (2) a right
+    column of one line; (3) "Chapter n" labels at 72 pt beside short titles at 140 pt, page
+    numbers at the right margin; (4) the same labels and titles without page numbers; (5) two
+    columns without page numbers, with an italic run that starts past the middle of the left
+    column after other text, and a code run after other text in the right column; (6) two numbered
+    chapter zones whose entries continue in the right column. Index (pages 7-10): (7) six long entries on the left and three short ones on the right;
+    (8) an italic "see also" past the middle of the left column; (9) three columns, at 72, 250
+    and 428 pt; (10) a right column of one line; (11) a word broken at a line end. Page 12: text."""
+
+    def at(x: float, y: float, text: str, size: int = 11, style: str = "") -> str:
+        look = {"italic": ', style: "italic"', "code": ', font: "DejaVu Sans Mono"', "": ""}
+        return (
+            f"#place(top + left, dx: {x}pt, dy: {y}pt)"
+            f'[#text(size: {size}pt{look[style]}, "{text}")]\n'
+        )
+
+    def ending_at(x: float, y: float, text: str) -> str:
+        return f'#place(top + right, dx: {x - 612}pt, dy: {y}pt)[#text(size: 11pt, "{text}")]\n'
+
+    def columns(
+        lefts: list[tuple[str, str]], rights: list[tuple[str, str]], start: int = 100
+    ) -> str:
+        page = ""
+        for n, (title, number) in enumerate(lefts):
+            page += at(72, start + 16 * n, title) + ending_at(280, start + 16 * n, number)
+        for n, (title, number) in enumerate(rights):
+            page += at(330, start + 16 * n, title) + ending_at(540, start + 16 * n, number)
+        return page
+
+    left = [("Alpha steps", "3"), ("Beta steps", "5"), ("Gamma steps", "8"), ("Delta steps", "9")]
+    pages = [
+        columns([*left, ("Epsilon steps", "11")], [("Zeta notes", "20"), ("Eta notes", "22")]),
+        columns(left, [("Zeta notes", "20")]),
+        "".join(
+            at(72, 100 + 16 * n, f"Chapter {n + 1}")
+            + at(140, 100 + 16 * n, title)
+            + ending_at(540, 100 + 16 * n, str(5 + 10 * n))
+            for n, title in enumerate(LABELS)
+        ),
+        "".join(
+            at(72, 100 + 16 * n, f"Chapter {n + 1}") + at(140, 100 + 16 * n, title)
+            for n, title in enumerate(LABELS)
+        ),
+        "".join(
+            at(72, 100 + 16 * n, a) + at(330, 100 + 16 * n, b)
+            for n, (a, b) in enumerate(
+                [
+                    ("Alpha steps", "Eps notes"),
+                    ("Beta steps", "Zeta notes"),
+                    ("Detecting lateral movement with", "Logs from"),
+                    ("Gamma steps", "Theta notes"),
+                    ("Delta steps", "Iota notes"),
+                ]
+            )
+        )
+        + at(228, 132, "PsExec", style="italic")
+        + at(380, 132, "auditd", size=10, style="code"),
+        at(72, 72, "A page of ordinary text."),
+    ]
+    index = [
+        ("web shells, detecting 101, 140", "YARA rules 150"),
+        ("Windows Event Forwarding 88", "zero trust 12"),
+        ("Windows Management Instrumentation 63, 70", "Zeek 98"),
+        ("workstation hunting 77", ""),
+        ("WMI persistence 71, 72", ""),
+        ("XDR platforms 30", ""),
+    ]
+    pages.append(
+        "".join(
+            at(72, 100 + 13 * n, a, 10) + (at(330, 100 + 13 * n, b, 10) if b else "")
+            for n, (a, b) in enumerate(index)
+        )
+    )
+    pairs = [("apple 12", "kiwi 3"), ("banana 7, 9,", "lemon 4"), ("fruit 2", "mango 8")]
+    pages.append(
+        "".join(
+            at(72, 100 + 14 * n, a) + at(330, 100 + 14 * n, b) for n, (a, b) in enumerate(pairs)
+        )
+        + at(205, 114, "see also", style="italic")
+        + at(250, 114, "fruit")
+    )
+    trees = [(72, ["acorn", "birch", "cedar"]), (250, ["dogwood", "elm", "fir"])]
+    trees.append((428, ["ginkgo", "hazel", "ivy"]))
+    pages.append(
+        "".join(
+            at(x, 100 + 14 * n, f"{word} {n + 1}")
+            for x, words in trees
+            for n, word in enumerate(words)
+        )
+    )
+    pages.append(
+        "".join(at(72, 100 + 14 * n, f"{w} {n + 2}") for n, w in enumerate(["oak", "pine", "yew"]))
+        + at(330, 100, "zelkova 40")
+    )
+    # (11) a word broken at a line end: PDFium marks that hyphen as a character of its own
+    pages.append(
+        at(72, 100, "anomaly detec-") + at(72, 114, "tion 40") + at(72, 128, "audit logs 9")
+    )
+    chapters = at(72, 100, "3", 15) + at(72, 124, "Team Construct", 13)
+    chapters += columns(
+        [("Roles performed within a team", ""), ("Team lead", "")],
+        [("Ways to organize a team", ""), ("Summary", "")],
+        148,
+    )
+    chapters += at(72, 196, "4", 15) + at(72, 220, "Communication Breakdown", 13)
+    chapters += columns(
+        [("Internal team communication", ""), ("Communicating with stakeholders", "")],
+        [("Scenario A", ""), ("Review questions", "")],
+        244,
+    )
+    pages[5] = chapters
+    pages.append(at(72, 72, "A page of ordinary text."))
+    source = PAGE + SERIF + "#pagebreak()\n".join(pages)
+    return _write(directory, "column_layouts.pdf", _compile(source))
+
+
+def picture_text_pdf(directory: Path) -> Path:
+    """A page with a text layer and two raster pictures of text, each 200 x 100 pt: the first at
+    (100, 150), with a caption under it in the text layer; the second at (100, 320), with a label
+    of the text layer printed over it."""
+    words = "#set page(width: 200pt, height: 100pt, margin: 8pt)\n" + SERIF
+    words += "Pictured words\n\ninside a figure"
+    _png(words, 150).save(directory / "pictured.png")
+    place = "#place(top + left, dx: {}pt, dy: {}pt)[{}]\n"
+    source = PAGE + SERIF + place.format(72, 60, "Ordinary text that the text layer holds.")
+    source += place.format(100, 150, '#image("pictured.png", width: 200pt)')
+    source += place.format(100, 260, "Figure 1 - a caption in the text layer")
+    source += place.format(100, 320, '#image("pictured.png", width: 200pt)')
+    source += place.format(110, 330, "Overlay label")
+    typ = directory / "picture_text.typ"
+    typ.write_text(source, encoding="utf-8")
+    data = typst.compile(str(typ), root=str(directory), ignore_system_fonts=True)
+    return _write(directory, "picture_text.pdf", data)
+
+
+def form_image_pdf(path: Path, forms: list[tuple[str, str]]) -> Path:
+    """A 612 x 792 pt page with one 2 x 2 px image, drawn 100 x 50 pt at the origin of the
+    innermost of the nested Form XObjects `forms`: each is (the `cm` before its `Do`, its
+    `/Matrix`), outermost first. Written byte by byte, so the nesting is exactly as given."""
+
+    def stream(head: str, body: str | bytes) -> bytes:
+        data = body.encode() if isinstance(body, str) else body
+        return f"<< {head} /Length {len(data)} >>\nstream\n".encode() + data + b"\nendstream"
+
+    n = len(forms)
+    page = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        page + "/Resources << /XObject << /X0 5 0 R >> >> /Contents 4 0 R >>",
+        stream("", f"q {forms[0][0]} cm /X0 Do Q"),
+    ]
+    for k, (_, matrix) in enumerate(forms):
+        if k + 1 < n:
+            inner, draw = f"/X{k + 1}", f"q {forms[k + 1][0]} cm /X{k + 1} Do Q"
+        else:
+            inner, draw = "/Im", "q 100 0 0 50 0 0 cm /Im Do Q"
+        head = (
+            f"/Type /XObject /Subtype /Form /BBox [0 0 612 792] /Matrix [{matrix}] "
+            f"/Resources << /XObject << {inner} {6 + k} 0 R >> >>"
+        )
+        objects.append(stream(head, draw))
+    image = "/Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB "
+    objects.append(stream(image + "/BitsPerComponent 8", bytes(12)))
+    out, offsets = b"%PDF-1.7\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        data = body.encode() if isinstance(body, str) else body
+        out += f"{number} 0 obj\n".encode() + data + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets)
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n".encode()
+    out += f"startxref\n{xref}\n%%EOF\n".encode()
+    path.write_bytes(out)
+    return path
+
+
+def nested_pictures_pdf(directory: Path) -> Path:
+    """A page with a text layer and two raster pictures without text: a small one, 100 x 50 pt at
+    (150, 200), drawn first, and a large one, 300 x 200 pt at (100, 150), drawn over it."""
+    Image.new("RGB", (40, 20), (90, 90, 90)).save(directory / "small.png")
+    Image.new("RGB", (60, 40), (200, 200, 200)).save(directory / "large.png")
+    place = "#place(top + left, dx: {}pt, dy: {}pt)[{}]\n"
+    source = PAGE + SERIF + place.format(72, 60, "Ordinary text that the text layer holds.")
+    source += place.format(150, 200, '#image("small.png", width: 100pt, height: 50pt)')
+    source += place.format(100, 150, '#image("large.png", width: 300pt, height: 200pt)')
+    typ = directory / "nested_pictures.typ"
+    typ.write_text(source, encoding="utf-8")
+    data = typst.compile(str(typ), root=str(directory), ignore_system_fonts=True)
+    return _write(directory, "nested_pictures.pdf", data)
+
+
 def build_all(directory: Path) -> dict:
     return {
         "two_column": two_column_pdf(directory),
@@ -170,6 +443,11 @@ def build_all(directory: Path) -> dict:
         "tall": tall_pdf(directory),
         "photo": photo_pdf(directory),
         "shapes": shapes_pdf(directory),
+        "contents": contents_pdf(directory),
+        "contents_layouts": contents_layouts_pdf(directory),
+        "column_layouts": column_layouts_pdf(directory),
+        "picture_text": picture_text_pdf(directory),
+        "nested_pictures": nested_pictures_pdf(directory),
     }
 
 

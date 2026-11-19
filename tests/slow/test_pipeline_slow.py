@@ -2,6 +2,7 @@ import re
 import socket
 
 import pytest
+from fixtures.links import link_dir
 
 from eco.options import Options
 from eco.pipeline import convert_file
@@ -21,7 +22,7 @@ def data_dir(tmp_path, models):
     extract stay out of the cache of the person who runs them."""
     data = tmp_path / "data"
     data.mkdir()
-    (data / "models").symlink_to(models, target_is_directory=True)
+    link_dir(data / "models", models)
     return data
 
 

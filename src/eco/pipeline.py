@@ -21,10 +21,18 @@ from eco.events import Cancelled, Event, Finding, FindingEvent, PageEvent, Stage
 from eco.models import models_dir
 from eco.options import DEVICES, Options, image_profile
 from eco.pdf.code import fix_code_blocks
+from eco.pdf.contents import rebuild_contents
 from eco.pdf.docling_adapter import extract_blocks
 from eco.pdf.pages import PageInfo, PdfOpenError, bookmarks, inspect_pdf, pdf_metadata
 from eco.pdf.reading_order import fix_reading_order
-from eco.pdf.regions import _save_by_content, materialize_regions, page_slices, render_cover
+from eco.pdf.regions import (
+    _save_by_content,
+    keep_picture_text_as_images,
+    leave_out_the_cover_page,
+    materialize_regions,
+    page_slices,
+    render_cover,
+)
 from eco.pdf.structure import assign_heading_levels
 from eco.pdf.text import (
     clean_heading_artifacts,
@@ -34,7 +42,7 @@ from eco.pdf.text import (
     normalize,
 )
 
-EXTRACTOR_VERSION = 1  # bump it when extraction changes: cached book folders then stop matching
+EXTRACTOR_VERSION = 7  # bump it when extraction changes: cached book folders then stop matching
 CHUNK_PAGES = 50
 _LANGUAGE_SAMPLE = 5000
 
@@ -160,11 +168,19 @@ def _fix(
     pages: dict[int, PageInfo],
     images_dir: Path,
     language: str,
+    ocr: str,
     on_event: Callable[[Event], None],
     findings: list[Finding],
 ) -> list[Block]:
     """The passes of the `fix` stage. Their order matters."""
+    blocks, found = leave_out_the_cover_page(blocks, pages)
+    _add(findings, found, on_event)
     blocks, found = fix_reading_order(blocks, pages)
+    _add(findings, found, on_event)
+    blocks, found = rebuild_contents(pdf, blocks, pages)
+    _add(findings, found, on_event)
+    # before the code pass and the region pass, which turns the pictures it adds into images
+    blocks, found = keep_picture_text_as_images(pdf, blocks, pages, ocr)
     _add(findings, found, on_event)
     blocks, found = fix_code_blocks(pdf, blocks, pages, images_dir)
     _add(findings, found, on_event)
@@ -211,20 +227,23 @@ def extract_pdf(
     """Extract a PDF into a book folder of the cache and return the folder.
 
     The folder is named after the PDF's SHA-256, the extractor version and `options.ocr`. One that
-    holds a report.json is complete: it is reused, and only its findings are reported again. The
-    stages are `read`, `layout` and `fix`. Raises PdfOpenError for a PDF that cannot be read,
-    ModelsMissing when `eco setup` has not run and Cancelled when `cancel()` says so.
+    holds a report.json and a book.md is complete: it is reused, and only its findings are reported
+    again. One without book.md, which a virus scanner can remove, is extracted again. The stages
+    are `read`, `layout` and `fix`. Raises PdfOpenError for a PDF that cannot be read,
+    ModelsMissing when `eco setup` has not run, Cancelled when `cancel()` says so and
+    RemovedByAntivirus when Windows refuses to write book.md.
     """
     try:
         digest = _sha256(pdf)
     except OSError as error:  # the same message inspect_pdf gives for a file it cannot open
         raise PdfOpenError(f"Not a readable PDF: {pdf.name}") from error
     folder = data_dir / "cache" / f"{digest[:16]}-x{EXTRACTOR_VERSION}-{options.ocr}.book"
-    if (folder / "report.json").is_file():
+    if (folder / "report.json").is_file() and (folder / "book.md").is_file():
         for finding in read_report(folder):
             on_event(FindingEvent(finding))
         return folder
-    shutil.rmtree(folder, ignore_errors=True)  # a run that was cancelled or crashed left it
+    shutil.rmtree(folder, ignore_errors=True)  # a run that was cancelled or crashed left it, or
+    # a virus scanner removed its book.md
 
     findings: list[Finding] = []
     infos = _read(pdf, options.ocr != "off", on_event, findings)
@@ -234,7 +253,8 @@ def extract_pdf(
         text = " ".join(b.text for b in blocks)[:_LANGUAGE_SAMPLE]
         language = detect_language(text)
         pages = {info.number: info for info in infos}
-        blocks = _fix(pdf, blocks, pages, folder / "images", language, on_event, findings)
+        images = folder / "images"
+        blocks = _fix(pdf, blocks, pages, images, language, options.ocr, on_event, findings)
         write_book(_pdf_book(pdf, digest, language, blocks, folder), folder, findings)
     return folder
 
@@ -294,7 +314,8 @@ def convert_file(
     reflow` is the same as `auto`.
 
     Raises ValueError for an input of another kind, and what `extract_pdf` and the optimizer raise:
-    PdfOpenError, ModelsMissing, Cancelled, DRMError.
+    PdfOpenError, ModelsMissing, Cancelled, RemovedByAntivirus (book.md cannot be written or
+    read, or is gone right after the extraction), DRMError.
     """
     start = time.monotonic()
     kind = "book" if path.is_dir() else path.suffix.lower().lstrip(".")
@@ -318,7 +339,7 @@ def convert_file(
                 findings += read_report(book_dir)  # extract_pdf has reported them already
             else:
                 source_path = path
-            source = load_source(source_path)
+            source = load_source(source_path, just_written=kind == "pdf")
             if kind == "pdf" and "title" not in pdf_metadata(path):
                 # the cache serves every file with these bytes, so the file name it saw first
                 # must not become the title of a copy that has another name

@@ -791,6 +791,52 @@ def test_named_entities_become_characters_and_bad_xml_is_left_unchanged(tmp_path
         assert z.read("OEBPS/text/ok.xhtml").startswith(b'<?xml version="1.0" encoding="utf-8"?>\n')
 
 
+def test_an_image_that_a_document_left_unparsed_refers_to_keeps_its_name_and_bytes(tmp_path):
+    photo = image_bytes((200, 100), "PNG", mode="RGBA", seed=4)  # X4 makes it a JPEG
+    pages = {
+        "ok": '<p><img src="../img/shared.png" alt="a"/><img src="../img/own.png" alt="b"/></p>',
+        "broken": '<p>unclosed <img src="../img/shared.png" alt="a"/>',
+    }
+    files = {"img/shared.png": photo, "img/own.png": photo}
+    z, rep = run(tmp_path, package(tmp_path, pages, files), X4)
+    assert z.read("OEBPS/img/shared.png") == photo
+    assert "OEBPS/img/own.jpg" in z.namelist() and "OEBPS/img/own.png" not in z.namelist()
+    assert 'src="../img/shared.png"' in text_of(z, "OEBPS/text/ok.xhtml")
+    [bad] = [f.message for f in rep.findings if f.kind == "bad_xml"]
+    assert "its links are not updated" in bad
+    [kept] = [f for f in rep.findings if f.kind == "image_kept"]
+    assert kept.level == "warning" and "OEBPS/img/shared.png" in kept.message
+
+
+def test_an_unparsed_page_refers_to_an_image_in_an_unquoted_url_or_before_a_fragment(tmp_path):
+    photo = image_bytes((200, 100), "PNG", mode="RGBA", seed=4)  # X4 makes it a JPEG
+    broken = (
+        '<p style="background: url(../img/a.png)">unclosed '
+        '<img src="../img/b.png#part" alt="b"/><img src="../img/c.png?v=2" alt="c"/>'
+    )
+    pages = {"broken": broken}
+    files = {"img/a.png": photo, "img/b.png": photo, "img/c.png": photo}
+    z, rep = run(tmp_path, package(tmp_path, pages, files), X4)
+    for name in ("a", "b", "c"):
+        assert z.read(f"OEBPS/img/{name}.png") == photo
+    assert len([f for f in rep.findings if f.kind == "image_kept"]) == 3
+
+
+def test_an_image_whose_name_is_only_part_of_a_name_in_an_unparsed_page_is_converted(tmp_path):
+    photo = image_bytes((200, 100), "PNG", mode="RGBA", seed=4)  # X4 makes it a JPEG
+    pages = {
+        "ok": '<p><img src="../img/1.png" alt="a"/><img src="../img/img-071.png" alt="b"/></p>',
+        "broken": '<p>unclosed <img src="../img/img-071.png" alt="b"/>',
+    }
+    files = {"img/1.png": photo, "img/img-071.png": photo}
+    z, rep = run(tmp_path, package(tmp_path, pages, files), X4)
+    assert "OEBPS/img/1.jpg" in z.namelist()  # "1.png" is inside "img-071.png", no reference
+    assert z.read("OEBPS/img/img-071.png") == photo
+    assert [f.message for f in rep.findings if f.kind == "image_kept"] == [
+        "OEBPS/img/img-071.png is left unchanged: a page that is not well-formed refers to it"
+    ]
+
+
 def test_the_doctype_and_the_xml_declaration_are_kept_or_normalised(tmp_path):
     xhtml11 = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

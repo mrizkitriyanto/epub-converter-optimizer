@@ -12,8 +12,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from eco.bookfolder import load_source
-from eco.epub.builder import build_epub
+from eco.book import Block, Book
+from eco.bookfolder import load_source, write_book
+from eco.epub.builder import _Builder, build_epub
 from eco.epub.zipio import write_epub_zip
 from eco.options import CHAPTER_LIMIT_BYTES
 
@@ -264,15 +265,30 @@ def test_text_before_the_first_heading_goes_to_front(tmp_path):
     assert "OEBPS/text/front.xhtml" not in z.namelist()
 
 
-def test_control_characters_cannot_break_the_xml(tmp_path):
-    z, findings = build(
-        tmp_path, '---\ntitle: "T\\f"\n---\n# A\x0cB\n\nform\x0cfeed and \x00 nul\n'
+def test_text_that_xml_cannot_hold_becomes_u_fffd_with_a_finding_for_each_chapter(tmp_path):
+    bad = "\ufffe\uffff\x01\x08"  # what XML 1.0 has no place for, even as a reference
+    markdown = (
+        '---\ntitle: "T\\f"\n---\n'
+        f"# A\x0cB\n\nform{bad}feed and \x00 nul\n\n"
+        "```\n0010 75 2D @.+.w......f#.u\ufffe\n```\n\n"
+        "# Clean\n\nNothing here.\n\n"
+        "# Raw\n\n<p>raw \uffff</p>\n\nsee &#xFFFE; and &#1;[^n]\n\n"
+        "[^n]: a note in the footnote block, at the end \ufffe\n"
     )
-    assert findings == []
+    z, findings = build(tmp_path, markdown)
     for name in z.namelist():
         if name.endswith((".xhtml", ".opf", ".ncx")):
-            read_xml(z, name)
-    assert "formfeed and  nul" in "".join(read_xml(z, "OEBPS/text/ch001.xhtml").itertext())
+            read_xml(z, name)  # every one parses
+    first = read_xml(z, "OEBPS/text/ch001.xhtml")
+    assert "form\ufffd\ufffd\ufffd\ufffdfeed and \ufffd nul" in "".join(first.itertext())
+    assert first.find(".//h:pre/h:code", NS).text == "0010 75 2D @.+.w......f#.u\ufffd\n"
+    assert read_xml(z, OPF).find(".//dc:title", NS).text == "T\ufffd"
+    replaced = "that XML cannot hold replaced with U+FFFD in"
+    assert [(f.kind, f.level, f.message) for f in findings] == [
+        ("xml_char_replaced", "warning", f"1 character {replaced} the book's metadata"),
+        ("xml_char_replaced", "warning", f"7 characters {replaced} chapter 'A\ufffdB'"),
+        ("xml_char_replaced", "warning", f"2 characters {replaced} chapter 'Raw'"),
+    ]
 
 
 def test_thematic_breaks_at_the_start_are_content_not_front_matter(tmp_path):
@@ -538,3 +554,61 @@ def test_epubcheck_export(tmp_path, small_book):
     for name, markdown, device in (("rich", RICH, "general"), ("split", long_markdown(), "x4")):
         (tmp_path / f"{name}.md").write_text(markdown, encoding="utf-8")
         build_epub(load_source(tmp_path / f"{name}.md"), out / f"{name}.epub", device=device)
+
+
+def test_the_page_of_a_chapter_with_replaced_characters_is_not_left_for_later_findings(tmp_path):
+    md = tmp_path / "x.md"
+    md.write_text(
+        "<!-- page: 3 -->\n\n# A\n\nbad \ufffe\n\n# B\n\n<!-- page: 9 -->\n\nok\n", encoding="utf-8"
+    )
+    builder = _Builder(load_source(md), "general")
+    builder._chapters()
+    assert [(f.kind, f.page) for f in builder.findings] == [("xml_char_replaced", 3)]
+    assert builder.page == 9  # where the text ended, as before the findings
+
+
+def numbered(*items):
+    """A paragraph, then one list item per (number, text)."""
+    return [Block("paragraph", "Next:", page=1)] + [
+        Block("list_item", text, number=n, page=1) for n, text in items
+    ]
+
+
+def test_numbered_list_items_become_ordered_lists_that_keep_their_start(tmp_path):
+    blocks = [
+        Block("heading", "H", level=1, page=1),
+        Block("list_item", "first", number=3, page=1),
+        Block("list_item", "second\nline", number=4, page=1),
+        Block("list_item", "A. a lettered item", page=1),
+        Block("list_item", "fifth", number=5, page=1),
+        *numbered((1, "a"), (2, "b"), (1, "c"), (2, "d"), (3, "e")),  # a list that starts again
+        *numbered((5, "f"), (7, "g")),  # a number skipped
+        *numbered((0, "h"), (1, "i")),  # a list that starts at 0
+        *numbered((3, "j"), (4, "k"), (5, "l")),
+    ]
+    folder = tmp_path / "n.book"
+    write_book(Book(title="T", blocks=blocks), folder, [])
+    markdown = load_source(folder).markdown
+    assert "3. first\n4. second\n   line\n\n- A. a lettered item\n\n5. fifth" in markdown
+    z, _ = build_book(tmp_path, folder, "general")
+    body = read_xml(z, "OEBPS/text/ch001.xhtml")
+    lists = [
+        (
+            el.tag.split("}")[1],
+            el.get("start"),
+            [" ".join("".join(li.itertext()).split()) for li in el],
+        )
+        for el in body.iter()
+        if el.tag in (tag("ol"), tag("ul"))
+    ]
+    assert lists == [
+        ("ol", "3", ["first", "second line"]),
+        ("ul", None, ["A. a lettered item"]),
+        ("ol", "5", ["fifth"]),
+        ("ol", None, ["a", "b"]),
+        ("ol", None, ["c", "d", "e"]),
+        ("ol", "5", ["f"]),
+        ("ol", "7", ["g"]),
+        ("ol", "0", ["h", "i"]),
+        ("ol", "3", ["j", "k", "l"]),
+    ]

@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 from importlib.metadata import version
-from types import SimpleNamespace
+from types import CodeType, SimpleNamespace
 
 import pytest
 from docling_core.types.doc import (
@@ -21,7 +21,8 @@ from docling_core.types.doc import (
 
 from eco.book import Block
 from eco.models import MARKER, ModelsMissing
-from eco.pdf.docling_adapter import _to_blocks, extract_blocks
+from eco.pdf.docling_adapter import _keep_line_end_hyphens, _to_blocks, extract_blocks
+from eco.pdf.text import dehyphenate
 
 TEXT = "Some text."
 # The same box twice: as Docling stores it (bottom-left origin, so top > bottom) and as a Block
@@ -98,6 +99,26 @@ def adds_list_item(doc, p):
 
 
 @pytest.mark.parametrize(
+    "enumerated, marker, text, number",
+    [
+        (True, "3.", TEXT, 3),
+        (True, "12)", TEXT, 12),
+        (True, "0.", TEXT, 0),  # a list can start at 0
+        (True, "A.", f"A. {TEXT}", None),  # not a plain number: the marker stays as text
+        (True, "(i)", f"(i) {TEXT}", None),
+        (False, "\u2022", TEXT, None),  # a bullet
+        (False, None, TEXT, None),
+    ],
+)
+def test_a_numbered_list_item_keeps_its_number(enumerated, marker, text, number):
+    doc = new_doc()
+    group = doc.add_group(label=GroupLabel.LIST)
+    doc.add_list_item(TEXT, enumerated=enumerated, marker=marker, parent=group, prov=prov())
+    [block] = _to_blocks(doc, frozenset())
+    assert (block.kind, block.text, block.number) == ("list_item", text, number)
+
+
+@pytest.mark.parametrize(
     "add,kind,level",
     [
         pytest.param(lambda d, p: d.add_title(TEXT, prov=p), "heading", 1, id="title"),
@@ -140,10 +161,13 @@ def test_table_has_html_and_its_caption():
     assert "<th>H1</th><th>H2</th>" in block.html and "<td>a</td><td>b</td>" in block.html
 
 
-def test_document_index_is_a_table():
+def test_document_index_is_a_contents_block_that_keeps_doclings_table():
+    """The fix stage reads it again from the text layer, or keeps the table on a scanned page."""
     doc = new_doc()
     doc.add_table(data=table_data(), label=DocItemLabel.DOCUMENT_INDEX, prov=prov())
-    assert [b.kind for b in _to_blocks(doc, frozenset())] == ["table"]
+    [block] = _to_blocks(doc, frozenset())
+    assert (block.kind, block.page, block.bbox) == ("contents", 1, BLOCK_BOX)
+    assert "<td>a</td>" in block.html
 
 
 def test_caption_that_a_code_block_owns_is_a_paragraph_right_after_the_code():
@@ -361,6 +385,7 @@ def run_with_fake_convert(tmp_path, monkeypatch, pages_done, ocr="auto", scanned
             source=source,
             kwargs=kwargs,
             options=self.format_to_options[InputFormat.PDF].pipeline_options,
+            pipeline_cls=self.format_to_options[InputFormat.PDF].pipeline_cls,
             offline=(os.environ.get("HF_HUB_OFFLINE"), os.environ.get("TRANSFORMERS_OFFLINE")),
         )
         progress = kwargs["progress_callback"]
@@ -417,9 +442,120 @@ def test_extract_blocks_runs_the_configured_pipeline_offline(tmp_path, monkeypat
     assert options.do_ocr is (ocr != "off")
     assert isinstance(options.ocr_options, RapidOcrOptions)
     assert options.ocr_options.mode == ("full_page" if ocr == "force" else "default")
+    assert options.ocr_options.use_cls is False  # it turned upright lines upside down (R-71)
+    assert options.ocr_options.detect_orientation is True
+    assert options.ocr_options.rapidocr_params == {"Det.limit_side_len": 32}
     assert options.do_table_structure is True
     assert not (options.do_code_enrichment or options.do_formula_enrichment)
     assert not (options.generate_page_images or options.generate_picture_images)
+
+
+@pytest.mark.parametrize(
+    "lines, joined",
+    [
+        (["mereka masing-ma-", "sing pulang"], ["mereka masing-ma-\nsing pulang"]),
+        (["the result-unprece-", "dented gain"], ["the result-unprece-\ndented gain"]),
+        (["para guru-", "guru datang"], ["para guru-\nguru datang"]),
+        (["hujan seper–", "tinya saya"], ["hujan seper–\ntinya saya"]),
+        (["seperti se—", "karang"], ["seperti se—\nkarang"]),
+        (["a hyphen-", "ated word"], ["a hyphen-\nated word"]),
+        (["the end-of-", "season sale"], ["the end-of-\nseason sale"]),
+        (["see example.org/a-", "b today"], ["see example.org/a-\nb today"]),
+        (["a 512-", "byte page"], ["a 512-\nbyte page"]),
+        (["Figure 4-", "2 shows"], ["Figure 4-\n2 shows"]),
+        (["a mul-", "ti-", "line"], ["a mul-\nti-\nline"]),
+        (["the end-of-", "(season)"], ["the end-of-\n(season)"]),
+    ],
+)
+def test_a_line_end_hyphen_reaches_the_fix_stage_with_its_line_break(lines, joined):
+    assert _keep_line_end_hyphens(lines) == joined
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ["a dash -", "then more"],  # a dash after a space: Docling keeps it and adds a space
+        ["first line", "second line"],
+        ["no hyphen here", "2 apples"],
+        ["one line only-"],
+    ],
+)
+def test_other_line_ends_are_left_to_docling(lines):
+    assert _keep_line_end_hyphens(lines) == lines
+
+
+def built_pipeline(tmp_path, monkeypatch):
+    """The pipeline class extract_blocks hands to Docling, with its models set up but not loaded:
+    Docling's own _init_models is replaced by one that only makes the reading order options."""
+    from docling.models.stages.reading_order.readingorder_model import ReadingOrderOptions
+    from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+
+    _, _, seen = run_with_fake_convert(tmp_path, monkeypatch, [(1, True)])
+    pipeline_cls = seen["pipeline_cls"]
+    assert issubclass(pipeline_cls, StandardPdfPipeline)
+
+    def init_models(self):
+        self.reading_order_model = SimpleNamespace(options=ReadingOrderOptions())
+
+    monkeypatch.setattr(StandardPdfPipeline, "_init_models", init_models)
+    pipeline = object.__new__(pipeline_cls)
+    pipeline._init_models()
+    return pipeline
+
+
+def names_used(code: CodeType) -> set[str]:
+    """The attribute and global names a function's code uses, with those of the functions defined
+    inside it."""
+    names = set(code.co_names)
+    for const in code.co_consts:
+        if isinstance(const, CodeType):
+            names |= names_used(const)
+    return names
+
+
+def test_docling_runs_the_page_assembly_and_reading_order_that_the_pipeline_class_sets():
+    """A rename or a moved call in Docling would leave eco's overrides unused, so the names and the
+    calls are pinned."""
+    from docling.models.stages.page_assemble.page_assemble_model import PageAssembleModel
+    from docling.models.stages.reading_order.readingorder_model import ReadingOrderModel
+    from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+
+    assert "assemble_model" in StandardPdfPipeline._create_run_ctx.__code__.co_names
+    assert "reading_order_model" in StandardPdfPipeline._assemble_document.__code__.co_names
+    assert "sanitize_text" in PageAssembleModel.__call__.__code__.co_names
+    # the call sits in materialize_siblings, a function defined inside this method
+    caller = ReadingOrderModel._readingorder_elements_to_docling_doc.__code__
+    assert "_merge_elements" in names_used(caller)
+
+
+def test_line_end_hyphens_go_through_docling_to_dehyphenate(tmp_path, monkeypatch):
+    """Docling's real sanitize_text, then the fix stage's dehyphenate: the spec's rule decides."""
+    pipeline = built_pipeline(tmp_path, monkeypatch)
+    lines = ["mereka masing-ma-", "sing pulang, the result-unprece-", "dented gain, para guru-"]
+    lines += ["guru datang, an up-to-", "date 8-", "bit word", "next line"]
+    text = pipeline.assemble_model.sanitize_text(lines)
+    assert text == (
+        "mereka masing-ma-\nsing pulang, the result-unprece-\ndented gain, para guru-\n"
+        "guru datang, an up-to-\ndate 8-\nbit word next line"
+    )
+    context = Block("paragraph", "masing-masing guru, up to date")
+    out, _ = dehyphenate([Block("paragraph", text), context])
+    assert out[0].text == (
+        "mereka masing-masing pulang, the result-unprecedented gain, para guru-guru datang, "
+        "an up-to-date 8-bit word next line"
+    )
+
+
+def test_the_reading_order_merge_keeps_a_hyphen_with_its_line_break(tmp_path, monkeypatch):
+    """Docling merges a text that a page or column break cut, and drops a hyphen at its end."""
+    order = built_pipeline(tmp_path, monkeypatch).reading_order_model
+    box = BoundingBox(l=10, t=10, r=100, b=40)
+    item = SimpleNamespace(text="para guru-", orig="para guru-", prov=[], hyperlink=None, label="t")
+    rest = SimpleNamespace(text="guru datang.", page_no=2, cluster=SimpleNamespace(bbox=box))
+    rest.label, rest.hyperlink = "t", None
+    order._merge_elements(SimpleNamespace(), rest, item, 792.0)
+    out, _ = dehyphenate([Block("paragraph", item.text), Block("paragraph", "guru itu")])
+    assert out[0].text == "para guru-guru datang."
 
 
 def test_import_does_not_load_docling():

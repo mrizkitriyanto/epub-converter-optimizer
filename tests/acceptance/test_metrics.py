@@ -2,7 +2,6 @@
 after an hour on the owner's samples."""
 
 import re
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -11,13 +10,14 @@ import metrics
 import pytest
 from metrics import (
     code_blocks,
+    drop_section,
     epub_text,
     epubcheck_problems,
     epubcheck_tools,
+    failure_reason,
     ground_truth_blocks,
     hardware,
     headings,
-    link_dir,
     pages,
     run_timed,
     sequence_scores,
@@ -43,8 +43,9 @@ def test_words_keep_the_text_and_drop_the_markup():
         "<!-- page: 3 -->\n![formula](images/p0003-formula-1.png)\n"
         "Don't miss [the Café](http://x.org/a_b) &amp; <b>Ünï</b> 42."
     )
-    assert words(text) == ["don't", "miss", "the", "café", "ünï", "42"]
-    assert words(r"see \[1\](x) there") == ["see", "1", "x", "there"]  # how eco writes `[1](x)`
+    assert words(text, markdown=True) == ["don't", "miss", "the", "café", "ünï", "42"]
+    # how eco writes `[1](x)`
+    assert words(r"see \[1\](x) there", markdown=True) == ["see", "1", "x", "there"]
 
 
 def test_identical_text_scores_one():
@@ -244,19 +245,6 @@ def test_epubcheck_finds_what_is_wrong_with_an_epub(drm_epub):
     assert problems and all(p.startswith(("ERROR(", "FATAL(")) for p in problems)
 
 
-def test_a_linked_folder_shows_its_files_and_removing_the_link_keeps_them(tmp_path):
-    real = tmp_path / "real"
-    real.mkdir()
-    (real / "model.onnx").write_bytes(b"weights")
-    data = tmp_path / "data"
-    data.mkdir()
-    link_dir(data / "models", real)
-    assert (data / "models" / "model.onnx").read_bytes() == b"weights"
-    shutil.rmtree(data)  # what pytest does to its temp folders when it cleans up
-    assert not data.exists()
-    assert (real / "model.onnx").read_bytes() == b"weights"
-
-
 def test_ground_truth_blocks_are_the_runs_of_lines_between_blank_lines(monkeypatch, tmp_path):
     (tmp_path / "ground-truth").mkdir()
     glyph = chr(0xF075)  # the private-use call-out glyph of a listing must survive as it is
@@ -270,3 +258,57 @@ def test_a_missing_ground_truth_file_skips_the_test_and_names_the_file(monkeypat
     monkeypatch.setattr(metrics, "SAMPLES", tmp_path)
     with pytest.raises(pytest.skip.Exception, match=r"samples/ground-truth/x\.txt is missing"):
         ground_truth_blocks("x.txt")
+
+
+def test_the_reason_of_a_failed_conversion_is_its_error_lines():
+    log = "[layout] page 9/9\n[fix]\nerror: Could not read book.md. Antivirus software may\n"
+    log += "0 converted, 1 failed: x.pdf\n"
+    assert failure_reason(log) == "Could not read book.md. Antivirus software may"
+    assert failure_reason("Traceback (most recent call last):\nKeyError: 1\n") == ""
+
+
+def test_xhtml_tags_after_a_backslash_are_markup_too():
+    # in XHTML a "<" of the text is "&lt;", so every "<" starts a tag (R-80)
+    markup = "<p>Key <code>HKLM\\Run\\</code> and a &lt;b&gt; [1](x)</p>"
+    assert words(markup, markdown=False) == ["key", "hklm", "run", "and", "a", "b", "1", "x"]
+
+
+def test_words_keep_the_text_after_an_escaped_angle_bracket():
+    # eco escapes "<" in book.md as "\<"; that is text, not the start of a tag
+    assert words("run the tool with \\<name\\> and check a \\< b <b>c</b>", markdown=True) == [
+        "run",
+        "the",
+        "tool",
+        "with",
+        "name",
+        "and",
+        "check",
+        "a",
+        "b",
+        "c",
+    ]
+
+
+def test_drop_section_removes_a_heading_and_what_follows_it_up_to_the_next_heading_of_its_level():
+    markup = (
+        '<h1 id="h-1">One</h1><p>first text</p>'
+        '<h1 id="h-2">Index</h1><h2>A</h2><p>apple, 12</p>'
+        "<h1>Other <em>Books</em></h1><p>last text</p>"
+    )
+    assert words(drop_section(markup, "Index"), markdown=False) == [
+        "one",
+        "first",
+        "text",
+        "other",
+        "books",
+        "last",
+        "text",
+    ]
+    assert drop_section(markup, "Contents") == markup
+    assert words(
+        drop_section(
+            markup.replace("<h1>Other", "<h2>Other").replace("</h1><p>last", "</h2><p>last"),
+            "Index",
+        ),
+        markdown=False,
+    ) == ["one", "first", "text"]

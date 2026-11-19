@@ -1,12 +1,20 @@
 from itertools import pairwise
 
+import pytest
 import typst
+from fixtures.make import form_image_pdf
 from PIL import Image, ImageChops
 
 from eco.book import Block
 from eco.events import Finding
-from eco.pdf.pages import inspect_pdf
-from eco.pdf.regions import materialize_regions, page_slices, render_cover
+from eco.pdf.pages import PageInfo, inspect_pdf
+from eco.pdf.regions import (
+    keep_picture_text_as_images,
+    leave_out_the_cover_page,
+    materialize_regions,
+    page_slices,
+    render_cover,
+)
 
 SCREEN = (480, 800)
 
@@ -206,3 +214,162 @@ def test_page_slices_do_not_scale_up(tmp_path):
 
 def test_blank_page_has_no_slices(fixtures_dir):
     assert page_slices(fixtures_dir["blank"], 2, SCREEN) == []
+
+
+def picture_text_blocks():
+    return [
+        Block(
+            "paragraph", "Ordinary text that the text layer holds.", page=1, bbox=(72, 60, 300, 72)
+        ),
+        Block("heading", "Pictured words", page=1, bbox=(108, 158, 250, 172)),  # OCR, picture 1
+        Block(
+            "table",
+            html="<table><tr><td>inside a figure</td></tr></table>",
+            page=1,
+            bbox=(108, 190, 290, 240),
+        ),  # OCR, picture 1
+        Block(
+            "paragraph", "Figure 1 - a caption in the text layer", page=1, bbox=(100, 260, 330, 272)
+        ),
+        Block(
+            "paragraph", "Overlay label", page=1, bbox=(110, 330, 190, 342)
+        ),  # text layer, picture 2
+        Block("paragraph", "Words nowhere at all", page=1, bbox=(72, 500, 300, 512)),  # no picture
+    ]
+
+
+def test_text_read_from_a_picture_on_a_text_layer_page_becomes_the_picture(fixtures_dir):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    blocks = picture_text_blocks()
+    out, findings = keep_picture_text_as_images(pdf, blocks, pages, "auto")
+    assert [b.kind for b in out] == ["paragraph", "picture", "paragraph", "paragraph", "paragraph"]
+    picture = out[1]
+    assert picture.page == 1 and picture.text == ""
+    assert [round(v) for v in picture.bbox] == [100, 150, 300, 250]  # the whole picture
+    assert out[2:] == blocks[3:]
+    assert [(f.page, f.kind, f.level) for f in findings] == [(1, "picture_text_as_image", "info")]
+
+
+PICTURE_1 = [100, 150, 300, 250]
+
+
+@pytest.mark.parametrize(
+    "docling, kept",
+    [
+        # a logo Docling found inside the picture: the whole picture replaces it, with its caption
+        (
+            Block("picture", page=1, bbox=(260, 215, 290, 245), caption="Logo"),
+            [("picture", PICTURE_1, "Logo")],
+        ),
+        # Docling's picture covers most of it: it stays, grown to the whole picture
+        (Block("picture", page=1, bbox=(104, 152, 300, 250)), [("picture", PICTURE_1, "")]),
+    ],
+)
+def test_the_whole_picture_is_kept_whatever_picture_docling_found_in_it(
+    fixtures_dir, docling, kept
+):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    blocks = picture_text_blocks()
+    blocks.insert(3, docling)
+    out, findings = keep_picture_text_as_images(pdf, blocks, pages, "auto")
+    pictures = [(b.kind, [round(v) for v in b.bbox], b.caption) for b in out if b.kind == "picture"]
+    assert pictures == kept
+    assert [b.text for b in out if b.kind != "picture"] == [
+        "Ordinary text that the text layer holds.",
+        "Figure 1 - a caption in the text layer",
+        "Overlay label",
+        "Words nowhere at all",
+    ]
+    assert [(f.page, f.kind) for f in findings] == [(1, "picture_text_as_image")]
+
+
+def test_text_from_a_picture_inside_a_larger_one_becomes_the_larger_one(fixtures_dir):
+    # the small raster (150, 200)-(250, 250) lies in the large one (100, 150)-(400, 350), and a
+    # Docling picture with a caption shows the small one
+    pdf = fixtures_dir["nested_pictures"]
+    blocks = [
+        Block("heading", "Read in the small picture", page=1, bbox=(160, 210, 240, 240)),
+        Block("picture", page=1, bbox=(151, 201, 249, 249), caption="Figure 2"),
+        Block("paragraph", "Read in the large picture only", page=1, bbox=(110, 300, 390, 340)),
+    ]
+    out, findings = keep_picture_text_as_images(pdf, blocks, _pages(pdf), "auto")
+    assert [(b.kind, [round(v) for v in b.bbox], b.caption) for b in out] == [
+        ("picture", [100, 150, 400, 350], "Figure 2")
+    ]
+    assert [(f.page, f.kind) for f in findings] == [(1, "picture_text_as_image")]
+
+
+def test_a_block_that_holds_text_layer_words_outside_the_picture_keeps_its_text(fixtures_dir):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    # its centre is in picture 1 and most of its words are OCR, but it reaches down over the
+    # caption, which is in the text layer
+    block = Block(
+        "paragraph",
+        "Pictured words inside a figure zzz yyy Figure",
+        page=1,
+        bbox=(100, 150, 330, 272),
+    )
+    assert keep_picture_text_as_images(pdf, [block], pages, "auto") == ([block], [])
+
+
+def test_a_picture_inside_a_form_xobject_is_found_where_it_is_drawn(tmp_path):
+    # drawn at (200, 300)-(300, 350) in PDF space: (200, 442)-(300, 492) from the top left
+    pdf = form_image_pdf(tmp_path / "form.pdf", [("1 0 0 1 200 300", "1 0 0 1 0 0")])
+    block = Block("paragraph", "Read from the picture", page=1, bbox=(205, 445, 295, 490))
+    out, findings = keep_picture_text_as_images(pdf, [block], _pages(pdf), "auto")
+    assert [(b.kind, [round(v) for v in b.bbox]) for b in out] == [
+        ("picture", [200, 442, 300, 492])
+    ]
+    assert [f.kind for f in findings] == ["picture_text_as_image"]
+
+
+def test_ocr_force_and_ocr_off_keep_the_text(fixtures_dir):
+    pdf = fixtures_dir["picture_text"]
+    pages = {info.number: info for info in inspect_pdf(pdf)}
+    for ocr in ("force", "off"):
+        assert keep_picture_text_as_images(pdf, picture_text_blocks(), pages, ocr) == (
+            picture_text_blocks(),
+            [],
+        )
+
+
+def test_a_scanned_page_keeps_its_ocr_text(fixtures_dir):
+    scan = PageInfo(1, 612.0, 792.0, 0.0, 0.0, 0, 1.0)
+    blocks = picture_text_blocks()
+    assert keep_picture_text_as_images(fixtures_dir["picture_text"], blocks, {1: scan}, "auto") == (
+        blocks,
+        [],
+    )
+
+
+def info(number, scanned):
+    """A page with a text layer, or a scanned one (a picture and no text)."""
+    return PageInfo(number, 612.0, 792.0, 0.0, 0.0, 0 if scanned else 900, 1.0 if scanned else 0.0)
+
+
+def cover_blocks():
+    return [
+        Block("heading", "A Cover Title", page=1),
+        Block("picture", page=1, bbox=(0.0, 0.0, 612.0, 792.0)),
+        Block("paragraph", "Body text.", page=2),
+    ]
+
+
+def test_a_picture_page_1_of_a_digital_book_is_only_the_cover():
+    out, findings = leave_out_the_cover_page(cover_blocks(), {1: info(1, True), 2: info(2, False)})
+    assert out == cover_blocks()[2:]
+    assert [(f.page, f.kind, f.level) for f in findings] == [(1, "cover_page", "info")]
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        {1: info(1, True), 2: info(2, True)},  # a scanned book: page 1 can be content
+        {1: info(1, False), 2: info(2, False)},  # a title page with a text layer keeps its text
+    ],
+)
+def test_other_first_pages_stay(pages):
+    assert leave_out_the_cover_page(cover_blocks(), pages) == (cover_blocks(), [])

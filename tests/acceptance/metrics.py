@@ -27,23 +27,29 @@ _BANNED = {".otf", ".ttf", ".woff", ".woff2", ".svg", ".webp", ".gif"}
 
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _MD_LINK = re.compile(r"(?<!\\)\[([^\]]*)\]\([^)]*\)")  # not the `\[1\](x)` that eco writes
-_TAG = re.compile(r"<[^>]*>")
+_MD_TAG = re.compile(r"(?<!\\)<[^>]*>")  # not the `\<` that eco writes for a "<" of the text
+_TAG = re.compile(r"<[^>]*>")  # in XHTML a "<" of the text is "&lt;"
 _WORD = re.compile(r"[A-Za-z0-9À-ɏ']+")
 _PAGE = re.compile(r"<!-- page: (\d+) -->")
 _FENCE = re.compile(r"^(`{3,}|~{3,})\n(.*?)\n\1$", re.DOTALL | re.MULTILINE)
 _HEADING = re.compile(r"^#{1,6} (.+)$", re.MULTILINE)
 _BODY = re.compile(r"<body[^>]*>(.*)</body>", re.DOTALL)
+_HEADING_TAG = re.compile(r"<h([1-6])\b[^>]*>(.*?)</h\1>", re.DOTALL)
 _EPUB_NS = {
     "c": "urn:oasis:names:tc:opendocument:xmlns:container",
     "o": "http://www.idpf.org/2007/opf",
 }
 
 
-def words(text: str) -> list[str]:
-    """Lowercase tokens of Markdown or XHTML: images, link targets and tags are not text."""
-    text = _MD_IMAGE.sub(" ", text)
-    text = _MD_LINK.sub(r"\1", text)
-    text = _TAG.sub(" ", text)
+def words(text: str, *, markdown: bool) -> list[str]:
+    """Lowercase tokens of Markdown (book.md) or of XHTML (an EPUB's text). In Markdown, images,
+    link targets and tags are not text; in XHTML only tags are markup (R-80)."""
+    if markdown:
+        text = _MD_IMAGE.sub(" ", text)
+        text = _MD_LINK.sub(r"\1", text)
+        text = _MD_TAG.sub(" ", text)
+    else:
+        text = _TAG.sub(" ", text)
     return _WORD.findall(html.unescape(text).lower())
 
 
@@ -108,6 +114,18 @@ def epub_text(path: Path) -> str:
             name = posixpath.normpath(posixpath.join(folder, hrefs[ref.get("idref")]))
             docs.append(z.read(name).decode("utf-8"))
     return "\n".join(m.group(1) if (m := _BODY.search(doc)) else doc for doc in docs)
+
+
+def drop_section(markup: str, title: str) -> str:
+    """`markup` without the section under the first heading whose text is `title`: that heading and
+    everything up to the next heading of its level or a higher one."""
+    found = list(_HEADING_TAG.finditer(markup))
+    for i, m in enumerate(found):
+        if words(m.group(2), markdown=False) == words(title, markdown=False):
+            level = int(m.group(1))
+            end = next((n.start() for n in found[i + 1 :] if int(n.group(1)) <= level), None)
+            return markup[: m.start()] + (markup[end:] if end is not None else "")
+    return markup
 
 
 def x4_problems(path: Path) -> list[str]:
@@ -198,6 +216,13 @@ def run_timed(cmd: list[str], log: Path, timeout: float) -> tuple[int, float, in
         finally:
             killer.cancel()
     return proc.returncode, time.monotonic() - start, peak
+
+
+def failure_reason(log: str) -> str:
+    """What `eco convert` said went wrong: its `error:` lines, joined."""
+    return "; ".join(
+        line.removeprefix("error: ") for line in log.splitlines() if line.startswith("error: ")
+    )
 
 
 def time_verdict(seconds: float, limit: float, system: str, machine: str) -> str:
@@ -305,15 +330,3 @@ def ground_truth_blocks(name: str) -> list[list[str]]:
         [" ".join(line.split()) for line in block.split("\n")]
         for block in re.split(r"\n\s*\n", text.strip())
     ]
-
-
-def link_dir(dst: Path, src: Path) -> None:
-    """Make `dst` a link to the folder `src`. Windows gets a junction, which needs no admin rights
-    (a symlink needs Developer Mode). Python 3.12 removes a junction without following it, so
-    clearing a folder that holds one, as pytest does with its temp folders, leaves `src` alone."""
-    if sys.platform == "win32":
-        subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(dst), str(src)], check=True, capture_output=True
-        )
-    else:
-        dst.symlink_to(src, target_is_directory=True)

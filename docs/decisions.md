@@ -805,3 +805,241 @@ a new route.
 - `eco web` on the any-address (`0.0.0.0`, `::`) prints the loopback address that this computer
   opens and the line "On another device, use this computer's network address in place of 127.0.0.1."
   (no device can open `0.0.0.0`). `--max-upload-mb` takes a whole number above 0 only.
+## 2026-11-18: Headings: a chapter label matches a bare chapter number (AC1)
+
+- When the fix stage matches a PDF bookmark to a heading, a leading "Chapter N:" or "Bab N" in
+  either title is read as "N" before the two are compared. A bookmark often says "Chapter 3: Title"
+  where the page says "3 Title". With a short title the plain comparison stayed under 0.8, so the
+  chapter got a second heading from the bookmark and its own heading became a stray one: six
+  chapters of the Threat Hunting sample opened with their title twice. The number is kept, so
+  "Chapter 3" never matches "12". If it turns out wrong: compare the titles as they are again.
+- `EXTRACTOR_VERSION` is 2, so a book folder cached before these fixes is extracted again.
+
+## 2026-11-18: Docling adapter: a hyphen of the text at a line end stays (AC1)
+
+- Replaced by "Every line-end hyphen follows the spec's rule (R-72)" below.
+- Docling joins the lines of a block and drops every hyphen that ends a line between two word
+  characters, taking it for a word split by hyphenation. eco first joins a line to the next one,
+  keeping the hyphen, when the word before the hyphen already holds a hyphen, slash or dot (a
+  compound, a URL, a file name) or when a digit stands on either side of it. Hyphenation splits
+  none of these. Before, `end-of-` and `season` became `end-ofseason`, URLs broke, and `ResNet-`
+  `34` became `ResNet34`. The rule fires 5 times in the Threat Hunting sample's text layer, 7 in
+  Forensic, 24 in Malware and 8 in ResNet, and in each case read by hand the hyphen belongs there.
+- Every other line-end hyphen is still Docling's to join, so most hyphenated words are rejoined
+  as before. Two cases stay wrong: a compound broken at its only hyphen (`well-` and `known`) and
+  an em dash at a line end, which Docling's parser reports as `-` (3 of the 9 glued words in
+  Threat Hunting). A scanned book whose typesetting splits a word that already holds a hyphen
+  (`masing-ma-` and `sing`) would now keep that hyphen.
+- It runs through `PdfFormatOption(pipeline_cls=...)`: a subclass of Docling's PDF pipeline whose
+  page assembly applies the rule before Docling's own join. If it turns out wrong: drop the
+  pipeline class.
+
+## 2026-11-18: Every line-end hyphen follows the spec's rule (R-72)
+
+- The fix stage's `dehyphenate` decides every hyphen or en dash that ended a line, in the prose
+  of every block (not the text of code, a formula or an image, which is no prose; a caption is),
+  against the words of the whole book (spec section 8.4.6). The split joins when the
+  joined word appears elsewhere, or when a fragment appears nowhere else as a word of its own (the
+  fragments at line breaks do not count). Otherwise the hyphen stays, with no space. A digit on
+  either side, or a word that holds "/" or ".", keeps its hyphen; with a capital after the break,
+  only the joined word decides; a word that already holds a hyphen is decided on its last part, so
+  `masing-ma-` and `sing` join to `masing-masing` and `end-of-` and `season` keep `end-of-season`.
+- Docling joined such hyphens itself in two places, the page assembly (`sanitize_text`) and the
+  reading order's merge of a text that a page or column break cut. The adapter's pipeline class
+  keeps the hyphen and the line break in both (`guru-` newline `guru`), and so does
+  `join_split_paragraphs` at a page end, so `dehyphenate` sees every split. Docling's join had glued
+  at least 20 reduplications in Bicara (`guruguru`) and dozens of compounds in the digital samples
+  (`selfencrypting`, `antidebugging`).
+- A table cell has no line breaks: Docling's table model joins its words with spaces. There the
+  rule applies to a hyphen between letters or digits with a space after it (`password- protected`,
+  and `512- byte`, which keeps its hyphen by the digit rule: `512-byte`). In other
+  text a hyphen inside a line is left alone (`-rw-rw-rw- 1`, `first- and second-order`).
+- Measured on the text layers of the digital samples: Forensic 778 line-end hyphens, 733 joined
+  and 45 kept; Malware 2079, 1933 and 146; Threat Hunting 9, all kept (URLs, compounds, and em
+  dashes that Docling's parser reads as "-"). Read by hand, the joins sampled were right, and 10
+  keeps are wrong because both fragments occur elsewhere as tokens of their own (`com-ing`,
+  `PCM-CIA`, `forward-ing`, `pre-tend`, `hall-mark` and the like). If it turns out wrong: change the
+  vocabulary test in `dehyphenate`.
+- `EXTRACTOR_VERSION` is 3.
+- Added the same day: an em dash at a line end goes through the rule as well. OCR read a hyphen
+  at a line end of Bicara as an em dash (`se—` and `karang`), and Docling joined it with a space.
+  An em dash joins only when the joined word appears elsewhere in the book, as with a capital after
+  the break (R-79): `sekarang` is common, so `se—` and `karang` join, and a real em dash stays with
+  no space (`spend—this`, `result—unprecedented`) even when a neighbour is a word the book has only
+  once. The 16 line-end em dashes of the three digital samples are all kept. Table cells keep the
+  hyphen and en dash only, since a spaced em dash there is punctuation. `EXTRACTOR_VERSION` is 5.
+
+## 2026-11-18: OCR: no line classifier, and each crop read at its own size (R-71)
+
+- RapidOCR runs with `use_cls=False` and Docling's `detect_orientation=True`. On Bicara pages 83-84
+  the line classifier turned 4 of 42 upright lines upside down (scores 0.51-0.64), and their text
+  came out as garbage with no finding. Without it, the real pipeline read all of them right
+  (0.97-0.99) and every other line the same. Docling's check of a whole region reads a region
+  that reads badly again at 90, 180 and 270 degrees, which covers a page scanned upside down.
+- `Det.limit_side_len` is 32 instead of 736 (`limit_type: min`). RapidOCR scaled every crop up
+  until its short side was 736 px, so a one-line heading crop (93 px high) went up about 8 times
+  and its line came back as overlapping pieces: "1. Respons yang Membuat Tersentuh" read
+  "1.1 Respons s yang Membuat Tersentuh". At its own size, 216 dpi, the crop reads whole, and the
+  other 13 crops of pages 83, 84 and 87 read the same words. A full-page crop was never scaled up,
+  so this setting does not change `--ocr force`; the other two, no line classifier and the check
+  of the whole region, apply to `--ocr force` as well.
+- If it turns out wrong: drop the three settings in `docling_adapter._OCR`.
+
+## 2026-11-18: EPUB: text that XML cannot hold becomes U+FFFD, with a finding (R-73)
+
+- The builder replaces every character that XML 1.0 cannot hold (C0 controls, lone surrogates,
+  U+FFFE, U+FFFF) with U+FFFD where the text enters it: in each line of the Markdown and in the
+  metadata, which every XHTML, NCX, nav and OPF file is made of. A `xml_char_replaced` warning
+  names the count and the chapter (or "the book's metadata"). It used to delete C0 controls without
+  a finding and let U+FFFE through: Forensic's hex dump held one in a code block, the block fell
+  back to escaped text (`bad_html`), and EPUBCheck stopped at a fatal error in that chapter.
+  Replaced before the Markdown is parsed, the code block stays a code block. Forensic's EPUB,
+  rebuilt from run 1's book folder, passes EPUBCheck 5.4.0 with no message.
+- An EPUB that eco only optimizes can hold a page that does not parse. That page is left as it
+  is, and now so is every image it refers to (the whole file name, after a quote or "/" and not
+  followed by more of a name, so `1.png` is not found in `img-071.png`, while an unquoted CSS
+  `url(../img/a.png)` or `b.png#part` is): renaming one to `.jpg` left the page pointing at a
+  file that was gone. An `image_kept` warning names it, and the `bad_xml` finding
+  says the page's links are not updated. If it turns out wrong: the X4 limits are not applied to
+  such an image.
+
+## 2026-11-18: A book.md that antivirus software removed is one plain error (R-74, R-78)
+
+- When writing or reading `book.md` fails on Windows with errno 22 or WinError 225
+  (ERROR_VIRUS_INFECTED, which Python reports as errno 22, "Invalid argument"), eco raises
+  `RemovedByAntivirus`, chained from the original error. Its message says "Could not write" or
+  "Could not read" and names the file, says that antivirus software may have removed it because
+  the text of the book can look like malware, and says which folder can be excluded from scanning:
+  for a write "eco's data folder, which holds this file", for a read "the folder that holds this
+  file", since `load_source` also reads a book folder that the user passes in. It never suggests
+  turning protection off.
+- Once the scanner has moved the file away, a read gets "No such file" instead. Right after
+  `extract_pdf` wrote the folder (a conversion of a PDF, and `eco extract`), a missing `book.md`
+  gives the same plain error, "Could not find"; in a book folder that the user passes in, a
+  missing file stays the usual error.
+- The read is the case that happened (R-78, corrected the same day): Windows Defender let eco
+  write the Malware book's `book.md` (`report.json`, written after it, exists), detected
+  `Exploit:Win32/Pdfjsc.Q` (a malicious-PDF-JavaScript signature that the book's own example code
+  matches) three seconds later, and the next read, in `load_source`, failed with "Invalid
+  argument" after a 7306 s conversion. Both `load_source` and `eco extract` read `book.md` through
+  the guard; `eco extract` reads the cached file before it copies the folder.
+- A cached book folder that holds `report.json` but no `book.md` is incomplete: `extract_pdf`
+  removes it and extracts again, instead of failing with "No such file" on every later run.
+- Why: "Invalid argument" sent the reader to the wrong place. Whether to exclude a folder is the
+  owner's decision (agent decisions Q-24).
+- The acceptance harness puts the `error:` line of a failed conversion in the first line of its
+  failure message. If it turns out wrong: errno 22 alone can have another cause, and the message
+  only says "may".
+
+## 2026-11-19: Numbered list items keep their numbers (R-67)
+
+- Docling keeps a list item's marker apart from its text (`ListItem.marker`, with `enumerated`).
+  When the marker is a plain number ("3." or "3)"), the block keeps that number (`Block.number`),
+  book.md writes the item as a Markdown ordered-list item with it ("3. text"), and the EPUB shows
+  an `<ol>` that keeps its start number. Any other numbering marker ("A.", "(i)") stays as text at
+  the start of the item, which is then an item of a bullet list. A bullet is dropped as before.
+- Why: every item used to be written with "- ", which lost 102 numbers in Threat Hunting (the
+  review questions and answers) and the numbered steps of Malware without a finding (spec section
+  5).
+- A numbered item and a bullet item next to each other are separated by a blank line in book.md,
+  so each starts its own list; an ordered list that does not start at 1 cannot continue a
+  paragraph in Markdown. If it turns out wrong: write "- " again.
+- 2026-11-19, fix round: Markdown numbers the items of one list from its first number, one by one,
+  so `1. 2. 1. 2. 3.` showed 1 to 5 and `5. 7.` showed 5, 6. Now an item whose number is not the
+  previous item's plus one starts a new list: book.md switches its delimiter between "." and ")"
+  (`1. a`, `2. b`, `1) c`), which any CommonMark renderer reads as a new list, and the EPUB has one
+  `<ol start>` for each run, so every item shows the book's number. A list may start at 0: "no
+  number" is `None`, not 0. `EXTRACTOR_VERSION` is 7.
+
+## 2026-11-19: Contents and index pages are read again from the text layer (Q-23)
+
+- Docling labels a page of contents or an index `document_index` and reads it as a table, and its
+  table model forces two columns into a grid whose rows pair entries of both columns. The adapter
+  now keeps such a block as `contents`, with Docling's table, and the fix pass `rebuild_contents`
+  (`src/eco/pdf/contents.py`, right after the reading order) reads it again from the PDF text
+  layer inside its box: a full-width line (a part or chapter title) in its place, and between such
+  lines the left column, then the right, top to bottom, one entry per line.
+- In the contents each line is a paragraph without its print page number (arabic or a lowercase
+  roman numeral) and its dot leader, since a reflowable book has no such pages; a line that is only
+  a number stays. An index (a block in the back half of the book) keeps its numbers, which are its
+  content, as one list item per line. A finding names each page read again.
+- A scanned page, or a box in which the text layer has nothing, keeps Docling's table.
+- Docling labelled Threat Hunting's contents pages 10-13 `document_index`, but pages 14 and 15
+  `table`, with the chapter titles between them as headings; those two pages are not covered.
+- If it turns out wrong: map `document_index` to a table again.
+- 2026-11-19, fix round: every run left of the box's middle used to be the left column, so a
+  one-column contents whose page numbers are runs of their own came out as all titles, then all
+  numbers; and the last word of any line was dropped when it looked like a number ("Lab mix" lost
+  "mix"). Now:
+  - Lines: runs are grouped by their height on the page (a run whose middle lies within the
+    tallest run of the line, or that overlaps half the lower height), so a comma whose glyph box
+    sits low stays in its line.
+  - Columns: the page is read in columns only where its text has a gutter: a band one line high
+    that fewer lines cross than either column has, with two lines or more starting at its right
+    edge and two or more left of it, the narrower column at least 0.4 of the wider. Page numbers
+    and leaders start no line, so a column of page numbers is no column, and a column of labels
+    beside their titles is too narrow to be one. A line that reaches into the gutter, or starts in
+    the right half of the left column (a short title centred over the gutter), is full-width and
+    ends the columns above it. Without a gutter the lines are read top to bottom, left to right.
+  - Page numbers: a number (arabic, or a valid lowercase roman numeral) goes only when it is a run
+    of its own after a gap of half its height or after a dot leader (four dots or more), or ends a
+    run after a leader. Otherwise the line keeps it: a page number kept costs nothing, a title word
+    lost is a failure (spec section 5). A caption of the block is a paragraph before the entries.
+  - Not covered: Threat Hunting puts each chapter's number and title in the left column only, so
+    its pages 11-13 read the left column of several chapters before their right column.
+- 2026-11-19, fix round 2: the width ratio held a short last column of an index (three short
+  lines beside six long ones) to be no column, so the entries of both columns were joined pairwise
+  under a finding that said "in reading order"; it let labels beside short titles ("Chapter 1
+  Introduction") count as two columns; and an italic word past the middle of the left column made
+  its line full-width, taking the right-column entry beside it. The column rule is now:
+  - An edge of a column is where a text run begins its line, or follows the run before it by a
+    line height. An italic or code word a word space after other text is no edge, and page
+    numbers and leaders make none. A run up to 2 pt left of an edge (a larger letter heading)
+    starts at it.
+  - An edge makes two columns when the left column spans a fifth of the page width or more;
+    when two lines or more start at it, or one line level with the first line of its section (a
+    last column of one line); when two lines or more lie left of it and fewer cross it; and when
+    page numbers that are runs of their own do not end the right part of the lines only (then the
+    left part holds labels). Of several edges, the one fewest lines cross wins, then the one most
+    lines start at, then the leftmost; inside a column the same search finds a third one.
+  - A line is full-width when a text run of it spans the edge, or when nothing of it lies right of
+    the edge and its text reaches into the gutter or its first text run starts in the right half
+    of the left column. A line with an entry in each column is never joined into one.
+
+## 2026-11-19: Text read by OCR from a picture on a digital page is kept as the picture (Q-22)
+
+- On a page that has a text layer, Docling also reads pictures by OCR, and their text came out as
+  body text: Threat Hunting's page 192 (a picture of a sample document) gave headings that joined
+  the book's outline, and pictures of tables on pages 47, 52-54 and 91 gave HTML tables built from
+  OCR. The fix pass `keep_picture_text_as_images` (`src/eco/pdf/regions.py`, after the contents
+  pass) keeps such text as the picture instead: a block whose centre lies in a raster picture of
+  the page and most of whose words are missing from the text layer inside its box. The blocks of
+  one picture become one picture block with the picture's box, which the region pass crops; a
+  finding names the page.
+- Both conditions are needed. A picture with a text layer over it (an OCR'd PDF, a label printed
+  on a photo) keeps its text, and a page whose broken text layer Docling replaced with OCR has no
+  picture under its text, so it keeps its text too.
+- Scanned pages and `--ocr force` keep their OCR text, and Docling's OCR mode stays its default
+  (spec section 8.3).
+- If it turns out wrong: drop the pass from the fix stage.
+- 2026-11-19, fix round: the picture rule is now this. A Docling picture shows a raster only when it
+  covers at least 90% of the raster's box; it then grows to the whole box. Otherwise the pass adds
+  a picture with the whole box, and a Docling picture that lies at least 90% inside it (a logo in
+  a sample document) goes, its caption moving to the new picture. Before, a small Docling picture
+  anywhere in the raster counted as showing it, so the text went and only the logo stayed. A block
+  whose box holds text-layer words outside the picture keeps its text, since the crop would lose
+  them. A raster inside a Form XObject gets its box on the page: PDFium leaves out the matrix of
+  the form object around it, so `image_bounds` applies it (the page's image share uses it too).
+- 2026-11-19, fix round 2: a block whose centre lies in a raster drawn inside a larger raster
+  belongs to the larger one, whose crop shows both; a Docling picture can no longer be both grown
+  for one raster and taken into another, so its caption is not written twice.
+
+## 2026-11-19: A picture page 1 of a digital book is only the cover (T19 proposal P3)
+
+- eco always renders page 1 as the cover image. When page 1 is a picture (no text layer) and the
+  other pages of the book have a text layer, the fix pass `leave_out_the_cover_page` leaves its
+  blocks out of the body: the picture and the text Docling read from it by OCR repeated the cover
+  (11 words of Threat Hunting). A finding says so. A scanned book keeps its page 1, which can be
+  content, and a page 1 with a text layer keeps its text.
+- `EXTRACTOR_VERSION` is 6 (numbered lists, contents, picture text and this pass).
+- If it turns out wrong: drop the pass; the page then shows in the body as before.

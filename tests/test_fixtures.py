@@ -1,4 +1,7 @@
+import shutil
+
 import pypdfium2 as pdfium
+from fixtures.links import link_dir
 
 
 def test_code_pdf_has_offset_cropbox(fixtures_dir):
@@ -67,3 +70,16 @@ def test_two_column_right_text_starts_beside_the_left_intro(fixtures_dir):
     right_start = chars.index(texts[6][:20])
     # The right paragraph starts above the bottom of the left intro: not sortable by y alone.
     assert boxes[right_start][1][1] < boxes[intro_end][1][3]
+
+
+def test_a_linked_folder_shows_its_files_and_removing_the_link_keeps_them(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "model.onnx").write_bytes(b"weights")
+    data = tmp_path / "data"
+    data.mkdir()
+    link_dir(data / "models", real)
+    assert (data / "models" / "model.onnx").read_bytes() == b"weights"
+    shutil.rmtree(data)  # what pytest does to its temp folders when it cleans up
+    assert not data.exists()
+    assert (real / "model.onnx").read_bytes() == b"weights"
