@@ -150,6 +150,20 @@ def test_pdf_run_reports_stages_pages_and_findings(tmp_path, fixtures_dir, fake_
     assert [(f.page, f.level) for f in blank] == [(2, "info")]
 
 
+def test_a_page_of_vector_drawing_goes_to_docling_and_is_not_reported_blank(
+    tmp_path, fixtures_dir, fake_blocks
+):
+    r = convert(fixtures_dir["vector_page"], tmp_path)
+    assert [(c.first, c.last) for c in fake_blocks.calls] == [(1, 2), (4, 4)]
+    assert [f.page for f in r.findings if f.kind == "blank_page"] == [3]
+
+
+def test_mode_pages_keeps_a_page_of_vector_drawing(tmp_path, fixtures_dir):
+    r = convert(fixtures_dir["vector_page"], tmp_path, Options(mode="pages"))
+    assert image_count(r.outputs["epub"]) == 3  # pages 1, 2 and 4, a screen each
+    assert [f.page for f in r.findings if f.kind == "blank_page"] == [3]
+
+
 def test_second_run_reads_the_cache(tmp_path, fixtures_dir, fake_blocks):
     pdf = fixtures_dir["blank"]
     first = convert(pdf, tmp_path, out="one")

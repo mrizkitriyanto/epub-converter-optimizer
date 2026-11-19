@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_raw
-from PIL import Image
+from PIL import Image, ImageOps
 
 Bbox = tuple[float, float, float, float]
+_INK_SCALE = 0.2  # the blank pages of the sample books render pure white at this scale
 
 
 class PdfOpenError(Exception):
@@ -26,10 +27,13 @@ class PageInfo:
     crop_y: float
     chars: int
     image_ratio: float
+    ink: bool = True  # a render of the page shows something; measured only without chars or images
 
     @property
     def is_blank(self) -> bool:
-        return self.chars == 0 and self.image_ratio == 0
+        """No text layer, no raster image and nothing drawn: a page of vector drawing, or of text
+        drawn as outlines, has neither of the first two but is not blank."""
+        return self.chars == 0 and self.image_ratio == 0 and not self.ink
 
     @property
     def is_scanned(self) -> bool:
@@ -86,7 +90,11 @@ def inspect_pdf(path: Path) -> list[PageInfo]:
             image_area = 0.0
             for left, bottom, right, top in image_bounds(page):
                 image_area += (right - left) * (top - bottom)
-            textpage = page.get_textpage()
+            chars = page.get_textpage().count_chars()
+            ink = True
+            if chars == 0 and image_area == 0:  # a small render tells drawing from a blank page
+                thumb = page.render(scale=_INK_SCALE, grayscale=True).to_pil().convert("L")
+                ink = ImageOps.invert(thumb).getbbox() is not None
             infos.append(
                 PageInfo(
                     number=index + 1,
@@ -94,8 +102,9 @@ def inspect_pdf(path: Path) -> list[PageInfo]:
                     height=height,
                     crop_x=crop_x,
                     crop_y=crop_y,
-                    chars=textpage.count_chars(),
+                    chars=chars,
                     image_ratio=min(1.0, image_area / (width * height)),
+                    ink=ink,
                 )
             )
     return infos

@@ -50,6 +50,13 @@ def test_inspect(fixtures_dir):
     assert inspect_pdf(fixtures_dir["scanned"][0])[0].is_scanned
 
 
+def test_a_page_of_vector_drawing_is_not_blank(fixtures_dir):
+    # no text layer and no raster image, but a render shows ink; a white rectangle shows none
+    pages = inspect_pdf(fixtures_dir["vector_page"])
+    assert [(p.chars, p.image_ratio) for p in pages][1:3] == [(0, 0.0), (0, 0.0)]
+    assert [p.is_blank for p in pages] == [False, False, True, False]
+
+
 def test_text_page_is_not_scanned(fixtures_dir):
     page = inspect_pdf(fixtures_dir["two_column"][0])[0]
     assert page.chars > 50

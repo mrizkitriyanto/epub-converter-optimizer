@@ -121,6 +121,20 @@ def blank_middle_pdf(directory: Path) -> Path:
     return _write(directory, "blank_middle.pdf", _compile(source))
 
 
+def vector_page_pdf(directory: Path) -> Path:
+    """Four pages with no raster image: (1) text; (2) vector drawing only, no text layer; (3) a
+    white rectangle only, which draws nothing that shows; (4) text."""
+    drawing = (
+        "#place(top + left, dx: 100pt, dy: 100pt)[#rect(width: 400pt, height: 300pt, stroke: 2pt)]\n"
+        "#place(top + left, dx: 150pt, dy: 150pt)[#circle(radius: 80pt, fill: gray)]\n"
+    )
+    white = "#place(top + left, dx: 100pt, dy: 100pt)[#rect(width: 400pt, height: 300pt, fill: white)]\n"
+    pages = ["#pad(54pt)[First page text.]\n", drawing, white, "#pad(54pt)[Last page text.]\n"]
+    return _write(
+        directory, "vector_page.pdf", _compile(PAGE + SERIF + "#pagebreak()\n".join(pages))
+    )
+
+
 def hyphen_pdf(directory: Path) -> Path:
     # Forced line breaks make the dehyphenation case deterministic: "seper–" ends a line.
     source = PAGE + SERIF + "#pad(54pt)[#box(width: 160pt)[Kata itu terlihat seper–\\\n"
@@ -483,6 +497,7 @@ def build_all(directory: Path) -> dict:
         "code": code_pdf(directory),
         "formula": formula_pdf(directory),
         "blank": blank_middle_pdf(directory),
+        "vector_page": vector_page_pdf(directory),
         "hyphen": hyphen_pdf(directory),
         "scanned": scanned_pdf(directory),
         "tall": tall_pdf(directory),
