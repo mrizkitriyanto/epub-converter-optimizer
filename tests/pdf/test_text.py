@@ -163,6 +163,13 @@ def test_language_empty_and_tie_give_en():
     assert detect_language("yang the") == "en"
 
 
+@pytest.mark.parametrize(
+    "text, lang", [("Why I Invest", "en"), ("Here I am", "en"), ("Menjadi Si Sibuk", "id")]
+)
+def test_real_short_words_in_headings_are_not_removed(text, lang):
+    assert clean_heading_artifacts(text, lang) == text
+
+
 def test_join_split_paragraphs_merges_lowercase_continuation():
     blocks = [
         Block("paragraph", "Kalimat ini belum selesai", page=1),

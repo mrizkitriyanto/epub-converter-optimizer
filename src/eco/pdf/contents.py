@@ -123,6 +123,11 @@ def _numbered(part: list[_Run]) -> bool:
     return bool(found and _page_number(found[2]))
 
 
+def _chapter_start(row: list[_Run], x: float) -> bool:
+    """A chapter number alone at the left starts a new two-column chapter zone."""
+    return len(row) == 1 and row[0].left < x - _EDGE and row[0].text.isdigit()
+
+
 def _gutter(runs: list[_Run], width: float) -> tuple[float, float, float] | None:
     """Where the right column starts, how wide the gutter before it is at least, and where the
     left column starts, when the runs stand in columns; None when they do not.
@@ -185,7 +190,9 @@ def _gutter(runs: list[_Run], width: float) -> tuple[float, float, float] | None
     return None if best is None else (best[2], gap, start)
 
 
-def _reading_order(runs: list[_Run], width: float) -> list[list[_Run]]:
+def _reading_order(
+    runs: list[_Run], width: float, *, chapter_starts: bool = False
+) -> list[list[_Run]]:
     """The lines of `runs` in reading order, on a page `width` wide. In columns a full-width line
     ends the columns above it, which are read left column first; each column is read the same
     way, so a third column is found inside the second."""
@@ -197,7 +204,7 @@ def _reading_order(runs: list[_Run], width: float) -> list[list[_Run]]:
     left: list[_Run] = []
     right: list[_Run] = []
     for row in _rows(runs):
-        if _full_width(row, x, gap, start):
+        if _full_width(row, x, gap, start) or (chapter_starts and _chapter_start(row, x)):
             lines += _reading_order(left, width) + _reading_order(right, width) + [row]
             left, right = [], []
         else:
@@ -256,7 +263,15 @@ def rebuild_contents(
             continue
         info = pages.get(block.page)
         readable = info is not None and not info.is_scanned and block.bbox is not None
-        lines = _reading_order(_runs(pdf, info, block.bbox), info.width) if readable else []
+        lines = (
+            _reading_order(
+                _runs(pdf, info, block.bbox),
+                info.width,
+                chapter_starts=block.page <= last / 2,
+            )
+            if readable
+            else []
+        )
         if not lines:
             out.append(replace(block, kind="table"))
             continue

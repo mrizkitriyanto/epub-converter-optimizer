@@ -146,6 +146,13 @@ def test_best_scoring_heading_wins_among_candidates():
     assert findings == []
 
 
+def test_equal_heading_matches_choose_the_page_nearest_the_bookmark():
+    blocks = [heading("Shared title", page=4), heading("Shared title", page=5)]
+    out, findings = assign_heading_levels(blocks, [Bookmark("Shared title", 0, 5)])
+    assert levels(out) == [2, 1]
+    assert findings == []
+
+
 def test_level_is_capped_at_6():
     blocks = [heading("Deep", page=1)]
     out, _ = assign_heading_levels(blocks, [Bookmark("Deep", 9, 1)])

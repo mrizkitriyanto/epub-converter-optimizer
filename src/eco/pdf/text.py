@@ -23,9 +23,10 @@ _NOT_PROSE = {"formula", "image", "picture"}  # their text is a formula, code or
 _SENTENCE_END = (".", "!", "?", ":", ";", '"', "”", ")")
 
 _SHORT_WORDS = {
-    "id": {"di", "ke"},
+    "id": {"di", "ia", "ke", "si", "ya"},
     "en": {
         "a",
+        "am",
         "an",
         "as",
         "at",
@@ -35,6 +36,7 @@ _SHORT_WORDS = {
         "go",
         "he",
         "if",
+        "i",
         "in",
         "is",
         "it",

@@ -237,16 +237,16 @@ LABELS = ["Introduction", "Methods", "Results", "Discussion", "Summary"]
 
 
 def column_layouts_pdf(directory: Path) -> Path:
-    """Eleven pages of layouts that decide between one column and two, with no full-width line.
+    """Twelve pages of layouts that decide between one column and two, with no full-width line.
     Contents (pages 1-5): (1) a short last column, two lines on the right beside five on the
     left, page numbers as runs at the right edge of each column (280 and 540 pt); (2) a right
     column of one line; (3) "Chapter n" labels at 72 pt beside short titles at 140 pt, page
     numbers at the right margin; (4) the same labels and titles without page numbers; (5) two
     columns without page numbers, with an italic run that starts past the middle of the left
-    column after other text, and a code run after other text in the right column. Page 6: text.
-    Index (pages 7-10): (7) six long entries on the left and three short ones on the right;
+    column after other text, and a code run after other text in the right column; (6) two numbered
+    chapter zones whose entries continue in the right column. Index (pages 7-10): (7) six long entries on the left and three short ones on the right;
     (8) an italic "see also" past the middle of the left column; (9) three columns, at 72, 250
-    and 428 pt; (10) a right column of one line; (11) a word broken at a line end."""
+    and 428 pt; (10) a right column of one line; (11) a word broken at a line end. Page 12: text."""
 
     def at(x: float, y: float, text: str, size: int = 11, style: str = "") -> str:
         look = {"italic": ', style: "italic"', "code": ', font: "DejaVu Sans Mono"', "": ""}
@@ -258,12 +258,14 @@ def column_layouts_pdf(directory: Path) -> Path:
     def ending_at(x: float, y: float, text: str) -> str:
         return f'#place(top + right, dx: {x - 612}pt, dy: {y}pt)[#text(size: 11pt, "{text}")]\n'
 
-    def columns(lefts: list[tuple[str, str]], rights: list[tuple[str, str]]) -> str:
+    def columns(
+        lefts: list[tuple[str, str]], rights: list[tuple[str, str]], start: int = 100
+    ) -> str:
         page = ""
         for n, (title, number) in enumerate(lefts):
-            page += at(72, 100 + 16 * n, title) + ending_at(280, 100 + 16 * n, number)
+            page += at(72, start + 16 * n, title) + ending_at(280, start + 16 * n, number)
         for n, (title, number) in enumerate(rights):
-            page += at(330, 100 + 16 * n, title) + ending_at(540, 100 + 16 * n, number)
+            page += at(330, start + 16 * n, title) + ending_at(540, start + 16 * n, number)
         return page
 
     left = [("Alpha steps", "3"), ("Beta steps", "5"), ("Gamma steps", "8"), ("Delta steps", "9")]
@@ -335,6 +337,20 @@ def column_layouts_pdf(directory: Path) -> Path:
     pages.append(
         at(72, 100, "anomaly detec-") + at(72, 114, "tion 40") + at(72, 128, "audit logs 9")
     )
+    chapters = at(72, 100, "3", 15) + at(72, 124, "Team Construct", 13)
+    chapters += columns(
+        [("Roles performed within a team", ""), ("Team lead", "")],
+        [("Ways to organize a team", ""), ("Summary", "")],
+        148,
+    )
+    chapters += at(72, 196, "4", 15) + at(72, 220, "Communication Breakdown", 13)
+    chapters += columns(
+        [("Internal team communication", ""), ("Communicating with stakeholders", "")],
+        [("Scenario A", ""), ("Review questions", "")],
+        244,
+    )
+    pages[5] = chapters
+    pages.append(at(72, 72, "A page of ordinary text."))
     source = PAGE + SERIF + "#pagebreak()\n".join(pages)
     return _write(directory, "column_layouts.pdf", _compile(source))
 

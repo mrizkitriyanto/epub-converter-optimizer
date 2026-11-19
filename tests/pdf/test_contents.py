@@ -210,6 +210,24 @@ def test_a_hyphen_at_a_line_end_stays_a_hyphen(fixtures_dir):
     assert [text for _, text in out] == ["anomaly detec-", "tion 40", "audit logs 9"]
 
 
+def test_numbered_chapter_zones_finish_both_columns_before_the_next_chapter(fixtures_dir):
+    out = rebuilt(fixtures_dir["column_layouts"], 6, (62, 92, 548, 280))
+    assert [text for _, text in out] == [
+        "3",
+        "Team Construct",
+        "Roles performed within a team",
+        "Team lead",
+        "Ways to organize a team",
+        "Summary",
+        "4",
+        "Communication Breakdown",
+        "Internal team communication",
+        "Communicating with stakeholders",
+        "Scenario A",
+        "Review questions",
+    ]
+
+
 def test_contents_py_holds_no_invisible_character():
     # a literal U+FFFE that an editor drops would make `.replace("", "-")` of the hyphen marker
     source = Path(contents.__file__).read_text(encoding="utf-8")

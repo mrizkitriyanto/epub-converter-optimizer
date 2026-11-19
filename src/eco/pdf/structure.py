@@ -61,11 +61,15 @@ def _key(title: str) -> str:
 
 def _best_heading(blocks: list[Block], taken: dict[int, int], mark: Bookmark) -> int | None:
     candidates = [
-        (SequenceMatcher(None, _key(block.text), _key(mark.title)).ratio(), -index)
+        (
+            SequenceMatcher(None, _key(block.text), _key(mark.title)).ratio(),
+            -abs(block.page - mark.page),
+            -index,
+        )
         for index, block in enumerate(blocks)
         if block.kind == "heading" and index not in taken and abs(block.page - mark.page) <= 1
     ]
-    ratio, negative_index = max(candidates, default=(0.0, 0))
+    ratio, _, negative_index = max(candidates, default=(0.0, 0, 0))
     return -negative_index if ratio >= _MIN_RATIO else None
 
 
