@@ -304,3 +304,14 @@ Entry format:
 - Why: the entries must travel with the branches they decide, and the M1 to M2 merge needs a clean tree.
 - Cost if wrong: none. It is a local commit of a document, and it can be reverted.
 - Recorded by: controller (Claude), owner's Windows laptop.
+
+### Q-28: Threat Hunting's contents pages 11-13 read the left parts of several chapters before their right parts. Build a heading rule now, accept the limit, or report it?
+- Date, milestone, task: 2026-11-19, M1 T19 wave 3b fix round 1. The implementer's ruling 7 left this to the controller.
+- Evidence: after the fix round, contents pages 10-15 of Threat Hunting hold all 652 words, and 491 of the publisher's 632 words are in runs of three or more in the publisher's order (481 before the round). On pages 11-13 each chapter's number and title sit only in the left column, with the entries below it in both columns. The page is read as the whole left column, then the whole right column, so the left parts of several chapters come before their right parts. HEAD 0d26edb read them the same way. A heading rule (a larger font with nothing beside it in the other column ends the columns above it) would fix it; the implementer judged it risky for the letter headings of an index, which sit inside a column.
+- Answer:
+  - No new rule in the fix round, which is under re-review.
+  - The question goes to the M1 final review. If the reviewer judges the order on the real pages to be a spec §5 failure, the single final fix wave builds the rule for contents pages only (the front half of the book). The index in the back half keeps its flowing-column reading, which removes the risk to its letter headings.
+  - Until then the limit is stated in the Q-23 entry of docs/decisions.md and in the M1 report as an open risk. No word is lost.
+- Why: it affects three pages of one book, the content is complete, and the order is better than before the round. A new rule changes the rebuilt order of every contents page, which needs its own tests and review, and the final fix wave is the cheaper place for it.
+- Cost if wrong: books with this layout keep a partly wrong contents order until the fix wave; the EPUB's own linked contents is not affected.
+- Recorded by: controller (Claude Sonnet 5.5), owner's Windows laptop.
