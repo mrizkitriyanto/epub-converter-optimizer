@@ -517,9 +517,13 @@ export async function chooseSavedStyle() {
   const name = $('saved-style').value;
   if (!name) return;
   try {
-    const style = await getJson(`/api/styles/${encodeURIComponent(name)}`);
+    const response = await request(`/api/styles/${encodeURIComponent(name)}`);
+    const style = await response.json();
     writeStyle(style);
     syncWeights(style.font_weight);
+    const findings = decodeURIComponent(response.headers.get('X-Style-Findings') || '');
+    setText($('panel-error'), findings);
+    $('panel-error').hidden = !findings;
     onLiveChange();
   } catch (error) {
     setText($('panel-error'), error.message);

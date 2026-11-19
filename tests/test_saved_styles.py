@@ -72,3 +72,9 @@ def test_stored_style_survives_removed_font(tmp_path):
     style = load_style(tmp_path, "Old", findings=findings)
     assert style == PageStyle(font="Literata", font_weight=700)
     assert [finding.kind for finding in findings] == ["font_missing", "focus_unavailable"]
+    from eco.web.app import create_app
+
+    client = TestClient(create_app(tmp_path, token=None), base_url="http://127.0.0.1:8000")
+    response = client.get("/api/styles/Old")
+    assert response.status_code == 200
+    assert "Font%20missing" in response.headers["X-Style-Findings"]

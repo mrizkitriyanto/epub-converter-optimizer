@@ -856,7 +856,12 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     @app.get("/api/styles/{name}")
     def style_get(name: str):
         try:
-            return load_style(Path(data_dir), name).to_json()
+            findings = []
+            style = load_style(Path(data_dir), name, findings=findings)
+            return JSONResponse(
+                style.to_json(),
+                headers={"X-Style-Findings": quote("; ".join(f.message for f in findings))},
+            )
         except ValueError as error:
             raise HTTPException(404, str(error)) from None
 
