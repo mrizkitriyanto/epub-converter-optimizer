@@ -524,7 +524,7 @@ def test_an_image_reference_that_could_leave_the_book_folder_never_reaches_the_f
     md = f'---\ntitle: "T"\ncover: "//{HOST}/share/cover.png"\n---\n# A\n\n{images}\n\n{raw}\n'
     z, findings = build(tmp_path, md, "x4")
     assert remote(os_calls) == []
-    # the cover and every image, except the Markdown one with "file:", which markdown-it keeps as text
+    # the cover and every image, but the Markdown one with "file:", which markdown-it keeps as text
     assert [f.kind for f in findings] == ["missing_image"] * (1 + 2 * len(REMOTE_REFS) - 1)
     assert "OEBPS/images/cover.jpg" in z.namelist()  # the text cover
     assert not [n for n in z.namelist() if "img-" in n]
