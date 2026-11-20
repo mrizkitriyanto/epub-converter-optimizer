@@ -22,6 +22,9 @@ def smoke(app: Path) -> None:
     for path in (
         internal / "latex2mathml" / "unimathsymbols.txt",
         internal / "docling_parse" / "pdf_resources",
+        internal / "rapidocr" / "default_models.yaml",
+        internal / "rapidocr" / "config.yaml",
+        internal / "rapidocr" / "inference_engine" / "pytorch" / "networks" / "arch_config.yaml",
     ):
         if not path.exists():
             raise RuntimeError(f"Missing PDF component: {path}")
