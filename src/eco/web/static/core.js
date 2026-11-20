@@ -6,8 +6,8 @@ import { abortReview, rebuild, showReview, step } from './review.js';
 
 /*
  * The eco workspace. One page with four stages: the setup gate (models missing), Select files and
- * Settings, Processing, and Review & download. The open job is in the address (#job=<id>), so a
- * reload or a link goes back to it: a queued or running job opens Processing, any other Review.
+ * settings, Convert, Review, and Export. The open job is in the address (#job=<id>), so a reload
+ * or a link goes back to it: a queued or running job opens Convert, any other job opens Review.
  *
  * The tests read this file, so it keeps four habits:
  * - every text comes from t(...) or tn(...), which read the strings block of the page;
@@ -116,9 +116,9 @@ export const VIEW_FOR_FIRMWARE = {
 };
 export const STEPS = [
   () => t('step_select'),
-  () => t('step_settings'),
   () => t('step_processing'),
   () => t('step_review'),
+  () => t('step_export'),
 ];
 
 export const SUPPORTED_FILE = /\.(pdf|md|epub)$/i;
@@ -198,7 +198,7 @@ export function readAsDataUrl(file) {
 
 export const state = {
   started: false, // after the first stage is shown, a change of stage moves the focus
-  stage: null, // setup, select, processing or review
+  stage: null, // setup, select, processing, review or export
   setup: null, // GET /api/setup
   skipModels: false, // the user went on from the setup gate without the models; this page load only
   download: 'idle', // the model download this page started: idle, running or failed
@@ -221,6 +221,7 @@ export const SECTIONS = {
   select: $('stage-select'),
   processing: $('stage-processing'),
   review: $('stage-review'),
+  export: $('stage-export'),
 };
 
 export function setStage(name) {
@@ -247,12 +248,11 @@ export const hideBanner = () => {
 
 export function stepStates() {
   if (state.stage === 'select') {
-    return state.files.length
-      ? ['done', 'current', 'todo', 'todo']
-      : ['current', 'todo', 'todo', 'todo'];
+    return ['current', 'todo', 'todo', 'todo'];
   }
-  if (state.stage === 'processing') return ['done', 'done', 'current', 'todo'];
-  if (state.stage === 'review') return ['done', 'done', 'done', 'current'];
+  if (state.stage === 'processing') return ['done', 'current', 'todo', 'todo'];
+  if (state.stage === 'review') return ['done', 'done', 'current', 'todo'];
+  if (state.stage === 'export') return ['done', 'done', 'done', 'current'];
   return null; // the setup gate comes before the steps
 }
 
@@ -265,21 +265,19 @@ export function renderStepper() {
 export function stepItem(index, status) {
   const name = STEPS[index]();
   const completed = status === 'done' ? h('span', { class: 'visually-hidden' }, ` (${t('step_done')})`) : null;
-  // Select files and Settings lead back to the start; the later steps have nowhere to lead.
+  // A completed Select step leads back to the start; later history stays in the open job.
   const content =
-    status === 'done' && index < 2
+    status === 'done' && index === 0
       ? h('a', { class: 'step-link', href: '#', onclick: (event) => onStepLink(event, index) }, name, completed)
       : h('span', { class: 'step-label', 'aria-current': status === 'current' ? 'step' : null }, name, completed);
   return h('li', { class: `step ${status}` }, content);
 }
 
-// On Select files a step link only moves the focus, to what the step is about. From the other
-// stages the address changes, and the route follows.
+// From an open job, the Select link clears the hash and the route follows.
 export function onStepLink(event, index) {
-  if (state.stage !== 'select') return;
+  if (index !== 0 || state.stage !== 'select') return;
   event.preventDefault();
-  if (index === 0) $('file-input').focus();
-  else $('device').focus();
+  $('file-input').focus();
 }
 
 // --------------------------------------------------------------- routing

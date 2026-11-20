@@ -610,6 +610,55 @@ def stage_markup(html, name):
     return next(c for c in chunks if c.startswith(f'<section id="stage-{name}"'))
 
 
+def test_guided_workspace_has_four_product_steps_and_no_settings_step(tmp_path):
+    html, js = local(tmp_path).get("/").text, source("app.js")
+    assert [STRINGS[key] for key in ("step_select", "step_processing", "step_review", "step_export")] == [
+        "Select",
+        "Convert",
+        "Review",
+        "Export",
+    ]
+    steps = re.search(r"export const STEPS = \[(.*?)\];", js, re.DOTALL).group(1)
+    assert re.findall(r"step_[a-z]+", steps) == [
+        "step_select",
+        "step_processing",
+        "step_review",
+        "step_export",
+    ]
+    assert 'id="stage-export"' in html
+    assert "step_settings" not in steps
+
+
+def test_guided_select_keeps_every_conversion_option(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    ids = {
+        "file-input",
+        "device",
+        "size",
+        "firmware",
+        "ocr",
+        "mode",
+        "font-size",
+        "embed-focus",
+        "embed-focus-strength",
+        "book-title",
+        "book-author",
+        "book-lang",
+        "start",
+    }
+    assert [name for name in sorted(ids) if f'id="{name}"' not in select] == []
+
+
+def test_guided_stages_never_show_competing_primary_actions(tmp_path):
+    html = local(tmp_path).get("/").text
+    for name in ("select", "processing", "review", "export"):
+        stage = stage_markup(html, name)
+        visible = re.findall(
+            r'<(?:button|a)\b(?![^>]*\bhidden\b)[^>]*class="[^"]*\bprimary\b[^"]*"', stage
+        )
+        assert len(visible) <= 1, (name, visible)
+
+
 def test_a_new_review_starts_with_the_panel_closed_and_the_buttons_as_new():
     # the panel, Apply and Try again are the same elements for every job
     js = source("app.js")
@@ -648,11 +697,12 @@ def test_a_late_reason_for_a_failed_picture_is_not_written_under_another_page():
     assert body.count("setText(") == 1  # every answer, a reason or a network error, goes through it
 
 
-def test_each_step_link_puts_the_focus_where_it_leads():
+def test_the_select_step_link_puts_the_focus_on_the_file_picker():
     js = source("app.js")
     assert "onclick: (event) => onStepLink(event, index)" in function_body(js, "stepItem")
     body = function_body(js, "onStepLink")
-    assert "$('file-input').focus()" in body and "$('device').focus()" in body
+    assert "$('file-input').focus()" in body
+    assert "$('device').focus()" not in body  # Settings is no longer a separate step.
 
 
 def test_the_xtc_preview_toggle_is_enabled_and_has_a_visible_label(tmp_path):

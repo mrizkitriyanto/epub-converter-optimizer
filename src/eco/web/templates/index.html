@@ -334,6 +334,13 @@
       </aside>
     </div>
   </section>
+
+  <section id="stage-export" class="stage" aria-labelledby="export-title" hidden>
+    <div class="panel narrow export-placeholder">
+      <h2 id="export-title" tabindex="-1">{{ strings.export_title }}</h2>
+      <p>{{ strings.export_intro }}</p>
+    </div>
+  </section>
 </main>
 
 <script id="strings" type="application/json">{{ strings|tojson }}</script>
