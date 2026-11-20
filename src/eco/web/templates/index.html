@@ -163,25 +163,48 @@
   </section>
 
   <section id="stage-processing" class="stage" hidden>
-    <div class="split">
-      <div id="progress" class="panel" aria-live="polite">
-        <h2 id="file-title" tabindex="-1"></h2>
-        <div id="bar" class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="{{ strings.bar_label }}">
-          <div id="bar-fill" class="bar-fill"></div>
+    <div id="progress" class="workspace workspace-convert">
+      <ol id="file-queue" class="file-queue" aria-label="{{ strings.queue_label }}" hidden></ol>
+      <div class="convert-head">
+        <div class="convert-title">
+          <h2 id="file-title" class="workspace-title" tabindex="-1"></h2>
+          <p id="file-meta" class="workspace-intro"></p>
         </div>
-        <p id="page-line" class="muted"></p>
-        <ul id="stages" class="stages" aria-label="{{ strings.stages_label }}"></ul>
-        <p id="queue-line" class="muted"></p>
-        <p id="process-error" class="error-text" role="alert" hidden></p>
-        <div class="actions">
+        <div class="convert-figures">
+          <div class="convert-numbers">
+            <p id="percent" class="percent num"></p>
+            <p id="time-line" class="muted num"></p>
+          </div>
           <button id="cancel" type="button" class="secondary">{{ strings.cancel }}</button>
         </div>
       </div>
-      <div class="panel">
-        <h2>{{ strings.feed_title }}</h2>
-        <ul id="feed" class="feed" tabindex="0" aria-label="{{ strings.feed_title }}" aria-live="polite"></ul>
-        <p id="feed-empty" class="muted">{{ strings.feed_empty }}</p>
-        <p class="muted note">{{ strings.feed_note }}</p>
+      <p id="progress-live" class="visually-hidden" aria-live="polite"></p>
+      <ol id="stage-bar" class="stage-bar" aria-label="{{ strings.stages_label }}"></ol>
+      <p id="process-error" class="error-text" role="alert" hidden></p>
+      <div id="process-actions" class="actions" hidden>
+        <button id="process-try-again" type="button" class="primary">{{ strings.try_again }}</button>
+        <button id="process-back" type="button" class="secondary">{{ strings.back_to_select }}</button>
+      </div>
+      <div id="convert-grid" class="convert-grid">
+        <section id="page-map-panel" class="panel map-panel" aria-labelledby="page-map-title" hidden>
+          <div class="map-head">
+            <h3 id="page-map-title"></h3>
+            <p class="pm-legend">
+              <span class="pm-key-done">{{ strings.legend_done }}</span>
+              <span class="pm-key-now">{{ strings.legend_working }}</span>
+              <span class="pm-key-todo">{{ strings.legend_waiting }}</span>
+              <span class="pm-key-finding">{{ strings.legend_finding }}</span>
+            </p>
+          </div>
+          <div id="page-map" class="pm-grid" role="img"></div>
+          <p class="caption">{{ strings.pagemap_caption }}</p>
+        </section>
+        <section class="findings-col" aria-labelledby="feed-title">
+          <h3 id="feed-title">{{ strings.feed_title }} <span id="feed-count" class="muted"></span></h3>
+          <ul id="feed" class="feed" aria-live="polite"></ul>
+          <p id="feed-empty" class="muted">{{ strings.feed_empty }}</p>
+          <p class="caption">{{ strings.review_opens }}</p>
+        </section>
       </div>
     </div>
   </section>

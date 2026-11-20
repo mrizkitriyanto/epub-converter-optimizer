@@ -96,6 +96,16 @@ export function showReview() {
   loadFilePreview();
 }
 
+// Review of one file of the job: from a queue pill on Convert, or a file that becomes ready.
+export function showFile(index) {
+  showReview();
+  if (state.review.fileIndex === index) return;
+  state.review.fileIndex = index;
+  state.review.loadedFile = null;
+  renderReview();
+  loadFilePreview();
+}
+
 export function renderReview() {
   const { job, review } = state;
   const info = job.files[review.fileIndex];

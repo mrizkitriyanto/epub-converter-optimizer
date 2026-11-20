@@ -2,7 +2,7 @@
 
 import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
 import { addFiles, chooseStyle, renderDetails, setSetupButtons, showDropErrors, startConversion, startDownload, syncSettingHints, uploadLibraryFonts } from './start.js';
-import { apply, cancelJob } from './job.js';
+import { cancelJob, retryJob } from './job.js';
 import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
@@ -52,6 +52,8 @@ function bind() {
   $('models-download').addEventListener('click', () => startDownload(false));
   $('models-ipv4').addEventListener('click', () => startDownload(true));
   $('cancel').addEventListener('click', cancelJob);
+  $('process-try-again').addEventListener('click', retryJob);
+  $('process-back').addEventListener('click', () => { location.hash = ''; });
   $('try-again').addEventListener('click', tryAgain);
   $('delete-job').addEventListener('click', deleteJob);
   $('review-delete-job').addEventListener('click', deleteJob);

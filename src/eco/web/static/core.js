@@ -1,5 +1,5 @@
 import { newChoice, showSelect } from './start.js';
-import { isActive, listen, newRun, pollQueue, showProcessing } from './job.js';
+import { isActive, isConverted, listen, newRun, pollQueue, showProcessing } from './job.js';
 import { abortReview, backToReview, rebuild, showReview, step } from './review.js';
 
 'use strict';
@@ -70,6 +70,7 @@ export function approximateLeft(seconds) {
   return t('remaining_left', { time: formatMinutes(Math.round(seconds / 60)) });
 }
 
+export const STAGES = ['read', 'layout', 'fix', 'epub', 'optimize', 'xtc'];
 export const STAGE_NAME = {
   read: () => t('stage_read'),
   layout: () => t('stage_layout'),
@@ -272,6 +273,12 @@ export function stepItem(index, status) {
       showProcessing();
     };
   }
+  if (index === 2 && state.stage === 'processing' && state.job && state.job.files.some(isConverted)) {
+    go = (event) => {
+      event.preventDefault();
+      showReview();
+    };
+  }
   if (index === 2 && state.stage === 'export') {
     go = (event) => {
       event.preventDefault();
@@ -317,7 +324,8 @@ export async function route() {
   if (mine !== state.sequence) return;
   state.job = job;
   state.run = newRun(job);
-  if (isActive(job)) showProcessing();
+  // a job that ended with nothing converted shows its failure, or its cancel, on Convert
+  if (isActive(job) || !job.files.some(isConverted)) showProcessing();
   else showReview();
   listen(job);
   if (job.status === 'queued') pollQueue(job.id);

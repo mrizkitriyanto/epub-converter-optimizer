@@ -814,92 +814,236 @@ summary {
   color: var(--accent);
 }
 
-/* Processing */
+/* Convert */
 
-.bar {
-  height: 8px;
-  margin: 8px 0;
-  overflow: hidden;
-  background: var(--track);
-  border-radius: 4px;
+.workspace-convert {
+  padding-top: 32px;
 }
 
-.bar-fill {
+.file-queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.queue-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.queue-running {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.queue-done {
+  color: var(--success);
+}
+
+.queue-failed {
+  color: var(--error);
+}
+
+.convert-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.convert-title {
+  min-width: 0;
+}
+
+.convert-title .workspace-title {
+  overflow-wrap: anywhere;
+}
+
+.convert-figures {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.convert-numbers {
+  text-align: right;
+}
+
+.percent {
+  font-size: 36px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.convert-numbers .muted {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.stage-bar {
+  display: flex;
+  gap: 4px;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seg {
+  flex: 1 1 0;
+  min-width: 84px;
+}
+
+.seg-track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--page-waiting);
+}
+
+.seg-fill {
+  display: block;
   width: 0;
-  height: 100%;
-  background: var(--accent);
+  height: 6px;
+  background: var(--page-done);
   transition: width 0.3s ease;
 }
 
-.stages {
-  margin-top: 12px;
+.seg-name {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.stage-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 0;
+.seg-state {
+  display: block;
+  font-size: 12px;
 }
 
-.stage-mark {
-  min-width: 1.2em;
-  text-align: center;
-  font-weight: 700;
+.seg-done .seg-state {
+  color: var(--success);
 }
 
-.stage-row.todo {
-  color: var(--muted);
+.seg-now .seg-fill {
+  background: var(--accent);
 }
 
-.stage-row.now .stage-name {
+.seg-now .seg-name,
+.seg-now .seg-state {
+  color: var(--accent);
+}
+
+.seg-now .seg-name {
   font-weight: 600;
 }
 
-.stage-row.todo .stage-mark::before {
-  content: "\25CB";
+.seg-todo .seg-name,
+.seg-todo .seg-state {
+  color: var(--subtle);
+  font-weight: 400;
 }
 
-.stage-row.now .stage-mark::before {
-  content: "\25CF";
-  color: var(--accent-strong);
+.seg-stopped .seg-fill {
+  background: var(--error);
 }
 
-.stage-row.done .stage-mark::before {
-  content: "\2713";
-  color: var(--success-text);
+.seg-stopped .seg-name,
+.seg-stopped .seg-state {
+  color: var(--error);
 }
 
-.stage-note {
-  font-size: 12.5px;
-  color: var(--muted);
+#process-error {
+  margin-top: 20px;
 }
 
-#queue-line:not(:empty) {
-  margin-top: 10px;
+.convert-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  align-items: flex-start;
+  margin-top: 32px;
+}
+
+.map-panel {
+  flex: 999 1 560px;
+  padding: 20px;
+}
+
+.map-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.map-head h3 {
+  margin: 0;
+}
+
+.map-panel .caption {
+  margin-top: 16px;
+}
+
+.findings-col {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.convert-grid.no-map .findings-col {
+  flex-basis: 100%;
+}
+
+.findings-col h3 {
+  margin-bottom: 12px;
+}
+
+.findings-col .caption {
+  margin-top: 16px;
 }
 
 .feed {
-  max-height: 380px;
+  max-height: 420px;
   overflow: auto;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
 }
 
 .feed-item {
-  padding: 6px 0;
-  border-top: 1px solid var(--track);
-}
-
-.feed-item:first-child {
-  border-top: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .where {
-  font-weight: 600;
+  display: block;
+  color: var(--warning-text);
+  font-weight: 500;
 }
 
 .tag-warning {
   color: var(--warning-text);
-  font-weight: 700;
+}
+
+.feed-item .tag-warning {
+  display: none;
 }
 
 /* Review and download */
@@ -1355,7 +1499,7 @@ output {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bar-fill {
+  .seg-fill {
     transition: none;
   }
 }

@@ -1693,3 +1693,68 @@ def test_recent_rows_name_status_in_words_and_offer_a_link():
     body = function_body(source("app.js"), "recentRow")
     assert "status-${job.status}" in body
     assert "t('recent_open')" in body and "t('recent_details')" in body
+
+
+# Convert with a stage bar, a live page map and honest progress
+
+
+def test_convert_has_queue_title_stage_bar_page_map_and_findings(tmp_path):
+    conv = stage_markup(local(tmp_path).get("/").text, "processing")
+    names = ("file-queue", "file-title", "file-meta", "percent", "time-line", "cancel")
+    names += ("stage-bar", "page-map", "page-map-title", "feed", "feed-empty", "process-error")
+    for name in names:
+        assert f'id="{name}"' in conv, name
+    assert 'aria-live="polite"' in conv
+    assert conv.index('id="stage-bar"') < conv.index('id="page-map"') < conv.index('id="feed"')
+
+
+def test_stages_follow_the_pipeline_rules():
+    body = function_body(source("app.js"), "stagesFor")
+    for rule in ("'epub'", "'optimize'", "'fix'", "'xtc'", "STAGES", "file.kind !== 'epub'"):
+        assert rule in body, rule
+    assert "export const STAGES = ['read', 'layout', 'fix', 'epub', 'optimize', 'xtc'];" in source(
+        "app.js"
+    )
+
+
+def test_progress_never_goes_back_and_never_shows_100_early():
+    js = source("app.js")
+    body = function_body(js, "progressFraction")
+    for weight in ("read: 0.05", "layout: 0.55", "fix: 0.15", "epub: 0.1", "optimize: 0.08"):
+        assert weight in js, weight
+    assert "0.99" in body and "0.5" in function_body(js, "stageFraction")
+    assert "file.shown = Math.max(file.shown" in js
+
+
+def test_only_warnings_are_counted_and_page_zero_is_the_whole_book():
+    js = source("app.js")
+    assert "level === 'warning'" in function_body(js, "renderFeed")
+    assert "t('whole_book')" in function_body(js, "findingParts")
+    assert STRINGS["whole_book"] == "Whole book"
+
+
+def test_review_opens_once_when_the_first_file_is_done():
+    body = function_body(source("app.js"), "apply")
+    assert "state.job.files[event.index].outputs = event.outputs" in body
+    assert "state.job.files[event.index].epubcheck = event.epubcheck" in body
+    assert "run.reviewOpened" in body
+
+
+def test_the_page_map_follows_page_and_book_events_and_times():
+    body = function_body(source("app.js"), "apply")
+    assert "file.book = " in body and "file.donePages.add(event.page)" in body
+    assert "event.t" in body
+
+
+def test_failure_offers_try_again_only_when_nothing_converted(tmp_path):
+    conv = stage_markup(local(tmp_path).get("/").text, "processing")
+    assert 'id="process-try-again"' in conv and 'id="process-back"' in conv
+    body = function_body(source("app.js"), "renderProcessing")
+    assert "$('process-try-again').hidden" in body and "some(isConverted)" in body
+
+
+def test_convert_texts():
+    assert STRINGS["stage_stopped"] == "Stopped"
+    assert (STRINGS["pages_title"], STRINGS["pages_read"]) == ("Pages", "{done} of {total} read")
+    assert STRINGS["elapsed_so_far"] == "{elapsed} so far"
+    assert STRINGS["review_opens"] == "Review opens by itself when this file is done."
