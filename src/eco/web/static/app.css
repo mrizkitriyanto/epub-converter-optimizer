@@ -787,6 +787,26 @@ li.finding.plain {
   flex-basis: 100%;
 }
 
+.review-focus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.review-focus select {
+  width: auto;
+}
+
+.review-focus .error-text {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .segmented {
   display: inline-flex;
   margin: 0;

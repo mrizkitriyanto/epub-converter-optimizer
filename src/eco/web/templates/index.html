@@ -250,6 +250,13 @@
             <label><input type="radio" name="preview-format" value="xtc"><span>{{ strings.output_xtc }}</span></label>
           </fieldset>
         </div>
+        <div id="review-focus" class="review-focus" hidden>
+          <label class="check"><input id="review-focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
+          <label for="review-focus-strength">{{ strings.focus_strength_label }}</label>
+          <select id="review-focus-strength">{{ choices([("low", strings.focus_low), ("medium", strings.focus_medium), ("high", strings.focus_high)]) }}</select>
+          <button id="review-focus-apply" type="button" class="secondary" disabled>{{ strings.apply }}</button>
+          <p id="review-focus-error" class="error-text" role="alert" hidden></p>
+        </div>
       </section>
 
       <aside id="settings-panel" class="panel" aria-labelledby="settings-panel-title" hidden>

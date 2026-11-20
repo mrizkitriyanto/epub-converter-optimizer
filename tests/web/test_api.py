@@ -1172,6 +1172,21 @@ def test_rebuild_makes_a_new_job_from_the_same_files(tmp_path):
     assert [job["id"] for job in c.get("/api/jobs").json()] == [new["id"], old["id"]]
 
 
+def test_rebuild_can_toggle_epub_focus_without_changing_original_job(tmp_path):
+    c = client(tmp_path)
+    old = post(c, ("a.md", b"# One\n\nHelloWorld"), options={"formats": ["epub"]}).json()
+    options = {
+        **old["options"],
+        "style": {**old["options"]["style"], "focus_mode": True, "focus_strength": "high"},
+    }
+    response = c.post(f"/api/jobs/{old['id']}/rebuild", json=options)
+    assert response.status_code == 201
+    new = response.json()
+    assert new["options"]["style"]["focus_mode"] is True
+    assert new["options"]["style"]["focus_strength"] == "high"
+    assert c.get(f"/api/jobs/{old['id']}").json()["options"]["style"]["focus_mode"] is False
+
+
 def test_rebuild_of_two_uploads_with_one_name_keeps_both_in_the_new_layout(tmp_path):
     c = client(tmp_path)
     old = post(c, ("a.md", b"# One"), ("a.md", b"# Two")).json()

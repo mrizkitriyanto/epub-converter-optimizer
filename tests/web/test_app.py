@@ -567,6 +567,18 @@ def test_focus_mode_can_be_selected_for_epub_before_and_after_conversion(tmp_pat
     assert "$('focus-controls').hidden = review.format === 'epub'" not in js
 
 
+def test_epub_review_exposes_focus_mode_and_strength_without_opening_settings(tmp_path):
+    html, js = local(tmp_path).get("/").text, source("app.js")
+    preview = html.split('<section id="device-pane"', 1)[1].split('<aside id="settings-panel"', 1)[
+        0
+    ]
+    assert 'id="review-focus-mode"' in preview
+    assert 'id="review-focus-strength"' in preview
+    assert 'id="review-focus-apply"' in preview
+    assert "review.format !== 'epub'" in js
+    assert "focus_mode: $('review-focus-mode').checked" in js
+
+
 def test_every_api_address_in_the_script_is_a_route(tmp_path):
     app = create_app(tmp_path, token=None)
     found = re.findall(r"""['"`](/api/[^'"`]*)['"`]""", source("app.js"))

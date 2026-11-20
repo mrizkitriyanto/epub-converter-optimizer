@@ -44,6 +44,8 @@ export function newReview(job) {
     selected: null, // the finding that was clicked
     panelOpen: false,
     applying: false,
+    applyingFocus: false,
+    focus: { mode: job.options.style.focus_mode, strength: job.options.style.focus_strength },
     live: { style: { ...job.options.style }, size: job.options.size },
     fonts: [],
     controller: new AbortController(), // for the requests of the panes of this file
@@ -71,6 +73,8 @@ export function resetReviewDom() {
   $('delete-job').disabled = false;
   setText($('delete-job'), t('delete_job'));
   $('delete-error').hidden = true;
+  setText($('review-focus-apply'), t('apply'));
+  $('review-focus-error').hidden = true;
 }
 
 export function showReview() {
@@ -105,6 +109,10 @@ export function renderReview() {
   xtcToggle.disabled = !xtc;
   (review.format === 'epub' ? epubToggle : xtcToggle).checked = true;
   document.querySelector('.approx').hidden = review.format !== 'epub';
+  $('review-focus').hidden = review.format !== 'epub' || review.panelOpen || !converted;
+  $('review-focus-mode').checked = review.focus.mode;
+  $('review-focus-strength').value = review.focus.strength;
+  updateReviewFocus();
   $('change-settings').hidden = !converted;
   $('try-again').hidden = job.files.some(isConverted); // with nothing converted, trying again is the one action
   renderFilePick(job);
@@ -493,6 +501,7 @@ export async function openPanel() {
   writeStyle(review.live.style);
   $('live-size').value = options.size;
   $('settings-panel').hidden = false;
+  $('review-focus').hidden = true;
   $('review-grid').classList.add('with-panel');
   $('change-settings').setAttribute('aria-expanded', 'true');
   $('panel-error').hidden = true;
@@ -586,6 +595,7 @@ export function closePanel(moveFocus, restore) {
   const review = state.review;
   review.panelOpen = false;
   hidePanel();
+  $('review-focus').hidden = review.format !== 'epub';
   if (restore && review.pages && review.pages.device_pages > 0) refreshDevice();
   if (moveFocus) $('change-settings').focus();
 }
@@ -600,6 +610,49 @@ export function onLiveChange() {
   review.live = { style: readStyle(), size: $('live-size').value };
   updateApply();
   if (review.pages && review.pages.device_pages > 0) refreshDevice();
+}
+
+export function updateReviewFocus() {
+  const review = state.review;
+  const style = state.job.options.style;
+  $('review-focus-strength').disabled = !review.focus.mode || review.applyingFocus;
+  $('review-focus-apply').disabled = review.applyingFocus || (
+    review.focus.mode === style.focus_mode && review.focus.strength === style.focus_strength
+  );
+}
+
+export function onReviewFocusChange() {
+  state.review.focus = {
+    mode: $('review-focus-mode').checked,
+    strength: $('review-focus-strength').value,
+  };
+  $('review-focus-error').hidden = true;
+  updateReviewFocus();
+}
+
+export async function applyReviewFocus() {
+  const review = state.review;
+  if (review.applyingFocus) return;
+  review.applyingFocus = true;
+  setText($('review-focus-apply'), t('applying'));
+  $('review-focus-error').hidden = true;
+  updateReviewFocus();
+  const options = {
+    ...state.job.options,
+    style: {
+      ...state.job.options.style,
+      focus_mode: $('review-focus-mode').checked,
+      focus_strength: $('review-focus-strength').value,
+    },
+  };
+  const ok = await rebuild(options, (message) => {
+    setText($('review-focus-error'), message);
+    $('review-focus-error').hidden = false;
+  });
+  if (ok || state.review !== review) return;
+  review.applyingFocus = false;
+  setText($('review-focus-apply'), t('apply'));
+  updateReviewFocus();
 }
 
 export function onFontChange() {
