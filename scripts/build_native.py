@@ -30,8 +30,8 @@ class Target:
     @property
     def jre_url(self) -> str:
         return (
-            f"https://api.adoptium.net/v3/binary/version/{JRE_RELEASE}/"
-            f"{self.os}/{self.arch}/jre/hotspot/normal/eclipse"
+            f"https://github.com/adoptium/temurin21-binaries/releases/download/{JRE_RELEASE}/"
+            f"OpenJDK21U-jre_{self.arch}_{self.os}_hotspot_21.0.13_9.{self.extension}"
         )
 
 

@@ -15,6 +15,9 @@ def test_supported_build_targets_are_platform_specific():
     assert target_for("win32", "AMD64").name == "windows-x64"
     assert target_for("darwin", "arm64").name == "macos-arm64"
     assert target_for("linux", "x86_64").name == "linux-x64"
+    assert target_for("linux", "x86_64").jre_url.endswith(
+        "/OpenJDK21U-jre_x64_linux_hotspot_21.0.13_9.tar.gz"
+    )
     with pytest.raises(ValueError, match="Unsupported native target"):
         target_for("darwin", "x86_64")
 
