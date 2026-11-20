@@ -198,6 +198,7 @@
         <a id="download" class="button primary" href="/" download hidden>{{ strings.download_epub }}</a>
         <button id="try-again" type="button" class="primary" hidden>{{ strings.try_again }}</button>
         <button id="change-settings" type="button" class="secondary" aria-controls="settings-panel" aria-expanded="false" hidden>{{ strings.change_settings }}</button>
+        <button id="approve-review" type="button" class="primary" hidden>{{ strings.approve_review }}</button>
         <button id="delete-job" type="button" class="secondary">{{ strings.delete_job }}</button>
       </div>
     </div>
@@ -250,13 +251,6 @@
             <label><input type="radio" name="preview-format" value="xtc"><span>{{ strings.output_xtc }}</span></label>
           </fieldset>
         </div>
-        <div id="review-focus" class="review-focus" hidden>
-          <label class="check"><input id="review-focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
-          <label for="review-focus-strength">{{ strings.focus_strength_label }}</label>
-          <select id="review-focus-strength">{{ choices([("low", strings.focus_low), ("medium", strings.focus_medium), ("high", strings.focus_high)]) }}</select>
-          <button id="review-focus-apply" type="button" class="secondary" disabled>{{ strings.apply }}</button>
-          <p id="review-focus-error" class="error-text" role="alert" hidden></p>
-        </div>
       </section>
 
       <aside id="settings-panel" class="panel" aria-labelledby="settings-panel-title" hidden>
@@ -272,18 +266,9 @@
             <legend>{{ strings.style_text }}</legend>
             <div class="field stack"><label for="font">{{ strings.font_label }}</label><select id="font"></select><input id="font-upload" class="visually-hidden" type="file" accept=".ttf,.otf"></div>
             <div class="field stack"><label for="font-weight">{{ strings.font_weight_label }}</label><select id="font-weight"></select></div>
-            <div class="field stack"><label for="style-font-size">{{ strings.live_font_label }}</label><input id="style-font-size" type="number" min="16" max="64" step="1"></div>
-            <div class="field stack"><label for="line-height">{{ strings.line_height_label }}</label><input id="line-height" type="number" min="100" max="250" step="1"></div>
-            <div class="field stack"><label for="margin-x">{{ strings.margin_x_label }}</label><input id="margin-x" type="number" min="0" max="80" step="1"></div>
             <div class="field stack"><label for="margin-y">{{ strings.margin_y_label }}</label><input id="margin-y" type="number" min="0" max="80" step="1"></div>
             <div class="field stack"><label for="paragraph-spacing">{{ strings.paragraph_spacing_label }}</label><input id="paragraph-spacing" type="number" min="0" max="300" step="1"></div>
-            <div class="field stack"><label for="first-line-indent">{{ strings.first_line_indent_label }}</label><input id="first-line-indent" type="number" min="0" max="400" step="1"></div>
             <div class="field stack"><label for="align">{{ strings.align_label }}</label><select id="align">{{ choices([("justify", strings.align_justify), ("left", strings.align_left), ("center", strings.align_center)]) }}</select></div>
-            <div id="focus-controls">
-              <label class="check"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
-              <p id="focus-unavailable" class="hint" hidden>{{ strings.focus_unavailable }}</p>
-              <div class="field stack"><label for="focus-strength">{{ strings.focus_strength_label }}</label><select id="focus-strength">{{ choices([("low", strings.focus_low), ("medium", strings.focus_medium), ("high", strings.focus_high)]) }}</select></div>
-            </div>
             <label class="check"><input id="hyphenate" type="checkbox"> {{ strings.hyphenate_label }}</label>
             <div class="field stack"><label for="style-lang">{{ strings.style_lang_label }}</label><input id="style-lang" type="text" maxlength="3" autocomplete="off"></div>
           </fieldset>
@@ -326,12 +311,29 @@
         <p class="muted note">{{ strings.panel_note }}</p>
         <p id="panel-error" class="error-text" role="alert" hidden></p>
         <div class="actions">
-          <button id="apply" type="button" class="secondary" disabled>{{ strings.apply }}</button>
           <button id="copy-style" type="button" class="secondary">{{ strings.copy_style }}</button>
           <button id="close-panel" type="button" class="secondary">{{ strings.close }}</button>
         </div>
         <p id="copy-status" class="muted" role="status"></p>
       </aside>
+    </div>
+
+    <div id="review-dock" class="review-dock" aria-label="{{ strings.review_controls_label }}">
+      <label for="style-font-size">{{ strings.live_font_label }} <output id="style-font-size-value" for="style-font-size"></output></label>
+      <input id="style-font-size" type="range" min="16" max="64" step="1">
+      <label for="line-height">{{ strings.line_height_label }} <output id="line-height-value" for="line-height"></output></label>
+      <input id="line-height" type="range" min="100" max="250" step="1">
+      <label for="margin-x">{{ strings.margin_x_label }} <output id="margin-x-value" for="margin-x"></output></label>
+      <input id="margin-x" type="range" min="0" max="80" step="1">
+      <label for="first-line-indent">{{ strings.first_line_indent_label }} <output id="first-line-indent-value" for="first-line-indent"></output></label>
+      <input id="first-line-indent" type="range" min="0" max="400" step="1">
+      <label class="review-focus-toggle"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
+      <div id="focus-strength-field" class="review-control">
+        <label for="focus-strength">{{ strings.focus_strength_label }} <output id="focus-strength-value" for="focus-strength"></output></label>
+        <input id="focus-strength" type="range" min="0" max="2" step="1">
+      </div>
+      <p id="focus-unavailable" class="hint" hidden>{{ strings.focus_unavailable }}</p>
+      <button id="apply" type="button" class="secondary" disabled>{{ strings.apply }}</button>
     </div>
   </section>
 

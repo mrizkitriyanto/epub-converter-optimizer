@@ -569,16 +569,57 @@ def test_focus_mode_can_be_selected_for_epub_before_and_after_conversion(tmp_pat
 
 def test_epub_review_exposes_focus_mode_and_strength_without_opening_settings(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
-    preview = html.split('<section id="device-pane"', 1)[1].split('<aside id="settings-panel"', 1)[
-        0
-    ]
-    assert 'id="review-focus-mode"' in preview
-    assert 'id="review-focus-strength"' in preview
-    assert 'id="review-focus-apply"' in preview
-    assert "review.format !== 'epub'" in js
-    assert "focus_mode: $('review-focus-mode').checked" in js
+    dock = html.split('<div id="review-dock"', 1)[1].split('</section>', 1)[0]
+    assert 'id="focus-mode"' in dock
+    assert 'id="focus-strength"' in dock
+    assert "review.live.style[name] = value" in js
     assert "if (review.pages && review.pages.device_pages > 0) refreshDevice();" in js
-    assert "reviewFocusDirty()" in js
+    assert "reviewFocusDirty()" not in js
+
+
+def test_expert_review_keeps_common_reading_controls_in_the_main_dock(tmp_path):
+    html = local(tmp_path).get("/").text
+    review = stage_markup(html, "review")
+    dock = review.split('<div id="review-dock"', 1)[1].split(
+        '<aside id="settings-panel"', 1
+    )[0]
+    for control in ("style-font-size", "line-height", "margin-x", "first-line-indent"):
+        assert re.search(rf'<input id="{control}" type="range"', dock)
+        assert f'for="{control}"' in dock
+        assert f'id="{control}-value"' in dock
+    assert 'id="focus-mode"' in dock
+    assert 'id="focus-strength"' in dock
+    assert review.index('id="source-pane"') < review.index('id="device-pane"')
+
+
+def test_focus_strength_leaves_keyboard_navigation_when_focus_mode_is_off():
+    body = function_body(source("app.js"), "syncReviewDock")
+    assert "$('focus-strength').disabled = !focus" in body
+    assert "$('focus-strength-field').hidden = !focus" in body
+
+
+def test_review_dock_changes_shared_live_style_and_refreshes_the_preview():
+    body = function_body(source("app.js"), "onReviewDockChange")
+    assert "review.live.style[name]" in body
+    assert "syncReviewDock();" in body
+    assert "refreshDevice();" in body
+    refresh = function_body(source("app.js"), "refreshDevice")
+    assert "clearTimeout(review.liveTimer);" in refresh
+    assert "if (review.liveAbort) review.liveAbort.abort();" in refresh
+
+
+def test_review_approval_tracks_only_successful_files():
+    js = source("app.js")
+    assert "reviewed: new Set()" in function_body(js, "newReview")
+    approval = function_body(js, "approveCurrentFile")
+    assert "filter((index) => isConverted(state.job.files[index]))" in approval
+    assert "review.reviewed.add(review.fileIndex)" in approval
+
+
+def test_page_shortcuts_ignore_every_interactive_target():
+    body = function_body(source("app.js"), "onKey")
+    for tag in ("button", "a", "input", "select", "textarea"):
+        assert tag in body
 
 
 def test_every_api_address_in_the_script_is_a_route(tmp_path):

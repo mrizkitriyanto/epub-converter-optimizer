@@ -23,6 +23,8 @@ const STYLE_NUMBERS = new Set([
   'first_line_indent', 'dither_strength', 'bar_font_size',
   'bar_edge_margin', 'bar_side_margin', 'orientation',
 ]);
+const STYLE_NAMES = new Map(Object.entries(STYLE_IDS).map(([name, id]) => [id, name]));
+const FOCUS_STRENGTHS = ['low', 'medium', 'high'];
 
 // ---------------------------------------------------------------- review
 
@@ -44,9 +46,8 @@ export function newReview(job) {
     selected: null, // the finding that was clicked
     panelOpen: false,
     applying: false,
-    applyingFocus: false,
-    focus: { mode: job.options.style.focus_mode, strength: job.options.style.focus_strength },
     live: { style: { ...job.options.style }, size: job.options.size },
+    reviewed: new Set(),
     fonts: [],
     controller: new AbortController(), // for the requests of the panes of this file
     liveTimer: null,
@@ -73,8 +74,7 @@ export function resetReviewDom() {
   $('delete-job').disabled = false;
   setText($('delete-job'), t('delete_job'));
   $('delete-error').hidden = true;
-  setText($('review-focus-apply'), t('apply'));
-  $('review-focus-error').hidden = true;
+  $('approve-review').disabled = true;
 }
 
 export function showReview() {
@@ -84,6 +84,8 @@ export function showReview() {
     resetReviewDom();
   }
   $('view-as').value = state.review.view;
+  writeStyle(state.review.live.style);
+  syncReviewDock();
   renderReview();
   focusStage();
   loadFilePreview();
@@ -109,11 +111,10 @@ export function renderReview() {
   xtcToggle.disabled = !xtc;
   (review.format === 'epub' ? epubToggle : xtcToggle).checked = true;
   document.querySelector('.approx').hidden = review.format !== 'epub';
-  $('review-focus').hidden = review.format !== 'epub' || review.panelOpen || !converted;
-  $('review-focus-mode').checked = review.focus.mode;
-  $('review-focus-strength').value = review.focus.strength;
-  updateReviewFocus();
   $('change-settings').hidden = !converted;
+  $('review-dock').hidden = !converted;
+  $('approve-review').hidden = !converted;
+  updateApproval();
   $('try-again').hidden = job.files.some(isConverted); // with nothing converted, trying again is the one action
   renderFilePick(job);
   renderNote(job, info, converted);
@@ -145,11 +146,14 @@ export function renderFilePick(job) {
   pick.hidden = job.files.length < 2;
   if (pick.hidden) return;
   const select = $('review-file');
-  const key = `${job.id}:${job.files.map(isConverted).join()}`; // two jobs can look alike
+  const key = `${job.id}:${job.files.map(isConverted).join()}:${[...state.review.reviewed].join()}`;
   if (select.dataset.key !== key) {
     select.dataset.key = key;
-    const label = (file) => (isConverted(file) ? file.name : `${file.name} (${t('review_not_converted')})`);
-    select.replaceChildren(...job.files.map((file, i) => h('option', { value: String(i) }, label(file))));
+    const label = (file, i) => {
+      if (!isConverted(file)) return `${file.name} (${t('review_not_converted')})`;
+      return `${file.name} (${t(state.review.reviewed.has(i) ? 'reviewed' : 'review_required')})`;
+    };
+    select.replaceChildren(...job.files.map((file, i) => h('option', { value: String(i) }, label(file, i))));
   }
   select.value = String(state.review.fileIndex);
 }
@@ -370,7 +374,7 @@ export function refreshDevice() {
   const review = state.review;
   clearTimeout(review.liveTimer);
   if (review.liveAbort) review.liveAbort.abort();
-  if ((review.panelOpen && liveDirty()) || (!review.panelOpen && review.format === 'epub' && reviewFocusDirty())) {
+  if (liveDirty()) {
     setText($('device-status'), t('updating_preview')); // the old picture stays until the new one is here
     review.liveTimer = setTimeout(requestLive, LIVE_DELAY_MS);
     return;
@@ -395,19 +399,9 @@ export function liveDirty() {
   return JSON.stringify(live.style) !== JSON.stringify(options.style) || live.size !== options.size;
 }
 
-export function reviewFocusDirty() {
-  const { focus_mode, focus_strength } = state.job.options.style;
-  const { mode, strength } = state.review.focus;
-  return mode !== focus_mode || strength !== focus_strength;
-}
-
 export function liveQuery() {
   const review = state.review;
-  const style = review.panelOpen ? review.live.style : {
-    ...state.job.options.style,
-    focus_mode: review.focus.mode,
-    focus_strength: review.focus.strength,
-  };
+  const style = review.live.style;
   const format = review.format === 'epub'
     ? 'epub'
     : (style.mode === 'xth' ? 'xtch' : 'xtc');
@@ -415,7 +409,7 @@ export function liveQuery() {
     format,
     view: review.view,
     style: JSON.stringify(style),
-    size: review.panelOpen ? review.live.size : state.job.options.size,
+    size: review.live.size,
   });
   const source = isPdf() ? review.sourceShown || nearestSource(review.page) : null;
   if (source) params.set('page', String(source));
@@ -447,6 +441,7 @@ export function writeStyle(style) {
   for (const [name, id] of Object.entries(STYLE_IDS)) {
     const input = $(id);
     if (STYLE_FLAGS.has(name)) input.checked = style[name];
+    else if (name === 'focus_strength') input.value = String(FOCUS_STRENGTHS.indexOf(style[name]));
     else input.value = String(style[name]);
   }
 }
@@ -456,6 +451,7 @@ export function readStyle() {
   for (const [name, id] of Object.entries(STYLE_IDS)) {
     const input = $(id);
     if (STYLE_FLAGS.has(name)) style[name] = input.checked;
+    else if (name === 'focus_strength') style[name] = FOCUS_STRENGTHS[Number(input.value)];
     else if (STYLE_NUMBERS.has(name)) style[name] = Number(input.value);
     else style[name] = input.value;
   }
@@ -506,13 +502,10 @@ export async function loadFonts() {
 
 export async function openPanel() {
   const review = state.review;
-  const options = state.job.options;
   review.panelOpen = true;
-  review.live = { style: { ...options.style }, size: options.size };
   writeStyle(review.live.style);
   $('live-size').value = options.size;
   $('settings-panel').hidden = false;
-  $('review-focus').hidden = true;
   $('review-grid').classList.add('with-panel');
   $('change-settings').setAttribute('aria-expanded', 'true');
   $('panel-error').hidden = true;
@@ -606,65 +599,80 @@ export function closePanel(moveFocus, restore) {
   const review = state.review;
   review.panelOpen = false;
   hidePanel();
-  $('review-focus').hidden = review.format !== 'epub';
   if (restore && review.pages && review.pages.device_pages > 0) refreshDevice();
   if (moveFocus) $('change-settings').focus();
 }
 
 export function updateApply() {
   $('apply').disabled = !liveDirty() || state.review.applying;
+  updateApproval();
 }
 
 export function onLiveChange() {
   const review = state.review;
   if (document.activeElement === $('font-weight')) updateFocusAvailability();
   review.live = { style: readStyle(), size: $('live-size').value };
+  syncReviewDock();
   updateApply();
   if (review.pages && review.pages.device_pages > 0) refreshDevice();
 }
 
-export function updateReviewFocus() {
-  const review = state.review;
-  const style = state.job.options.style;
-  $('review-focus-strength').disabled = !review.focus.mode || review.applyingFocus;
-  $('review-focus-apply').disabled = review.applyingFocus || (
-    review.focus.mode === style.focus_mode && review.focus.strength === style.focus_strength
-  );
+export function syncReviewDock() {
+  const style = state.review.live.style;
+  const focus = Boolean(style.focus_mode);
+  $('style-font-size').value = String(style.font_size);
+  $('line-height').value = String(style.line_height);
+  $('margin-x').value = String(style.margin_x);
+  $('first-line-indent').value = String(style.first_line_indent);
+  $('focus-mode').checked = focus;
+  $('focus-strength').value = String(FOCUS_STRENGTHS.indexOf(style.focus_strength));
+  setText($('style-font-size-value'), String(style.font_size));
+  setText($('line-height-value'), `${style.line_height}%`);
+  setText($('margin-x-value'), String(style.margin_x));
+  setText($('first-line-indent-value'), `${style.first_line_indent}%`);
+  setText($('focus-strength-value'), t(`focus_${style.focus_strength}`));
+  $('focus-strength').disabled = !focus;
+  $('focus-strength-field').hidden = !focus;
 }
 
-export function onReviewFocusChange() {
-  state.review.focus = {
-    mode: $('review-focus-mode').checked,
-    strength: $('review-focus-strength').value,
-  };
-  $('review-focus-error').hidden = true;
-  updateReviewFocus();
-  if (state.review.pages && state.review.pages.device_pages > 0) refreshDevice();
+export function onReviewDockChange(event) {
+  const review = state.review;
+  const input = event.target;
+  const name = STYLE_NAMES.get(input.id);
+  if (!name) return;
+  let value = input.value;
+  if (STYLE_FLAGS.has(name)) value = input.checked;
+  else if (name === 'focus_strength') value = FOCUS_STRENGTHS[Number(input.value)];
+  else if (STYLE_NUMBERS.has(name)) value = Number(input.value);
+  review.live.style[name] = value;
+  syncReviewDock();
+  updateApply();
+  if (review.pages && review.pages.device_pages > 0) refreshDevice();
 }
 
-export async function applyReviewFocus() {
+export function updateApproval() {
+  if (!state.review) return;
+  const converted = isConverted(state.job.files[state.review.fileIndex]);
+  $('approve-review').disabled = !converted || liveDirty() || state.review.applying;
+}
+
+export async function approveCurrentFile() {
   const review = state.review;
-  if (review.applyingFocus) return;
-  review.applyingFocus = true;
-  setText($('review-focus-apply'), t('applying'));
-  $('review-focus-error').hidden = true;
-  updateReviewFocus();
-  const options = {
-    ...state.job.options,
-    style: {
-      ...state.job.options.style,
-      focus_mode: $('review-focus-mode').checked,
-      focus_strength: $('review-focus-strength').value,
-    },
-  };
-  const ok = await rebuild(options, (message) => {
-    setText($('review-focus-error'), message);
-    $('review-focus-error').hidden = false;
-  });
-  if (ok || state.review !== review) return;
-  review.applyingFocus = false;
-  setText($('review-focus-apply'), t('apply'));
-  updateReviewFocus();
+  if (liveDirty() || !isConverted(state.job.files[review.fileIndex])) return;
+  review.reviewed.add(review.fileIndex);
+  const successful = state.job.files
+    .map((file, index) => index)
+    .filter((index) => isConverted(state.job.files[index]));
+  const next = successful.find((index) => !review.reviewed.has(index));
+  if (next !== undefined) {
+    review.fileIndex = next;
+    review.loadedFile = null;
+    renderReview();
+    await loadFilePreview();
+    return;
+  }
+  setStage('export');
+  focusStage();
 }
 
 export function onFontChange() {
@@ -826,7 +834,7 @@ export function onKey(event) {
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
   if (state.stage !== 'review' || !state.review || !state.review.pages) return;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-  if (event.target.closest && event.target.closest('input, select, textarea')) return;
+  if (event.target.closest && event.target.closest('button, a, input, select, textarea')) return;
   event.preventDefault();
   step(event.key === 'ArrowRight' ? 1 : -1);
 }

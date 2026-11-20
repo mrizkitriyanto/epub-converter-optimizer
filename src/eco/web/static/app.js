@@ -3,7 +3,7 @@
 import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
 import { addFiles, continueWithoutModels, renderDetails, setSetupButtons, showSetup, startConversion, startDownload, syncSettingHints, uploadLibraryFonts, wholeFontSize } from './start.js';
 import { apply, cancelJob } from './job.js';
-import { applyChanges, applyReviewFocus, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewFocusChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
+import { applyChanges, approveCurrentFile, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
 
@@ -67,9 +67,10 @@ function bind() {
   for (const format of document.querySelectorAll('input[name="preview-format"]')) {
     format.addEventListener('change', onFormatChange);
   }
-  $('review-focus-mode').addEventListener('change', onReviewFocusChange);
-  $('review-focus-strength').addEventListener('change', onReviewFocusChange);
-  $('review-focus-apply').addEventListener('click', applyReviewFocus);
+  for (const input of $('review-dock').querySelectorAll('input')) {
+    input.addEventListener('input', onReviewDockChange);
+  }
+  $('approve-review').addEventListener('click', approveCurrentFile);
   $('prev').addEventListener('click', () => step(-1));
   $('next').addEventListener('click', () => step(1));
   for (const input of $('page-style').querySelectorAll('input:not(#font-upload), select:not(#font)')) {

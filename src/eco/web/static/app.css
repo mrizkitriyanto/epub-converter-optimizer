@@ -787,23 +787,45 @@ li.finding.plain {
   flex-basis: 100%;
 }
 
-.review-focus {
-  display: flex;
-  flex-wrap: wrap;
+.review-dock {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) auto minmax(120px, 1fr) auto;
+  gap: 6px 14px;
   align-items: center;
-  justify-content: center;
-  gap: 8px 12px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
 }
 
-.review-focus select {
-  width: auto;
+.review-dock > label:not(.review-focus-toggle),
+.review-control label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.review-focus .error-text {
-  flex-basis: 100%;
+.review-dock > input[type="range"] {
+  grid-row: 2;
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.review-control {
+  display: grid;
+  gap: 6px;
+}
+
+.review-focus-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.review-dock .hint {
+  grid-column: 1 / -1;
   margin: 0;
 }
 
@@ -923,6 +945,14 @@ output {
   #page-style {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .review-dock {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .review-dock > input[type="range"] {
+    grid-row: auto;
+  }
 }
 
 @media (max-width: 860px) {
@@ -952,6 +982,10 @@ output {
 
   .review-actions {
     margin-left: 0;
+  }
+
+  .review-dock {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   #page-style {

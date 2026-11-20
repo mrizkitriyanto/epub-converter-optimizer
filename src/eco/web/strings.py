@@ -224,6 +224,10 @@ STRINGS = {
     "download_xtch": "Download XTC (4-level)",
     "download_xtc": "Download XTC (black and white)",
     "change_settings": "Change settings",
+    "approve_review": "Approve and continue",
+    "reviewed": "reviewed",
+    "review_required": "review required",
+    "review_controls_label": "Reading controls",
     "delete_job": "Delete conversion",
     "deleting": "Deleting…",
     "delete_confirm": (
