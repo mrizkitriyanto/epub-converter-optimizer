@@ -198,8 +198,10 @@
         <button id="try-again" type="button" class="primary" hidden>{{ strings.try_again }}</button>
         <button id="change-settings" type="button" class="secondary" aria-controls="settings-panel" aria-expanded="false" hidden>{{ strings.change_settings }}</button>
         <button id="approve-review" type="button" class="primary" hidden>{{ strings.approve_review }}</button>
+        <button id="review-delete-job" type="button" class="link-button destructive">{{ strings.delete_job }}</button>
       </div>
     </div>
+    <p id="review-delete-error" class="error-text" role="alert" hidden></p>
     <div id="file-pick" class="inline-field" hidden>
       <label for="review-file">{{ strings.review_file_label }}</label>
       <select id="review-file"></select>

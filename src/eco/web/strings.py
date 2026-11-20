@@ -228,7 +228,7 @@ STRINGS = {
     "download_epub": "Download EPUB",
     "download_xtch": "Download XTC (4-level)",
     "download_xtc": "Download XTC (black and white)",
-    "change_settings": "Change settings",
+    "change_settings": "Advanced typography",
     "approve_review": "Approve and continue",
     "reviewed": "reviewed",
     "review_required": "review required",

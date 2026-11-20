@@ -696,6 +696,10 @@ def test_review_and_export_statuses_are_text_not_color_only():
     assert "warnings" in STRINGS["export_warnings_other"].lower()
 
 
+def test_the_expert_panel_is_named_advanced_typography():
+    assert STRINGS["change_settings"] == "Advanced typography"
+
+
 def test_every_api_address_in_the_script_is_a_route(tmp_path):
     app = create_app(tmp_path, token=None)
     found = re.findall(r"""['"`](/api/[^'"`]*)['"`]""", source("app.js"))
@@ -1118,9 +1122,21 @@ def test_export_has_a_low_emphasis_delete_button_and_a_line_for_its_failure(tmp_
     assert '<p id="delete-error" class="error-text" role="alert" hidden></p>' in export
 
 
+def test_a_failed_review_still_offers_a_low_emphasis_delete_action(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    button = (
+        '<button id="review-delete-job" type="button" class="link-button destructive">'
+        f"{STRINGS['delete_job']}"
+    )
+    assert f"{button}</button>" in review
+    assert '<p id="review-delete-error" class="error-text" role="alert" hidden></p>' in review
+
+
 def test_delete_asks_first_and_then_goes_to_select_files_which_reads_the_recent_ones_again():
     js = source("app.js")
-    assert "$('delete-job').addEventListener('click', deleteJob);" in function_body(js, "bind")
+    bind = function_body(js, "bind")
+    assert "$('delete-job').addEventListener('click', deleteJob);" in bind
+    assert "$('review-delete-job').addEventListener('click', deleteJob);" in bind
     body = function_body(js, "deleteJob")
     asked = body.index("if (!window.confirm(t('delete_confirm'))) return;")
     assert asked < body.index("request(URLS.job(id), { method: 'DELETE' })")
@@ -1135,15 +1151,15 @@ def test_a_failed_delete_shows_the_servers_text_and_a_job_already_gone_counts_as
     js = source("app.js")
     body = function_body(js, "deleteJob")
     assert "if (error.status !== 404) {" in body
-    assert "setText($('delete-error'), error.message);" in body
-    assert "$('delete-error').hidden = false;" in body
+    assert "setText(errorLine, error.message);" in body
+    assert "errorLine.hidden = false;" in body
     assert "setText(button, t('deleting'));" in body and "setText(button, t('delete_job'));" in body
     # a disabled button loses the keyboard focus; after a failure it gets it back
     assert body.index("button.disabled = false;") < body.index("button.focus();")
     reset = function_body(js, "resetReviewDom")  # one button for every job
-    for part in ("$('delete-job').disabled = false", "setText($('delete-job'), t('delete_job'))"):
+    for part in ("['delete-job', 'delete-error']", "['review-delete-job', 'review-delete-error']"):
         assert part in reset
-    assert "$('delete-error').hidden = true" in reset
+    assert "$(errorId).hidden = true" in reset
 
 
 def test_a_change_of_view_stops_a_live_preview_that_waits_or_is_on_its_way():

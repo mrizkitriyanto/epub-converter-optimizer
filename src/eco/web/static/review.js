@@ -71,9 +71,14 @@ export function resetReviewDom() {
   setText($('apply'), t('apply'));
   $('apply').disabled = true;
   $('try-again').disabled = false;
-  $('delete-job').disabled = false;
-  setText($('delete-job'), t('delete_job'));
-  $('delete-error').hidden = true;
+  for (const [buttonId, errorId] of [
+    ['delete-job', 'delete-error'],
+    ['review-delete-job', 'review-delete-error'],
+  ]) {
+    $(buttonId).disabled = false;
+    setText($(buttonId), t('delete_job'));
+    $(errorId).hidden = true;
+  }
   $('approve-review').disabled = true;
 }
 
@@ -810,14 +815,15 @@ export async function tryAgain() {
 // The job and all its files leave the server, after the user says yes. Then the page starts over
 // on Select files, which reads Recent conversions again. A job that is gone already (deleted in
 // another tab) counts as deleted.
-export async function deleteJob() {
+export async function deleteJob(event) {
   if (!window.confirm(t('delete_confirm'))) return;
   const mine = state.sequence;
   const id = state.job.id;
-  const button = $('delete-job');
+  const button = event.currentTarget;
+  const errorLine = $(button.id === 'delete-job' ? 'delete-error' : 'review-delete-error');
   button.disabled = true;
   setText(button, t('deleting'));
-  $('delete-error').hidden = true;
+  errorLine.hidden = true;
   try {
     await request(URLS.job(id), { method: 'DELETE' });
   } catch (error) {
@@ -825,8 +831,8 @@ export async function deleteJob() {
     if (error.status !== 404) {
       button.disabled = false;
       setText(button, t('delete_job'));
-      setText($('delete-error'), error.message);
-      $('delete-error').hidden = false;
+      setText(errorLine, error.message);
+      errorLine.hidden = false;
       button.focus(); // it lost the focus while it was disabled
       return;
     }

@@ -58,6 +58,7 @@ function bind() {
   $('cancel').addEventListener('click', cancelJob);
   $('try-again').addEventListener('click', tryAgain);
   $('delete-job').addEventListener('click', deleteJob);
+  $('review-delete-job').addEventListener('click', deleteJob);
   $('back-to-review').addEventListener('click', backToReview);
   $('change-settings').addEventListener('click', () => {
     if (state.review.panelOpen) closePanel(true, true);
