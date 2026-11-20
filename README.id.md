@@ -8,6 +8,8 @@ eco berupa alat baris perintah dengan GUI web yang berjalan di komputer Anda sen
 
 ## Persyaratan
 
+Tabel ini menjelaskan pemasangan dari sumber. Ukuran arsip dan versi OS minimum untuk paket native dijelaskan di bawah.
+
 | | macOS | Windows | Linux |
 |---|---|---|---|
 | Sistem | 14+, Apple Silicon (Mac Intel tidak didukung) | 10/11, x64 | x64, glibc 2.28+ (Ubuntu 20.04+, Debian 10+, RHEL 8+) |
@@ -15,6 +17,22 @@ eco berupa alat baris perintah dengan GUI web yang berjalan di komputer Anda sen
 | Disk | sekitar 3 GB | sekitar 3 GB | sekitar 3 GB (dengan PyTorch versi CPU) |
 | Unduhan pertama | sekitar 0,8 GB (paket 0,35 GB, model 0,42 GB) | sekitar 0,9 GB | sekitar 1 GB (wajib PyTorch versi CPU) |
 | GPU | opsional (GPU Apple dipakai otomatis) | opsional | opsional |
+
+Arsip aplikasi native sudah memuat Python, Java portabel, dan EPUBCheck. Di Windows, [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) masih diperlukan oleh PyTorch dan pustaka native lainnya. Paket macOS dibuat di macOS 15 Apple Silicon, dan paket Linux dibuat di Ubuntu 22.04 x64. Sistem yang lebih lama dapat memakai pemasangan dari sumber di bawah.
+
+## Pasang paket native
+
+Unduh arsip sesuai OS dari [Releases](https://github.com/mrizkitriyanto/epub-converter-optimizer/releases): `eco-<versi>-windows-x64.zip`, `eco-<versi>-macos-arm64.tar.gz`, atau `eco-<versi>-linux-x64.tar.gz`. Ekstrak arsip, lalu jalankan `eco.exe` di Windows atau `./eco` di macOS dan Linux dari folder `eco` yang diekstrak. Contoh di Windows:
+
+```powershell
+cd eco
+.\eco.exe setup
+.\eco.exe web
+```
+
+Di macOS atau Linux, gunakan `./eco setup` dan `./eco web`. Perintah `setup` mengunduh model AI satu kali setelah menampilkan ukuran dan meminta persetujuan. Setiap EPUB dari paket native diperiksa dengan EPUBCheck bawaan sebelum diserahkan. Kesalahan EPUBCheck menggagalkan file itu; peringatan ditampilkan bersama temuan lain. Pengguna tidak perlu memasang Java atau Python di sistem.
+
+## Pasang dari sumber dengan uv
 
 Pasang [uv](https://docs.astral.sh/uv/), yang juga memasang Python 3.12:
 
@@ -28,10 +46,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Di Windows, pasang [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) sebelum menjalankan `eco setup`. Windows 10/11 yang baru dipasang bisa belum memilikinya; tanpa itu PyTorch, onnxruntime, dan rtree tidak bisa dimuat, sehingga `eco setup` dan setiap konversi PDF gagal dengan galat DLL.
-
-## Pemasangan
-
 ```bash
 uv tool install git+https://github.com/mrizkitriyanto/epub-converter-optimizer
 ```
@@ -43,7 +57,7 @@ eco setup
 eco web
 ```
 
-Untuk memperbarui, jalankan `uv tool upgrade eco`. Untuk menghapus, jalankan `uv tool uninstall eco`. Lihat [pemeriksaan pemasangan](docs/install-check.md) untuk daftar verifikasi per OS.
+Pemasangan dari sumber menjalankan EPUBCheck bila `ECO_JAVA` dan `ECO_EPUBCHECK_JAR` sama-sama menunjuk ke executable Java dan JAR EPUBCheck. Tanpa keduanya, konversi tetap berjalan tetapi pemeriksaan EPUBCheck dilewati. Jika hanya satu disetel, eco menampilkan galat. Untuk memperbarui, jalankan `uv tool upgrade eco`; untuk menghapus, jalankan `uv tool uninstall eco`. Lihat [pemeriksaan pemasangan](docs/install-check.md) untuk daftar verifikasi per OS.
 
 ## Docker
 

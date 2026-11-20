@@ -8,6 +8,8 @@ eco is a command-line tool with a web GUI that runs on your own computer. It als
 
 ## Requirements
 
+The table describes the source install. Native archive sizes and minimum OS versions are described below.
+
 | | macOS | Windows | Linux |
 |---|---|---|---|
 | System | 14+, Apple Silicon (Intel Macs are not supported) | 10/11, x64 | x64, glibc 2.28+ (Ubuntu 20.04+, Debian 10+, RHEL 8+) |
@@ -15,6 +17,22 @@ eco is a command-line tool with a web GUI that runs on your own computer. It als
 | Disk | about 3 GB | about 3 GB | about 3 GB (with the CPU build of PyTorch) |
 | First download | about 0.8 GB (packages 0.35 GB, models 0.42 GB) | about 0.9 GB | about 1 GB (CPU build of PyTorch required) |
 | GPU | optional (Apple GPU is used automatically) | optional | optional |
+
+The native archives include Python, a private Java runtime, and EPUBCheck. Windows still needs the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) for PyTorch and other native libraries. The macOS native archive is built on macOS 15 Apple Silicon; the Linux archive is built on Ubuntu 22.04 x64. Older systems can use the source install below.
+
+## Install the native app
+
+Download the archive for your OS from [Releases](https://github.com/mrizkitriyanto/epub-converter-optimizer/releases): `eco-<version>-windows-x64.zip`, `eco-<version>-macos-arm64.tar.gz`, or `eco-<version>-linux-x64.tar.gz`. Unpack it and run `eco.exe` on Windows or `./eco` on macOS and Linux from the extracted `eco` folder. For example:
+
+```powershell
+cd eco
+.\eco.exe setup
+.\eco.exe web
+```
+
+On macOS or Linux, use `./eco setup` and `./eco web` instead. `setup` downloads the AI models once, showing their size and asking first. Every EPUB made by a native package is checked with bundled EPUBCheck before it is delivered. EPUBCheck errors fail that file; warnings are shown with the other findings. No host Java or Python installation is needed.
+
+## Install from source with uv
 
 Install [uv](https://docs.astral.sh/uv/), which installs Python 3.12 for you:
 
@@ -28,10 +46,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-On Windows, install the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) before `eco setup`. A clean Windows 10/11 machine can lack it, and without it PyTorch, onnxruntime and rtree cannot load, so `eco setup` and every PDF conversion fail with a DLL error.
-
-## Install
-
 ```bash
 uv tool install git+https://github.com/mrizkitriyanto/epub-converter-optimizer
 ```
@@ -43,7 +57,7 @@ eco setup
 eco web
 ```
 
-To upgrade, run `uv tool upgrade eco`. To remove eco, run `uv tool uninstall eco`. See the [installation check](docs/install-check.md) for an OS-specific verification checklist.
+Source installs validate EPUBs when both `ECO_JAVA` and `ECO_EPUBCHECK_JAR` point to a Java executable and an EPUBCheck JAR. Without them, conversion still works but skips EPUBCheck. A partial configuration fails clearly. To upgrade, run `uv tool upgrade eco`; to remove it, run `uv tool uninstall eco`. See the [installation check](docs/install-check.md) for an OS-specific verification checklist.
 
 ## Docker
 

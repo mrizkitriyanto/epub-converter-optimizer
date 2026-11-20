@@ -1276,3 +1276,9 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - Current user input is validated strictly. Stored styles and jobs with a removed font load with Literata at the nearest available weight and emit a `font_missing` finding. Focus Mode turns off with a finding when no heavier weight remains.
 - Shared font files live under `<data>/fonts/`; old job fonts remain readable. XTC conversion checks body text against the selected font cmap and reports missing characters. Live preview performs the same check for the displayed chapter.
 - The GUI Fonts section is part of the existing Settings area on Select files. This keeps font management near conversion settings without another route.
+
+## 2026-11-20: Native packages validate EPUBs with private Java
+
+- The owner chose automatic EPUBCheck validation for every EPUB made by a native installation and separate native archives for Windows x64, macOS arm64, and Linux x64. A one-folder PyInstaller build carries Temurin JRE 21.0.13+9, EPUBCheck 5.4.0, its `lib/`, and license notices; no host Java or Python is needed. Third-party binaries are downloaded and SHA-256 checked at build time, never committed to Git.
+- The optimized EPUB is written under its output directory, checked, and moved to the published name only after validation. Errors or a broken bundle fail the file; warnings remain findings. Source installs without either validation environment variable keep their existing behavior, while a partial configuration fails.
+- The Windows build and smoke passed on this machine, including a 12-page PDF conversion with bundled validation. CI builds and smokes the other two archives on matching OS runners; fresh-machine installation checks remain separate.

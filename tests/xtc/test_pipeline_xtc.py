@@ -1,9 +1,12 @@
 from dataclasses import replace
 
 import numpy as np
+import pytest
 
+from eco import pipeline
 from eco.bookfolder import load_source
 from eco.cli import main
+from eco.epub.validator import EpubValidationError
 from eco.options import Options
 from eco.pipeline import convert_file
 from eco.render.pages import render_book
@@ -38,6 +41,18 @@ def test_pipeline_writes_epub_and_exact_xtch_pages(tmp_path, small_book):
         assert np.array_equal(np.asarray(decode_page(encoded[0])), np.asarray(expected))
         assert metadata["title"] == "Small Book"
         assert [(chapter.title, chapter.start) for chapter in chapters] == rendered.chapters
+
+
+def test_invalid_epub_stops_mixed_format_file_before_xtc(tmp_path, small_book, monkeypatch):
+    def reject(epub):
+        raise EpubValidationError("EPUBCheck found errors")
+
+    monkeypatch.setattr(pipeline, "validate_epub", reject, raising=False)
+    out = tmp_path / "out"
+    with pytest.raises(EpubValidationError, match="EPUBCheck found errors"):
+        convert(small_book, out, Options(formats=("epub", "xtc")))
+    assert not list(out.glob("*.epub"))
+    assert not list(out.glob("*.xtc"))
 
 
 def test_empty_markdown_writes_no_xtch(tmp_path):

@@ -58,6 +58,7 @@ torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not slow and not acceptance'"
+pythonpath = ["."]
 markers = [
     "slow: needs downloaded models",
     "acceptance: needs the samples/ directory",
