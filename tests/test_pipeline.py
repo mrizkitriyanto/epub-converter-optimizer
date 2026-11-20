@@ -8,8 +8,10 @@ import pytest
 import typst
 from pypdf import PdfReader, PdfWriter
 
+from eco import pipeline
 from eco.book import Block
 from eco.bookfolder import load_source, read_report
+from eco.epub.validator import EpubValidationError
 from eco.events import Cancelled, FindingEvent, PageEvent, StageEvent
 from eco.models import ModelsMissing
 from eco.options import DEVICES, Options
@@ -119,6 +121,55 @@ def test_markdown_to_epub_events(tmp_path):
         "epub",
         "optimize",
     ]
+
+
+def test_epub_is_checked_before_publishing(monkeypatch, tmp_path):
+    md = tmp_path / "book.md"
+    md.write_text("# One\n\nText.\n")
+    out_dir = tmp_path / "out"
+    checked = []
+
+    def check(epub):
+        checked.append(epub)
+        assert epub.is_file()
+        assert epub.parent.parent == out_dir
+        assert not (out_dir / "book.x4.epub").exists()
+        return []
+
+    monkeypatch.setattr(pipeline, "validate_epub", check, raising=False)
+    result = convert_file(md, Options(), out_dir, data_dir=tmp_path / "data")
+    assert len(checked) == 1
+    assert result.outputs["epub"] == out_dir / "book.x4.epub"
+    assert result.outputs["epub"].exists()
+
+
+def test_invalid_epub_is_not_published(monkeypatch, tmp_path):
+    md = tmp_path / "book.md"
+    md.write_text("# One\n\nText.\n")
+    out_dir = tmp_path / "out"
+
+    def reject(epub):
+        raise EpubValidationError("EPUBCheck found errors: ERROR(RSC-005)")
+
+    monkeypatch.setattr(pipeline, "validate_epub", reject, raising=False)
+    with pytest.raises(EpubValidationError, match="RSC-005"):
+        convert_file(md, Options(), out_dir, data_dir=tmp_path / "data")
+    assert not list(out_dir.glob("*.epub"))
+    assert not list(out_dir.iterdir())
+
+
+def test_epubcheck_warnings_reach_findings_and_events(monkeypatch, tmp_path):
+    md = tmp_path / "book.md"
+    md.write_text("# One\n\nText.\n")
+    warning = "WARNING(OPF-003): redundant metadata"
+    monkeypatch.setattr(pipeline, "validate_epub", lambda epub: [warning], raising=False)
+    seen = []
+    result = convert_file(
+        md, Options(), tmp_path / "out", data_dir=tmp_path / "data", on_event=seen.append
+    )
+    matching = [f for f in result.findings if f.kind == "epubcheck_warning"]
+    assert [(f.page, f.level, f.message) for f in matching] == [(0, "warning", warning)]
+    assert matching[0] in [e.finding for e in seen if isinstance(e, FindingEvent)]
 
 
 def test_no_network_during_conversion(tmp_path, monkeypatch, fixtures_dir, fake_blocks):

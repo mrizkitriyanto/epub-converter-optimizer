@@ -18,6 +18,7 @@ from eco.bookfolder import load_source, read_report, write_book
 from eco.epub.builder import build_epub
 from eco.epub.optimizer import optimize_epub
 from eco.epub.reader import epub_to_book
+from eco.epub.validator import validate_epub
 from eco.events import Cancelled, Event, Finding, FindingEvent, PageEvent, StageEvent
 from eco.font_coverage import missing_characters
 from eco.models import models_dir
@@ -436,8 +437,19 @@ def convert_file(
         outputs = {}
         if "epub" in options.formats:
             out = output_path(path, out_dir, options.device, "epub", (*inputs, path))
-            with _stage(on_event, "optimize"):
-                _add(findings, optimize_epub(built, out, options).findings, on_event)
+            with tempfile.TemporaryDirectory(dir=out_dir) as staged_dir:
+                staged = Path(staged_dir) / out.name
+                with _stage(on_event, "optimize"):
+                    _add(findings, optimize_epub(built, staged, options).findings, on_event)
+                    _add(
+                        findings,
+                        [
+                            Finding(0, "epubcheck_warning", "warning", line)
+                            for line in validate_epub(staged)
+                        ],
+                        on_event,
+                    )
+                staged.replace(out)
             outputs["epub"] = out
         xtc_formats = tuple(fmt for fmt in options.formats if fmt in ("xtch", "xtc"))
         if xtc_formats:
