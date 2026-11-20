@@ -622,6 +622,43 @@ def test_page_shortcuts_ignore_every_interactive_target():
         assert tag in body
 
 
+def test_export_is_a_separate_stage_with_downloads_and_back_navigation(tmp_path):
+    html = local(tmp_path).get("/").text
+    review = stage_markup(html, "review")
+    export = stage_markup(html, "export")
+    assert 'id="download"' not in review
+    assert 'id="export-files"' in export
+    assert 'id="export-status"' in export
+    assert 'id="back-to-review"' in export
+    assert 'id="delete-job"' in export
+    assert 'id="delete-job"' not in review
+
+
+def test_export_guard_requires_every_successful_file_to_be_reviewed():
+    js = source("app.js")
+    ready = function_body(js, "exportReady")
+    assert "filter(isConverted)" in ready
+    assert "review.reviewed.size" in ready
+    shown = function_body(js, "showExport")
+    assert "if (!exportReady())" in shown
+    assert "showReview();" in shown
+
+
+def test_export_builds_safe_download_links_for_each_output():
+    body = function_body(source("app.js"), "renderExport")
+    assert "Object.entries(info.outputs)" in body
+    assert "URLS.fileDownload(job.id, index, format)" in body
+    assert "download: true" in body
+
+
+def test_returning_from_export_reuses_the_existing_review_state():
+    js = source("app.js")
+    show = function_body(js, "showExport")
+    back = function_body(js, "backToReview")
+    assert "state.review =" not in show
+    assert "showReview();" in back
+
+
 def test_every_api_address_in_the_script_is_a_route(tmp_path):
     app = create_app(tmp_path, token=None)
     found = re.findall(r"""['"`](/api/[^'"`]*)['"`]""", source("app.js"))
@@ -1032,12 +1069,14 @@ def test_the_texts_of_ruling_m2_r45():
     )
 
 
-def test_review_has_a_secondary_delete_button_and_a_line_for_its_failure(tmp_path):
-    review = stage_markup(local(tmp_path).get("/").text, "review")
-    actions = re.search(r'<div class="review-actions">(.*?)</div>', review, re.DOTALL).group(1)
-    button = f'<button id="delete-job" type="button" class="secondary">{STRINGS["delete_job"]}'
-    assert f"{button}</button>" in actions  # with the other actions, and not a primary one
-    assert '<p id="delete-error" class="error-text" role="alert" hidden></p>' in review
+def test_export_has_a_low_emphasis_delete_button_and_a_line_for_its_failure(tmp_path):
+    export = stage_markup(local(tmp_path).get("/").text, "export")
+    button = (
+        f'<button id="delete-job" type="button" class="link-button destructive">'
+        f'{STRINGS["delete_job"]}'
+    )
+    assert f"{button}</button>" in export
+    assert '<p id="delete-error" class="error-text" role="alert" hidden></p>' in export
 
 
 def test_delete_asks_first_and_then_goes_to_select_files_which_reads_the_recent_ones_again():

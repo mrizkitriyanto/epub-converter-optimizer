@@ -3,7 +3,7 @@
 import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
 import { addFiles, continueWithoutModels, renderDetails, setSetupButtons, showSetup, startConversion, startDownload, syncSettingHints, uploadLibraryFonts, wholeFontSize } from './start.js';
 import { apply, cancelJob } from './job.js';
-import { applyChanges, approveCurrentFile, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
+import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
 
@@ -58,6 +58,7 @@ function bind() {
   $('cancel').addEventListener('click', cancelJob);
   $('try-again').addEventListener('click', tryAgain);
   $('delete-job').addEventListener('click', deleteJob);
+  $('back-to-review').addEventListener('click', backToReview);
   $('change-settings').addEventListener('click', () => {
     if (state.review.panelOpen) closePanel(true, true);
     else openPanel();

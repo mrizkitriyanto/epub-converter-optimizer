@@ -74,6 +74,11 @@ STRINGS = {
     "try_again": "Try again",
     "export_title": "Export",
     "export_intro": "Approve the converted files in Review before downloading them.",
+    "export_ready": "The reviewed files are ready to download. No warnings were reported.",
+    "export_warnings_one": "The reviewed files are ready with 1 warning.",
+    "export_warnings_other": "The reviewed files are ready with {n} warnings.",
+    "download_file": "Download {format}",
+    "back_to_review": "Back to Review",
     # Setup gate
     "setup_title": "AI models needed",
     "setup_intro": (

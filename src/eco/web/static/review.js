@@ -100,11 +100,6 @@ export function renderReview() {
   if (!info.outputs[review.format]) review.format = info.outputs.epub ? 'epub' : xtc;
   setText($('review-title'), info.name);
   renderChips(info, file, converted);
-  $('download').hidden = !converted;
-  if (converted) {
-    $('download').href = URLS.fileDownload(job.id, review.fileIndex, review.format);
-    setText($('download'), t(`download_${review.format}`));
-  }
   const epubToggle = document.querySelector('input[name="preview-format"][value="epub"]');
   const xtcToggle = document.querySelector('input[name="preview-format"][value="xtc"]');
   epubToggle.disabled = !info.outputs.epub;
@@ -671,8 +666,56 @@ export async function approveCurrentFile() {
     await loadFilePreview();
     return;
   }
+  showExport();
+}
+
+export function exportReady() {
+  const { review } = state;
+  const converted = state.job.files.filter(isConverted);
+  return converted.length > 0 && review.reviewed.size >= converted.length;
+}
+
+export function showExport() {
+  if (!exportReady()) {
+    showReview();
+    return;
+  }
   setStage('export');
+  renderExport();
   focusStage();
+}
+
+export function renderExport() {
+  const { job, review, run } = state;
+  const rows = [];
+  let primary = true;
+  let warnings = 0;
+  job.files.forEach((info, index) => {
+    if (!isConverted(info) || !review.reviewed.has(index)) return;
+    warnings += run.files[index].findings.filter((finding) => finding.level === 'warning').length;
+    for (const [format, name] of Object.entries(info.outputs)) {
+      const size = info.sizes[format];
+      const details = size === null || size === undefined
+        ? t(`output_${format === 'epub' ? 'epub' : 'xtc'}`)
+        : `${t(`output_${format === 'epub' ? 'epub' : 'xtc'}`)} · ${formatSize(size)}`;
+      const link = h('a', {
+        class: `button ${primary ? 'primary' : 'secondary'}`,
+        href: URLS.fileDownload(job.id, index, format),
+        download: true,
+      }, t('download_file', { format: t(`output_${format === 'epub' ? 'epub' : 'xtc'}`) }));
+      primary = false;
+      rows.push(h('li', { class: 'export-file' },
+        h('span', { class: 'export-file-copy' }, h('strong', null, name), h('span', null, details)),
+        link,
+      ));
+    }
+  });
+  $('export-files').replaceChildren(...rows);
+  setText($('export-status'), warnings ? tn('export_warnings', warnings) : t('export_ready'));
+}
+
+export function backToReview() {
+  showReview();
 }
 
 export function onFontChange() {

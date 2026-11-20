@@ -929,6 +929,48 @@ output {
   margin: 10px 0;
 }
 
+.export-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.export-files {
+  display: grid;
+  gap: 0;
+}
+
+.export-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.export-file-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.export-file-copy strong {
+  overflow-wrap: anywhere;
+}
+
+.export-file-copy span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.export-actions {
+  justify-content: space-between;
+}
+
+.link-button.destructive {
+  color: var(--error-text);
+}
+
 /* Smaller screens */
 
 @media (max-width: 1100px) {
@@ -986,6 +1028,11 @@ output {
 
   .review-dock {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .export-file {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   #page-style {
