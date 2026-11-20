@@ -1,59 +1,40 @@
-import { $, DEFAULT_FONT_SIZE, FIRMWARE_ADVICE, JSON_HEADERS, MODELS_NOTE, MODE_HINT, STATUS_NAME, SUPPORTED_FILE, URLS, errorText, focusStage, formatMinutes, formatSize, getJson, h, renderStepper, request, route, setStage, setText, state, t, tn } from './core.js';
+import { $, FIRMWARE_ADVICE, JSON_HEADERS, MODELS_NOTE, MODE_HINT, STATUS_NAME, SUPPORTED_FILE, URLS, errorText, focusStage, formatMinutes, formatSize, getJson, h, renderStepper, request, setStage, setText, state, t, tn } from './core.js';
 import { parseEvent } from './job.js';
+import { mapCells, renderPageMap, squareSize } from './pagemap.js';
 
-// ------------------------------------------------------------ setup gate
+// ------------------------------------------------------- model download
 
-// The buttons, the error and the log of the gate belong to the download: they are set when the page
-// starts and by the download, never by showing the gate. A download that went on while the user was
-// on Select files, and its failure, are what the gate shows when the user comes back.
-export function showSetup() {
-  setStage('setup');
-  const { models, total_mb: total } = state.setup;
-  $('model-list').replaceChildren(
-    ...models.map((model) =>
-      h(
-        'li',
-        null,
-        h('span', { class: 'model-name' }, model.name),
-        h('span', { class: 'model-size' }, t('model_size', { mb: model.size_mb })),
-      ),
-    ),
-  );
-  setText($('model-total'), t('setup_total', { mb: total }));
-  focusStage();
-}
-
-export function continueWithoutModels() {
-  state.skipModels = true;
-  showSelect();
-}
-
+// The notice on Select files carries the one model download: its buttons, its error and its log
+// are set when the page starts and by the download. A failure stays in sight until a new try.
 export function setSetupButtons(failed, offerIpv4 = failed) {
-  const download = $('setup-download');
+  const download = $('models-download');
   download.disabled = false;
   download.textContent = failed ? t('try_again') : t('setup_button', { mb: state.setup.total_mb });
-  $('setup-ipv4').hidden = !offerIpv4;
-  $('setup-ipv4').disabled = false;
+  $('models-ipv4').hidden = !offerIpv4;
+  $('models-ipv4').disabled = false;
+  $('models-progress').hidden = true;
 }
 
 export function showSetupError(lead, detail, hint, offerIpv4 = true) {
   const lines = [h('span', { class: 'block' }, lead)];
   if (detail) lines.push(h('span', { class: 'block muted' }, detail));
   if (hint) lines.push(h('span', { class: 'block' }, hint));
-  $('setup-error').replaceChildren(...lines);
-  $('setup-error').hidden = false;
+  $('models-error').replaceChildren(...lines);
+  $('models-error').hidden = false;
   setSetupButtons(true, offerIpv4);
-  state.download = 'failed'; // the user may be on Select files, where the gate is out of sight
+  state.download = 'failed';
   renderModelsNote();
 }
 
 export async function startDownload(ipv4) {
-  $('setup-download').disabled = true;
-  $('setup-ipv4').disabled = true;
-  setText($('setup-download'), t('setup_working'));
-  $('setup-error').hidden = true;
-  $('setup-log').replaceChildren();
+  $('models-download').disabled = true;
+  $('models-ipv4').disabled = true;
+  setText($('models-download'), t('setup_working'));
+  $('models-error').hidden = true;
+  $('models-progress').hidden = false;
+  $('models-log').replaceChildren();
   state.download = 'running';
+  renderModelsNote();
   let response;
   try {
     response = await fetch(
@@ -79,7 +60,7 @@ export function listenSetup() {
     const event = parseEvent(message);
     if (!event) return;
     if (event.type === 'progress') {
-      $('setup-log').append(h('li', null, event.message));
+      $('models-log').append(h('li', null, event.message));
     } else if (event.type === 'end') {
       ended = true;
       source.close();
@@ -112,10 +93,9 @@ export async function setupEnded(event) {
     return;
   }
   state.download = 'idle';
-  // a user who went on without the models is on Select files: the note goes, and the rows stop warning
-  if (state.stage === 'setup') {
-    route();
-  } else if (state.stage === 'select') {
+  $('models-progress').hidden = true;
+  // the notice goes, and the rows stop warning about the models
+  if (state.stage === 'select') {
     renderModelsNote();
     renderDetails();
   }
@@ -125,7 +105,7 @@ export async function setupEnded(event) {
 
 export function showSelect() {
   setStage('select');
-  loadDefaultStyle();
+  loadStyles();
   loadLibraryFonts();
   renderModelsNote();
   renderFiles();
@@ -179,18 +159,32 @@ export async function uploadLibraryFonts() {
   }
 }
 
-async function loadDefaultStyle() {
+// The saved styles fill Reading style, the default one chosen. The chosen style's values are the
+// style of the new job; "eco default" sends none, so the server's own default applies.
+let selectedStyle = {};
+
+async function loadStyles() {
+  const select = $('select-style');
   try {
-    const saved = await getJson('/api/styles');
-    const chosen = saved.find((item) => item.default && !item.error);
-    const style = chosen ? await getJson(`/api/styles/${encodeURIComponent(chosen.name)}`) : null;
-    const input = $('font-size');
-    if (!input.dataset.edited) input.value = String(style?.font_size || DEFAULT_FONT_SIZE);
-    if (!$('embed-focus').dataset.edited) $('embed-focus').checked = Boolean(style?.focus_mode);
-    if (!$('embed-focus-strength').dataset.edited) $('embed-focus-strength').value = style?.focus_strength || 'medium';
+    const saved = (await getJson('/api/styles')).filter((item) => !item.error);
+    const keep = select.value;
+    select.replaceChildren(
+      h('option', { value: '' }, t('style_builtin')),
+      ...saved.map((item) =>
+        h('option', { value: item.name }, item.default ? t('style_default_suffix', { name: item.name }) : item.name),
+      ),
+    );
+    const chosen = saved.find((item) => item.default);
+    select.value = select.dataset.edited ? keep : (chosen ? chosen.name : '');
+    await chooseStyle();
   } catch (error) {
-    // A new job still uses the server's default when this hint cannot load.
+    // A new job still uses the server's default when the styles cannot load.
   }
+}
+
+export async function chooseStyle() {
+  const name = $('select-style').value;
+  selectedStyle = name ? await getJson(`/api/styles/${encodeURIComponent(name)}`) : {};
 }
 
 // Markdown and EPUB files need no model, and neither does a PDF read as page images. While the
@@ -273,21 +267,34 @@ export function renderFiles() {
         { class: 'file-row' },
         h(
           'div',
-          null,
-          h('span', { class: 'file-name' }, choice.file.name),
-          h('span', { class: 'block file-detail' }),
-          h('span', { class: 'block hint file-note' }),
+          { class: 'file-head' },
+          h(
+            'div',
+            null,
+            h('span', { class: 'file-name' }, choice.file.name),
+            h('span', { class: 'block file-detail' }),
+            h('span', { class: 'block hint file-note' }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'link-button',
+              'aria-label': t('remove_file_named', { name: choice.file.name }),
+              onclick: () => removeFile(index),
+            },
+            t('remove_file'),
+          ),
         ),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'link-button',
-            'aria-label': t('remove_file_named', { name: choice.file.name }),
-            onclick: () => removeFile(index),
-          },
-          t('remove_file'),
-        ),
+        choice.kind === 'pdf' ? h('div', { class: 'pm-grid file-map', role: 'img', hidden: true }) : null,
+        choice.kind === 'pdf'
+          ? h(
+            'p',
+            { class: 'pm-legend', hidden: true },
+            h('span', { class: 'pm-key-digital' }, t('legend_digital')),
+            h('span', { class: 'pm-key-scanned' }),
+          )
+          : null,
       ),
     ),
   );
@@ -304,18 +311,43 @@ export function renderFiles() {
   if (state.stage === 'select') renderStepper();
 }
 
-// The text under each file name. It changes only text, never the rows, so a row that has the
-// keyboard focus keeps it when an answer comes in or a setting changes.
+// The text under each file name, a PDF's page map, and the total estimate. It changes text and
+// squares, never the rows, so a row that has the keyboard focus keeps it.
 export function renderDetails() {
   const options = readOptions();
   const rows = $('file-list').children;
+  let seconds = 0;
+  let known = state.files.length > 0;
   state.files.forEach((choice, index) => {
     const { detail, note } = rowText(choice, options);
     const warning = rows[index].querySelector('.file-note');
     setText(rows[index].querySelector('.file-detail'), detail);
     setText(warning, note);
     warning.hidden = note === '';
+    if (choice.kind !== 'pdf') return;
+    const map = rows[index].querySelector('.file-map');
+    const legend = rows[index].querySelector('.pm-legend');
+    const scan = choice.scan;
+    const ready = scan.status === 'done' && Array.isArray(scan.scanned);
+    map.hidden = !ready;
+    legend.hidden = !ready;
+    if (scan.status === 'done') seconds += estimateSeconds(scan, options);
+    else known = false;
+    if (!ready) return;
+    const book = { pages: scan.pages, scanned: choice.scan.scanned, blank: choice.scan.blank };
+    const cells = mapCells(book, { done: new Set(), current: null, complete: false }, [], 'select');
+    renderPageMap(map, cells, Math.min(10, squareSize(scan.pages)));
+    map.setAttribute('aria-label', t('pagemap_summary', { pages: scan.pages, scanned: scan.scanned_pages }));
+    const ocr = options.mode !== 'pages' && options.ocr !== 'off';
+    setText(legend.children[1], ocr ? t('legend_scanned') : t('legend_scanned_no_ocr'));
   });
+  let estimate = '';
+  if (known && !needsModels(options)) {
+    estimate = seconds < 45
+      ? t('start_estimate_short')
+      : t('start_estimate', { time: formatMinutes(Math.round(seconds / 60)) });
+  }
+  setText($('start-estimate'), estimate);
 }
 
 // The two lines under the name of a file. `detail` is its size and what is known of the file. `note`
@@ -376,11 +408,6 @@ export function syncSettingHints() {
   setText($('mode-hint'), MODE_HINT[$('mode').value]());
 }
 
-export function wholeFontSize(value) {
-  const number = Math.round(parseFloat(value));
-  return Number.isNaN(number) ? DEFAULT_FONT_SIZE : Math.min(64, Math.max(16, number));
-}
-
 export function readOptions() {
   const text = (input) => input.value.trim() || null;
   const formats = Array.from(document.querySelectorAll('input[name="output"]:checked'), (input) => input.value);
@@ -388,17 +415,13 @@ export function readOptions() {
     device: $('device').value,
     firmware: $('firmware').value,
     formats,
-    size: $('size').value,
+    size: document.querySelector('input[name="size"]:checked').value,
     mode: $('mode').value,
     ocr: $('ocr').value,
     title: text($('book-title')),
     author: text($('book-author')),
     lang: text($('book-lang')),
-    style: {
-      ...($('font-size').dataset.edited ? { font_size: wholeFontSize($('font-size').value) } : {}),
-      focus_mode: $('embed-focus').checked,
-      focus_strength: $('embed-focus-strength').value,
-    },
+    style: { ...selectedStyle },
   };
 }
 
@@ -442,12 +465,22 @@ export async function loadRecent() {
   }
 }
 
+// One row per job: its name, when and what it made, its status in words, and a link to it.
 export function recentRow(job) {
   const first = job.files.length ? job.files[0].name : job.id;
   const more = job.files.length - 1;
   const name = more > 0 ? `${first} ${tn('recent_more', more)}` : first;
   const when = new Date(job.created * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const formats = (job.options.formats || []).map((format) => t(format === 'epub' ? 'output_epub' : 'output_xtc'));
   const status = (STATUS_NAME[job.status] || (() => job.status))();
-  return h('li', null, h('a', { href: `#job=${job.id}` }, name), h('span', { class: 'recent-meta' }, `${status} · ${when}`));
+  const action = job.status === 'failed' ? t('recent_details') : t('recent_open');
+  return h(
+    'li',
+    { class: 'recent-row' },
+    h('span', { class: 'recent-name' }, name),
+    h('span', { class: 'recent-meta' }, [when, ...formats].join(' · ')),
+    h('span', { class: `recent-status status-${job.status}` }, status),
+    h('a', { href: `#job=${job.id}`, 'aria-label': `${action}: ${name}` }, action),
+  );
 }
 

@@ -423,7 +423,7 @@ def test_page_has_the_places_of_the_workspace(tmp_path):
     assert [p for p in PAGE_PLACES if f'id="{p}"' not in html] == []
     # the strings block holds every text, so the two lines must be in the markup itself
     markup = re.sub(r'<script id="strings".*?</script>', "", html, flags=re.DOTALL)
-    assert "Everything is processed on this computer." in markup
+    assert "Runs on this computer" in markup
     assert "Approximate preview" in markup
 
 
@@ -513,6 +513,11 @@ def test_every_element_the_script_looks_up_is_in_the_page(tmp_path):
 
 def options_of(html, select_id):
     found = re.search(rf'<select id="{select_id}">(.*?)</select>', html, re.DOTALL)
+    if not found:  # a group of radio buttons: its fieldset has the id
+        found = re.search(rf'<fieldset id="{select_id}"[^>]*>(.*?)</fieldset>', html, re.DOTALL)
+        return sorted(
+            re.findall(r'<input type="radio" name="[^"]+" value="([^"]*)"', found.group(1))
+        )
     return sorted(re.findall(r'<option value="([^"]*)"', found.group(1)))
 
 
@@ -545,27 +550,23 @@ def test_the_page_takes_the_files_and_the_job_ids_that_the_server_makes(tmp_path
 
 
 def test_the_font_size_limits_of_the_page_are_the_servers(tmp_path):
-    html, js = local(tmp_path).get("/").text, source("app.js")
+    html = local(tmp_path).get("/").text
     low, high = RANGES["font_size"]  # the one range: the server takes it from PageStyle
-    fields = re.findall(
-        r'<input id="(?:font-size|style-font-size)" type="[a-z]+" min="(\d+)" max="(\d+)"', html
-    )
-    assert fields == [(str(low), str(high))] * 2
-    assert re.search(rf"Math\.min\({high}, Math\.max\({low}, ", js)  # the clamp in the script
+    fields = re.findall(r'<input id="style-font-size" type="[a-z]+" min="(\d+)" max="(\d+)"', html)
+    assert fields == [(str(low), str(high))]
 
 
 def test_the_page_keeps_the_font_size_in_the_style_of_the_options(tmp_path):
     js = source("app.js")
     assert "options.font_size" not in js  # M2's key
-    assert "font_size: wholeFontSize($('font-size').value)" in js  # an edited upload
+    assert "...selectedStyle" in function_body(js, "readOptions")  # the chosen saved style
     assert "style: review.live.style" in js  # a rebuild keeps every page-style field
 
 
-def test_focus_mode_can_be_selected_for_epub_before_and_after_conversion(tmp_path):
+def test_focus_mode_comes_from_the_reading_style_before_and_is_set_in_review(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
-    assert 'id="embed-focus"' in html
-    assert 'id="embed-focus-strength"' in html
-    assert "focus_mode: $('embed-focus').checked" in js
+    assert 'id="embed-focus"' not in html and 'id="select-style"' in html
+    assert 'id="focus-mode"' in stage_markup(html, "review")
     assert "$('focus-controls').hidden = review.format === 'epub'" not in js
 
 
@@ -761,9 +762,7 @@ def test_guided_select_keeps_every_conversion_option(tmp_path):
         "firmware",
         "ocr",
         "mode",
-        "font-size",
-        "embed-focus",
-        "embed-focus-strength",
+        "select-style",
         "book-title",
         "book-author",
         "book-lang",
@@ -847,39 +846,28 @@ def test_the_texts_of_ruling_m2_r39():
     assert STRINGS["mode_label"] in note and STRINGS["mode_pages"] in note
 
 
-def test_the_setup_gate_has_one_primary_button_and_a_secondary_one_to_go_on(tmp_path):
-    gate = stage_markup(local(tmp_path).get("/").text, "setup")
-    buttons = re.findall(
-        r'<button id="([^"]+)" type="button" class="([^"]+)"[^>]*>([^<]*)</button>', gate
-    )
-    assert [i for i, classes, _ in buttons if "primary" in classes.split()] == ["setup-download"]
-    skip = [(classes, text) for i, classes, text in buttons if i == "setup-skip"]
-    assert skip == [("secondary", STRINGS["setup_skip"])]
-
-
-def test_select_files_has_the_note_about_the_models_and_a_secondary_button_to_the_gate(tmp_path):
-    select = stage_markup(local(tmp_path).get("/").text, "select")
-    note = re.search(r'<div id="models-note" class="[^"]*" hidden>(.*?)</div>', select, re.DOTALL)
-    assert note, "the note is in the markup, hidden until the script shows it"
-    text = f'<p id="models-text" class="muted" role="status">{STRINGS["models_missing_note"]}</p>'
-    assert text in note.group(1)  # the script changes it while a download runs or after it failed
-    button = '<button id="models-download" type="button" class="secondary">'
-    assert f"{button}{STRINGS['models_download']}</button>" in note.group(1)
-    assert "primary" not in note.group(1)  # Start conversion stays the one primary button
-
-
-def test_the_script_goes_on_without_the_models_for_this_page_load_only():
+def test_there_is_no_setup_gate_and_the_models_notice_carries_the_download(tmp_path):
+    html = local(tmp_path).get("/").text
+    assert 'id="stage-setup"' not in html
+    select = stage_markup(html, "select")
+    note = select.split('id="models-note"', 1)[1].split('id="device"', 1)[0]
+    for name in ("models-text", "models-download", "models-ipv4", "models-progress"):
+        assert f'id="{name}"' in note, name
+    assert 'id="models-log"' in note and 'id="models-error"' in note
+    assert 'class="secondary"' in note and "primary" not in note  # Start stays the one primary
     js = source("app.js")
-    assert re.search(r"state\.setup\.ready \|\| state\.skipModels", function_body(js, "showStart"))
-    go_on = function_body(js, "continueWithoutModels")
-    assert "state.skipModels = true;" in go_on and "showSelect();" in go_on
-    assert js.count("skipModels = true") == 1  # set by that button and by nothing else
-    assert re.search(r"skipModels: false", js)  # a new page load starts at the gate
-    for store in ("localStorage", "sessionStorage", "document.cookie", "indexedDB"):
-        assert store not in js  # the choice is not remembered across visits
+    assert not re.search(r"\bshowSetup\b", js) and "skipModels" not in js
+    assert "showSelect();" in function_body(js, "showStart")
     bind = function_body(js, "bind")
-    assert "$('setup-skip').addEventListener('click', continueWithoutModels);" in bind
-    assert "$('models-download').addEventListener('click', showSetup);" in bind
+    assert "$('models-download').addEventListener('click', () => startDownload(false));" in bind
+    assert "$('models-ipv4').addEventListener('click', () => startDownload(true));" in bind
+    for store in ("localStorage", "sessionStorage", "document.cookie", "indexedDB"):
+        assert store not in js
+
+
+def test_the_models_notice_names_the_size_of_the_download():
+    assert STRINGS["models_needed"] == "PDFs need the AI models ({mb} MB, downloaded once)."
+    assert "idle: () => t('models_needed', { mb: state.setup.total_mb })," in source("app.js")
 
 
 def test_select_files_shows_the_note_while_the_models_are_missing():
@@ -890,15 +878,13 @@ def test_select_files_shows_the_note_while_the_models_are_missing():
 
 def test_a_download_goes_on_when_the_user_leaves_the_gate_and_select_files_follows_it():
     js = source("app.js")
-    # the gate keeps what the download made of it (a running download, a failure): showing the gate
-    # again must not reset its buttons, or the primary button would start a second download
-    show = function_body(js, "showSetup")
-    assert "setSetupButtons" not in show and "setup-error" not in show
     assert "setSetupButtons(false);" in function_body(js, "init")  # set once, when the page starts
     assert "setup" not in function_body(js, "stopWork")  # a change of stage leaves the stream alone
     ended = function_body(js, "setupEnded")
     # Select files follows: the note goes, and the rows no longer warn about the models
-    select = r"else if \(state\.stage === 'select'\) \{\s*renderModelsNote\(\);\s*renderDetails\(\);\s*\}"
+    select = (
+        r"if \(state\.stage === 'select'\) \{\s*renderModelsNote\(\);\s*renderDetails\(\);\s*\}"
+    )
     assert re.search(select, ended)
 
 
@@ -944,9 +930,7 @@ def test_the_script_asks_the_inspect_route_and_reads_what_the_route_sends(tmp_pa
     r = TestClient(app, base_url=LOCAL).post("/api/inspect", files={"file": ("a.pdf", pdf)})
     answer = r.json()
     # `scan` is what the page keeps of an answer, beside its own `status` and `message`
-    # `scanned` and `blank` feed the page map, which the redesign's Select task reads
-    read = set(re.findall(r"\bscan\.(\w+)", js)) - {"status", "message"}
-    assert read == set(answer) - {"scanned", "blank"}
+    assert set(re.findall(r"\bscan\.(\w+)", js)) - {"status", "message"} == set(answer)
     assert set(re.findall(r"\brate\.(\w+)", js)) == set(answer["seconds_per_page"])
 
 
@@ -1063,7 +1047,6 @@ def test_select_files_shows_a_download_that_runs_and_one_that_failed():
     note = function_body(js, "renderModelsNote")
     assert "setText($('models-text'), MODELS_NOTE[state.download]());" in note
     for name, key in (
-        ("idle", "models_missing_note"),
         ("running", "models_downloading_note"),
         ("failed", "models_failed_note"),
     ):
@@ -1085,7 +1068,7 @@ def test_a_missing_vc_runtime_shows_its_message_alone_without_the_ipv4_button_an
     assert "setSetupButtons(true, offerIpv4);" in error
     buttons = function_body(js, "setSetupButtons")
     assert "function setSetupButtons(failed, offerIpv4 = failed)" in buttons
-    assert "$('setup-ipv4').hidden = !offerIpv4;" in buttons
+    assert "$('models-ipv4').hidden = !offerIpv4;" in buttons
     assert "download.textContent = failed ? t('try_again')" in buttons  # the plain retry stays
 
 
@@ -1097,7 +1080,7 @@ def test_the_focus_leaves_the_models_note_before_the_note_is_hidden(tmp_path):
     note = function_body(source("app.js"), "renderModelsNote")
     assert focus in note
     assert note.index(focus) < note.index("$('models-note').hidden = state.setup.ready")
-    assert '<h2 id="files-title" tabindex="-1">' in local(tmp_path).get("/").text  # it can take it
+    assert re.search(r'<h2 id="files-title"[^>]*tabindex="-1"', local(tmp_path).get("/").text)
 
 
 # The M2 fix wave: ruling M2-R45 (delete a conversion from Review) and the live timer on "View
@@ -1656,3 +1639,57 @@ def test_page_map_labels_are_strings():
     assert STRINGS["pagemap_pages"] == "Pages {first} to {last}"
     for key in ("pagemap_blank", "pagemap_scanned", "pagemap_finding"):
         assert f"t('{key}')" in source("app.js")
+
+
+# Select with page maps, a reading style and the model download in the page
+
+
+def test_select_has_the_book_column_and_four_reading_settings(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    for name in ("drop-zone", "file-list", "device", "select-style", "size", "advanced"):
+        assert f'id="{name}"' in select, name
+    for name in ("start", "start-estimate", "recent", "recent-title"):
+        assert f'id="{name}"' in select, name
+    assert len(re.findall(r'name="output"', select)) == 2
+    assert len(re.findall(r'<input type="radio" name="size"', select)) == 3
+    assert 'id="font-size"' not in select and 'id="embed-focus"' not in select
+    assert select.index('id="drop-zone"') < select.index('id="device"')  # book, then settings
+    assert STRINGS["workspace_title"] == "Convert a book"
+    assert "PDF, Markdown or EPUB, up to 500 MB" in select  # the server's own limit
+
+
+def test_more_settings_holds_the_rest_and_the_font_library(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    more = select.split('<details id="advanced"', 1)[1].split("</details>", 1)[0]
+    for name in ("firmware", "ocr", "mode", "book-title", "book-author", "book-lang"):
+        assert f'id="{name}"' in more, name
+    assert 'id="font-library"' in more and 'id="library-font-upload"' in more
+    assert STRINGS["more_settings"] == "More settings"
+
+
+def test_a_pdf_row_draws_its_page_map_from_the_inspect_lists():
+    js = source("app.js")
+    body = function_body(js, "renderDetails")
+    assert "mapCells(" in body and "'select'" in body and "renderPageMap(" in body
+    assert "role: 'img'" in function_body(js, "renderFiles")
+    assert "t('pagemap_summary'" in body
+    assert "choice.scan.scanned" in body and "choice.scan.blank" in body
+
+
+def test_the_start_options_take_style_values_from_the_chosen_style():
+    body = function_body(source("app.js"), "readOptions")
+    assert "$('font-size')" not in body and "$('embed-focus')" not in body
+    assert "...selectedStyle" in body
+    assert 'input[name="size"]:checked' in body
+
+
+def test_the_start_button_shows_the_total_estimate():
+    body = function_body(source("app.js"), "renderDetails")
+    assert "$('start-estimate')" in body and "estimateSeconds(" in body
+    assert STRINGS["start_estimate"] == "About {time} in total on this computer"
+
+
+def test_recent_rows_name_status_in_words_and_offer_a_link():
+    body = function_body(source("app.js"), "recentRow")
+    assert "status-${job.status}" in body
+    assert "t('recent_open')" in body and "t('recent_details')" in body

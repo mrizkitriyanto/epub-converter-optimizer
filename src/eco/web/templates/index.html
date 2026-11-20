@@ -36,134 +36,130 @@
   <noscript><p class="banner">{{ strings.noscript }}</p></noscript>
   <p id="banner" class="banner" role="alert" hidden></p>
 
-  <section id="stage-setup" class="stage" aria-labelledby="setup-title" hidden>
-    <div class="panel narrow">
-      <h2 id="setup-title" tabindex="-1">{{ strings.setup_title }}</h2>
-      <p>{{ strings.setup_intro }}</p>
-      <ul id="model-list" class="model-list"></ul>
-      <p id="model-total" class="total"></p>
-      <div class="actions">
-        <button id="setup-download" type="button" class="primary"></button>
-        <button id="setup-ipv4" type="button" class="secondary" hidden>{{ strings.setup_retry_ipv4 }}</button>
-        <button id="setup-skip" type="button" class="secondary">{{ strings.setup_skip }}</button>
-      </div>
-      <p id="setup-error" class="error-text" role="alert" hidden></p>
-      <ol id="setup-log" class="log" aria-live="polite" aria-label="{{ strings.setup_log_label }}"></ol>
-    </div>
-  </section>
-
   <section id="stage-select" class="stage" hidden>
-    <div class="split">
-      <div class="panel">
-        <h2 id="files-title" tabindex="-1">{{ strings.files_title }}</h2>
-        <label id="drop-zone" class="drop">
-          <input id="file-input" class="visually-hidden" type="file" multiple accept=".pdf,.md,.epub">
-          <span>{{ strings.drop_text }}</span>
-          <span class="choose">{{ strings.choose_files }}</span>
-        </label>
-        <p id="drop-error" class="error-text" role="alert" hidden></p>
-        <div id="models-note" class="models-note" hidden>
-          <p id="models-text" class="muted" role="status">{{ strings.models_missing_note }}</p>
-          <button id="models-download" type="button" class="secondary">{{ strings.models_download }}</button>
+    <div class="workspace workspace-select">
+      <h2 id="files-title" class="workspace-title" tabindex="-1">{{ strings.workspace_title }}</h2>
+      <p class="workspace-intro">{{ strings.workspace_intro }}</p>
+
+      <div class="select-grid">
+        <div class="book-col">
+          <label id="drop-zone" class="drop">
+            <input id="file-input" class="visually-hidden" type="file" multiple accept=".pdf,.md,.epub">
+            <span class="drop-title">{{ strings.drop_text }}</span>
+            <span class="hint">{{ strings.drop_hint | replace("{mb}", max_upload_mb) }}</span>
+          </label>
+          <p id="drop-error" class="error-text" role="alert" hidden></p>
+          <ul id="file-list" class="file-list" aria-label="{{ strings.file_list_label }}"></ul>
         </div>
-        <ul id="file-list" class="file-list" aria-label="{{ strings.file_list_label }}"></ul>
+
+        <div class="settings-col">
+          <div id="models-note" class="models-note" hidden>
+            <p id="models-text" role="status">{{ strings.models_missing_note }}</p>
+            <div class="actions">
+              <button id="models-download" type="button" class="secondary">{{ strings.models_download }}</button>
+              <button id="models-ipv4" type="button" class="secondary" hidden>{{ strings.setup_retry_ipv4 }}</button>
+            </div>
+            <p id="models-progress" class="hint" role="status" hidden>{{ strings.setup_working }}</p>
+            <p id="models-error" class="error-text" role="alert" hidden></p>
+            <details class="models-details">
+              <summary>{{ strings.setup_log_label }}</summary>
+              <ol id="models-log" class="log" aria-live="polite"></ol>
+            </details>
+          </div>
+
+          <div class="stack-field">
+            <label for="device">{{ strings.device_label }}</label>
+            <select id="device">{{ choices(devices) }}</select>
+          </div>
+
+          <fieldset class="stack-field">
+            <legend id="output-label">{{ strings.output_label }}</legend>
+            <div class="tiles">
+              <label class="tile"><input type="checkbox" name="output" value="epub" checked>
+                <span><span class="tile-name">{{ strings.output_epub }}</span><span class="hint block">{{ strings.output_epub_hint }}</span></span></label>
+              <label class="tile"><input type="checkbox" name="output" value="xtch">
+                <span><span class="tile-name">{{ strings.output_xtc }}</span><span class="hint block">{{ strings.output_xtc_hint }}</span></span></label>
+            </div>
+          </fieldset>
+
+          <div class="stack-field">
+            <label for="select-style">{{ strings.reading_style_label }}</label>
+            <select id="select-style"><option value="">{{ strings.style_builtin }}</option></select>
+            <p class="hint">{{ strings.reading_style_hint }}</p>
+          </div>
+
+          <fieldset id="size" class="stack-field">
+            <legend>{{ strings.size_label }}</legend>
+            <div class="choice-group">
+              {%- for value, text in sizes %}
+              <label><input type="radio" name="size" value="{{ value }}"{% if value == "balanced" %} checked{% endif %}><span>{{ text }}</span></label>
+              {%- endfor %}
+            </div>
+            <p class="hint">{{ strings.size_hint }}</p>
+          </fieldset>
+
+          <details id="advanced" class="advanced">
+            <summary>{{ strings.more_settings }} <span class="hint">· {{ strings.more_settings_hint }}</span></summary>
+            <div class="stack-field">
+              <label for="firmware">{{ strings.firmware_label }}</label>
+              <select id="firmware">{{ choices([
+                ("any", strings.firmware_any),
+                ("stock", strings.firmware_stock),
+                ("crosspoint", strings.firmware_crosspoint),
+                ("crossink", strings.firmware_crossink),
+              ]) }}</select>
+              <p id="firmware-advice" class="hint"></p>
+            </div>
+            <div class="stack-field">
+              <label for="ocr">{{ strings.ocr_label }}</label>
+              <select id="ocr">{{ choices([
+                ("auto", strings.ocr_auto),
+                ("force", strings.ocr_force),
+                ("off", strings.ocr_off),
+              ]) }}</select>
+            </div>
+            <div class="stack-field">
+              <label for="mode">{{ strings.mode_label }}</label>
+              <select id="mode">{{ choices([
+                ("auto", strings.mode_auto),
+                ("reflow", strings.mode_reflow),
+                ("pages", strings.mode_pages),
+              ]) }}</select>
+              <p id="mode-hint" class="hint"></p>
+            </div>
+            <div class="stack-field">
+              <label for="book-title">{{ strings.title_label }}</label>
+              <input id="book-title" type="text" autocomplete="off" placeholder="{{ strings.title_placeholder }}">
+            </div>
+            <div class="stack-field">
+              <label for="book-author">{{ strings.author_label }}</label>
+              <input id="book-author" type="text" autocomplete="off" placeholder="{{ strings.author_placeholder }}">
+            </div>
+            <div class="stack-field">
+              <label for="book-lang">{{ strings.lang_label }}</label>
+              <input id="book-lang" type="text" autocomplete="off" placeholder="{{ strings.lang_placeholder }}">
+            </div>
+            <div id="font-library" class="font-library">
+              <h3>{{ strings.font_library_title }}</h3>
+              <p class="hint">{{ strings.font_library_hint }}</p>
+              <ul id="library-font-list"></ul>
+              <label class="button secondary" for="library-font-upload">{{ strings.font_upload }}</label>
+              <input id="library-font-upload" class="visually-hidden" type="file" accept=".ttf,.otf" multiple>
+              <p id="library-font-status" role="status"></p>
+            </div>
+          </details>
+          <button id="start" type="button" class="primary wide" disabled></button>
+          <p id="start-estimate" class="hint center"></p>
+          <p id="start-hint" class="hint center"></p>
+        </div>
       </div>
 
-      <div class="panel">
-        <h2>{{ strings.settings_title }}</h2>
-        <div class="field">
-          <label for="device">{{ strings.device_label }}</label>
-          <select id="device">{{ choices(devices) }}</select>
-        </div>
-        <div class="field" role="group" aria-labelledby="output-label">
-          <span id="output-label" class="field-label">{{ strings.output_label }}</span>
-          <div class="checks">
-            <label class="check"><input type="checkbox" name="output" value="epub" checked> {{ strings.output_epub }}</label>
-            <label class="check"><input type="checkbox" name="output" value="xtch"> {{ strings.output_xtc }}</label>
-          </div>
-        </div>
-        <div class="field">
-          <label for="size">{{ strings.size_label }}</label>
-          <select id="size">{{ choices(sizes) }}</select>
-          <p class="hint">{{ strings.size_hint }}</p>
-        </div>
-
-        <details id="advanced" class="advanced">
-          <summary>{{ strings.advanced_title }}</summary>
-          <div class="field">
-            <label for="firmware">{{ strings.firmware_label }}</label>
-            <select id="firmware">{{ choices([
-              ("any", strings.firmware_any),
-              ("stock", strings.firmware_stock),
-              ("crosspoint", strings.firmware_crosspoint),
-              ("crossink", strings.firmware_crossink),
-            ]) }}</select>
-            <p id="firmware-advice" class="hint"></p>
-          </div>
-          <div class="field">
-            <label for="ocr">{{ strings.ocr_label }}</label>
-            <select id="ocr">{{ choices([
-              ("auto", strings.ocr_auto),
-              ("force", strings.ocr_force),
-              ("off", strings.ocr_off),
-            ]) }}</select>
-          </div>
-          <div class="field">
-            <label for="mode">{{ strings.mode_label }}</label>
-            <select id="mode">{{ choices([
-              ("auto", strings.mode_auto),
-              ("reflow", strings.mode_reflow),
-              ("pages", strings.mode_pages),
-            ]) }}</select>
-            <p id="mode-hint" class="hint"></p>
-          </div>
-          <div class="field">
-            <label for="font-size">{{ strings.font_size_label }}</label>
-            <input id="font-size" type="number" min="16" max="64" step="1" value="32" inputmode="numeric">
-            <p class="hint">{{ strings.font_size_hint }}</p>
-          </div>
-          <div class="field">
-            <label class="check"><input id="embed-focus" type="checkbox"> {{ strings.embed_focus_label }}</label>
-            <p class="hint">{{ strings.embed_focus_hint }}</p>
-            <label for="embed-focus-strength">{{ strings.focus_strength_label }}</label>
-            <select id="embed-focus-strength">{{ choices([("low", strings.focus_low), ("medium", strings.focus_medium), ("high", strings.focus_high)]) }}</select>
-          </div>
-          <div class="field">
-            <label for="book-title">{{ strings.title_label }}</label>
-            <input id="book-title" type="text" autocomplete="off" placeholder="{{ strings.title_placeholder }}">
-          </div>
-          <div class="field">
-            <label for="book-author">{{ strings.author_label }}</label>
-            <input id="book-author" type="text" autocomplete="off" placeholder="{{ strings.author_placeholder }}">
-          </div>
-          <div class="field">
-            <label for="book-lang">{{ strings.lang_label }}</label>
-            <input id="book-lang" type="text" autocomplete="off" placeholder="{{ strings.lang_placeholder }}">
-          </div>
-        </details>
-
-        <details id="font-library" class="advanced">
-          <summary>{{ strings.font_library_title }}</summary>
-          <p class="hint">{{ strings.font_library_hint }}</p>
-          <ul id="library-font-list"></ul>
-          <label class="secondary" for="library-font-upload">{{ strings.font_upload }}</label>
-          <input id="library-font-upload" type="file" accept=".ttf,.otf" multiple>
-          <p id="library-font-status" role="status"></p>
-        </details>
-
-        <div class="actions">
-          <button id="start" type="button" class="primary" disabled></button>
-        </div>
-        <p id="start-hint" class="hint"></p>
-        <p class="local-note">{{ strings.local_only }}</p>
-      </div>
+      <section class="recent" aria-labelledby="recent-title">
+        <h2 id="recent-title">{{ strings.recent_title }}</h2>
+        <p id="recent-status" class="muted">{{ strings.loading }}</p>
+        <ul id="recent" class="recent-list"></ul>
+      </section>
     </div>
-
-    <section class="panel recent" aria-labelledby="recent-title">
-      <h2 id="recent-title">{{ strings.recent_title }}</h2>
-      <p id="recent-status" class="muted">{{ strings.loading }}</p>
-      <ul id="recent" class="recent-list"></ul>
-    </section>
   </section>
 
   <section id="stage-processing" class="stage" hidden>

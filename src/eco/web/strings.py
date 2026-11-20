@@ -54,6 +54,27 @@ STRINGS = {
     # script puts in; the script has no sentence of its own.
     "tagline": "Convert PDF, Markdown and EPUB files for your e-reader",
     "runs_locally": "Runs on this computer",
+    # Select
+    "workspace_title": "Convert a book",
+    "workspace_intro": "Add a PDF, Markdown or EPUB file and choose where you will read it.",
+    "drop_hint": "PDF, Markdown or EPUB, up to {mb} MB",
+    "reading_style_label": "Reading style",
+    "reading_style_hint": "You can fine-tune it in Review.",
+    "style_builtin": "eco default",
+    "style_default_suffix": "{name} (default)",
+    "output_epub_hint": "Reflowable text",
+    "output_xtc_hint": "Pages for the X4",
+    "more_settings": "More settings",
+    "more_settings_hint": "firmware, OCR, layout, title and author, fonts",
+    "start_estimate": "About {time} in total on this computer",
+    "start_estimate_short": "Under a minute on this computer",
+    "legend_digital": "Digital text",
+    "legend_scanned": "Scanned, read with OCR",
+    "legend_scanned_no_ocr": "Scanned, no OCR",
+    "pagemap_summary": "{pages} pages, {scanned} scanned",
+    "models_needed": "PDFs need the AI models ({mb} MB, downloaded once).",
+    "recent_open": "Open",
+    "recent_details": "Details",
     # The page map: one square per page of the book
     "pagemap_page": "Page {n}",
     "pagemap_pages": "Pages {first} to {last}",
@@ -103,7 +124,7 @@ STRINGS = {
     "setup_not_ready": "The download ended, but the models are not ready. Try again.",
     # Select files and settings
     "files_title": "Files",
-    "drop_text": "Drop PDF, Markdown or EPUB files here",
+    "drop_text": "Drop files here or choose files",
     "choose_files": "Choose files",
     "models_missing_note": (
         "Without the AI models, PDFs convert only with Layout set to Page images."

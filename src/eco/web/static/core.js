@@ -1,4 +1,4 @@
-import { newChoice, showSelect, showSetup } from './start.js';
+import { newChoice, showSelect } from './start.js';
 import { isActive, listen, newRun, pollQueue, showProcessing } from './job.js';
 import { abortReview, backToReview, rebuild, showReview, step } from './review.js';
 
@@ -98,7 +98,7 @@ export const FIRMWARE_ADVICE = {
 };
 // The note of Select files while the models are missing: no download started, one runs, or one failed.
 export const MODELS_NOTE = {
-  idle: () => t('models_missing_note'),
+  idle: () => t('models_needed', { mb: state.setup.total_mb }),
   running: () => t('models_downloading_note'),
   failed: () => t('models_failed_note'),
 };
@@ -127,7 +127,6 @@ export const LIVE_DELAY_MS = 300; // after the last change, before the live prev
 export const QUEUE_POLL_MS = 2000; // a queued job has no event: its position is polled
 export const REPLAY_GAP_MS = 250; // a quiet gap this long between two events means the replay of a stream is over
 export const MIN_SAMPLE_MS = 500; // page events closer than this are folded into one rate sample
-export const DEFAULT_FONT_SIZE = 32;
 
 // ------------------------------------------------------------------- API
 
@@ -198,9 +197,8 @@ export function readAsDataUrl(file) {
 
 export const state = {
   started: false, // after the first stage is shown, a change of stage moves the focus
-  stage: null, // setup, select, processing, review or export
+  stage: null, // select, processing, review or export
   setup: null, // GET /api/setup
-  skipModels: false, // the user went on from the setup gate without the models; this page load only
   download: 'idle', // the model download this page started: idle, running or failed
   files: [], // the files chosen, not uploaded yet: { file, kind, scan, controller }, see newChoice
   scanning: null, // the chosen PDF that the server is reading now (POST /api/inspect), one at a time
@@ -217,7 +215,6 @@ export const state = {
 };
 
 export const SECTIONS = {
-  setup: $('stage-setup'),
   select: $('stage-select'),
   processing: $('stage-processing'),
   review: $('stage-review'),
@@ -253,7 +250,7 @@ export function stepStates() {
   if (state.stage === 'processing') return ['done', 'current', 'todo', 'todo'];
   if (state.stage === 'review') return ['done', 'done', 'current', 'todo'];
   if (state.stage === 'export') return ['done', 'done', 'done', 'current'];
-  return null; // the setup gate comes before the steps
+  return null;
 }
 
 export function renderStepper() {
@@ -342,10 +339,9 @@ export function stopWork() {
   });
 }
 
-// The setup gate is the first view while the models are missing, unless the user went on without them.
+// Select is the start: while the models are missing, its notice offers the download.
 export function showStart() {
-  if (state.setup.ready || state.skipModels) showSelect();
-  else showSetup();
+  showSelect();
 }
 
 export function dropTokenFromAddress() {

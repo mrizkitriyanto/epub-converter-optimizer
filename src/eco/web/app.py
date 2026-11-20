@@ -764,7 +764,8 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
         # tojson escapes <, > and &, so no string can end the script element
-        return _templates.TemplateResponse(request, "index.html", {"strings": STRINGS})
+        context = {"strings": STRINGS, "max_upload_mb": str(app.state.max_upload_mb)}
+        return _templates.TemplateResponse(request, "index.html", context)
 
     # One answer for every error, so the page reads one key: FastAPI's own 404, 405 and 422, the
     # HTTPExceptions of the routes below, and an error nobody expected.

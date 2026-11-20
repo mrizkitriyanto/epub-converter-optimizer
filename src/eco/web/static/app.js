@@ -1,7 +1,7 @@
 'use strict';
 
 import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
-import { addFiles, continueWithoutModels, renderDetails, setSetupButtons, showSetup, startConversion, startDownload, syncSettingHints, uploadLibraryFonts, wholeFontSize } from './start.js';
+import { addFiles, chooseStyle, renderDetails, setSetupButtons, showDropErrors, startConversion, startDownload, syncSettingHints, uploadLibraryFonts } from './start.js';
 import { apply, cancelJob } from './job.js';
 import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
 
@@ -38,23 +38,19 @@ function bind() {
   $('device').addEventListener('change', renderDetails);
   $('mode').addEventListener('change', renderDetails);
   $('ocr').addEventListener('change', renderDetails);
-  $('font-size').addEventListener('change', () => {
-    $('font-size').dataset.edited = 'true';
-    $('font-size').value = String(wholeFontSize($('font-size').value));
+  $('select-style').addEventListener('change', () => {
+    $('select-style').dataset.edited = 'true';
+    chooseStyle().catch((error) => showDropErrors([error.message]));
   });
-  for (const id of ['embed-focus', 'embed-focus-strength']) {
-    $(id).addEventListener('change', () => { $(id).dataset.edited = 'true'; });
-  }
+  for (const size of document.querySelectorAll('input[name="size"]')) size.addEventListener('change', renderDetails);
   $('library-font-upload').addEventListener('change', uploadLibraryFonts);
   for (const output of document.querySelectorAll('input[name="output"]')) {
     output.addEventListener('change', () => {
       if (!document.querySelector('input[name="output"]:checked')) output.checked = true;
     });
   }
-  $('setup-download').addEventListener('click', () => startDownload(false));
-  $('setup-ipv4').addEventListener('click', () => startDownload(true));
-  $('setup-skip').addEventListener('click', continueWithoutModels);
-  $('models-download').addEventListener('click', showSetup);
+  $('models-download').addEventListener('click', () => startDownload(false));
+  $('models-ipv4').addEventListener('click', () => startDownload(true));
   $('cancel').addEventListener('click', cancelJob);
   $('try-again').addEventListener('click', tryAgain);
   $('delete-job').addEventListener('click', deleteJob);
