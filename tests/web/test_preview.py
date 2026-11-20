@@ -1198,3 +1198,15 @@ def test_a_markdown_book_made_by_the_real_worker_is_previewed(tmp_path):
         assert live.status_code == 200 and live.headers["x-excerpt-index"] == "0"
         assert c.get(f"{base}/files/0/text").content == LONG
         assert c.get(f"{base}/files/0/source/1.png").status_code == 404  # not a PDF
+
+
+def test_a_finished_file_previews_while_a_later_file_converts(app, c):
+    # file 0 is done; file 1 has not converted yet, and the job runs on
+    job = make_job(app, ("a.md", TWO), ("b.md", TWO))
+    job.files[1].outputs = {}
+    job.status = "running"
+    app.state.store.save(job)
+    pages = c.get(url(job, "pages?format=epub"))
+    assert pages.status_code == 200 and pages.json()["device_pages"] > 0
+    first = c.get(url(job, "preview/epub/1.png"))
+    assert first.status_code == 200 and first.headers["content-type"] == "image/png"
