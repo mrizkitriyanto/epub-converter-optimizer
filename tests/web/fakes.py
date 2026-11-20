@@ -155,7 +155,14 @@ def sse(text):
     for message in messages:
         assert message.startswith("data: ") and "\n" not in message, message
         events.append(json.loads(message.removeprefix("data: ")))
-    return events
+    return untimed(events)
+
+
+def untimed(events):
+    """Events without `t`, the server time that the runner stamps on each: for comparisons."""
+    if isinstance(events, dict):
+        return {k: v for k, v in events.items() if k != "t"}
+    return [untimed(e) for e in events]
 
 
 def scope(method, path, headers):

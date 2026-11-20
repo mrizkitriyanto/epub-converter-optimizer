@@ -134,9 +134,15 @@ def test_the_scanned_pages_are_the_ones_the_read_stage_of_the_pipeline_counts(tm
     assert (answer["pages"], answer["scanned_pages"]) == (len(expected), sum(expected))
 
 
-def test_the_answer_is_the_counts_and_the_provisional_rates_and_nothing_else(tmp_path, digital):
+def test_the_answer_is_the_counts_the_page_lists_and_the_rates(tmp_path, digital):
     answer = inspect(client(tmp_path), "book.pdf", digital).json()
-    assert answer == {"pages": 3, "scanned_pages": 0, "seconds_per_page": RATES}
+    assert answer == {
+        "pages": 3,
+        "scanned_pages": 0,
+        "scanned": [],
+        "blank": [2],
+        "seconds_per_page": RATES,
+    }
     assert [type(v) for v in answer["seconds_per_page"].values()] == [float] * 3
 
 
@@ -465,3 +471,12 @@ def test_a_request_from_another_site_is_refused_before_anything_is_written(tmp_p
     r = inspect(client(tmp_path), "a.pdf", digital, headers={"Origin": "http://evil.example"})
     assert r.status_code == 403
     assert on_disk(tmp_path) == ["jobs"]
+
+
+def test_the_answer_lists_the_scanned_and_blank_pages(tmp_path, mixed):
+    path = tmp_path / "mixed.pdf"
+    path.write_bytes(mixed)
+    infos = inspect_pdf(path)
+    answer = inspect(client(tmp_path / "data"), "mixed.pdf", mixed).json()
+    assert answer["scanned"] == [i.number for i in infos if i.is_scanned]
+    assert answer["blank"] == [i.number for i in infos if i.is_blank]

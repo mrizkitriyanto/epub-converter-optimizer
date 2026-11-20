@@ -191,6 +191,8 @@ def describe_pdf(path: Path) -> dict:
     return {
         "pages": len(infos),
         "scanned_pages": sum(info.is_scanned for info in infos),
+        "scanned": [info.number for info in infos if info.is_scanned],
+        "blank": [info.number for info in infos if info.is_blank],
         "seconds_per_page": dict(SECONDS_PER_PAGE),
     }
 

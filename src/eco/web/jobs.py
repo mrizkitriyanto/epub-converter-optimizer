@@ -694,7 +694,9 @@ class Runner:
 
     def _publish(self, info: JobInfo, event: dict, save: bool) -> None:
         """Under the lock: events.jsonl, then job.json, then the subscribers. A reader that sees
-        the new job.json finds the event already in events.jsonl."""
+        the new job.json finds the event already in events.jsonl. Each event gets `t`, the
+        server's time, for the durations the GUI shows."""
+        event.setdefault("t", time.time())
         self.store.append_event(info.id, event)
         if save:
             self.store.save(info)

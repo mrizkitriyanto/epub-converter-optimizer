@@ -19,6 +19,7 @@ from fakes import (
     interrupted_work,
     serve_one_job,
     stubborn_work,
+    untimed,
     wait_for,
 )
 
@@ -67,7 +68,7 @@ def test_queue_and_cancel(tmp_path, fake_worker):
         assert run.cancel(a.id)
         wait_for(lambda: store.get(a.id).status == "cancelled", 10)
         wait_for(lambda: store.get(b.id).status == "done", 10)
-        assert store.events(b.id)[-1] == {"type": "end", "status": "done"}
+        assert untimed(store.events(b.id))[-1] == {"type": "end", "status": "done"}
     finally:
         run.stop()
 
@@ -336,7 +337,7 @@ def test_events_are_kept_in_order(tmp_path):
     ]
     for event in events:
         store.append_event(info.id, event)
-    assert store.events(info.id) == events
+    assert untimed(store.events(info.id)) == events
 
 
 def test_end_event_is_kept_before_the_status_that_ends_the_job(tmp_path):
@@ -439,7 +440,7 @@ def test_a_save_that_fails_after_the_end_writes_no_second_end(tmp_path, fake_wor
     finally:
         run.stop()
     ends = [event for event in store.events(info.id) if event["type"] == "end"]
-    assert ends == [{"type": "end", "status": "done"}]
+    assert untimed(ends) == [{"type": "end", "status": "done"}]
 
 
 def test_a_job_whose_end_was_kept_but_not_its_status_ends_as_its_end_says(tmp_path, started):
@@ -580,7 +581,7 @@ def test_job_where_no_file_converts_fails(started):
     run.submit(info.id)
     wait_for(lambda: store.get(info.id).status in ("done", "failed"), 120)
     assert store.get(info.id).status == "failed"
-    assert store.events(info.id)[-1] == {"type": "end", "status": "failed"}
+    assert untimed(store.events(info.id))[-1] == {"type": "end", "status": "failed"}
 
 
 def test_a_pdf_that_needs_the_missing_vc_runtime_fails_with_its_message(
@@ -623,7 +624,7 @@ def test_cancel_ends_the_worker_process_within_10_s(started):
     wait_for(lambda: store.get(info.id).status == "cancelled", 10)
     assert time.monotonic() - begin < 10
     assert pid not in workers()
-    assert store.events(info.id)[-1] == {"type": "end", "status": "cancelled"}
+    assert untimed(store.events(info.id))[-1] == {"type": "end", "status": "cancelled"}
     assert not run.cancel(info.id)
 
 
@@ -635,7 +636,7 @@ def test_queue_positions_follow_the_queue(started, fake_worker):
     assert [store.get(job.id).position for job in (b, c)] == [1, 2]
     assert run.cancel(b.id)  # a queued job ends at once
     assert (store.get(b.id).status, store.get(c.id).position) == ("cancelled", 1)
-    assert store.events(b.id) == [{"type": "end", "status": "cancelled"}]
+    assert untimed(store.events(b.id)) == [{"type": "end", "status": "cancelled"}]
     wait_for(lambda: store.get(c.id).status == "running", 10)
     assert (store.get(a.id).status, store.get(c.id).position) == ("done", 0)
     wait_for(lambda: store.get(c.id).status == "done", 10)
@@ -678,7 +679,7 @@ def test_worker_that_dies_fails_its_job_and_the_queue_goes_on(started):
     info = store.get(a.id)
     message = "The conversion stopped unexpectedly (exit code 3)."
     assert (info.status, info.files[0].error) == ("failed", message)
-    assert store.events(a.id)[-1] == {"type": "end", "status": "failed"}
+    assert untimed(store.events(a.id))[-1] == {"type": "end", "status": "failed"}
     assert not workers()
 
 
@@ -690,7 +691,7 @@ def test_stop_kills_the_worker_and_keeps_the_queue(started, fake_worker):
     wait_for(lambda: any(e["type"] == "page" for e in store.events(a.id)), 10)
     run.stop()
     assert (store.get(a.id).status, store.get(a.id).files[0].error) == ("failed", STOPPED)
-    assert store.events(a.id)[-1] == {"type": "end", "status": "failed"}
+    assert untimed(store.events(a.id))[-1] == {"type": "end", "status": "failed"}
     assert (store.get(b.id).status, store.get(b.id).position) == ("queued", 1)
     assert not workers()
 
@@ -707,7 +708,7 @@ def test_new_server_settles_the_jobs_an_old_one_left(tmp_path, started, fake_wor
     left = store.get(was_running.id)
     # a job that had started is not started again: it ends, by the same rule as any other
     assert (left.status, [f.error for f in left.files]) == ("done", [None, STOPPED])
-    assert store.events(was_running.id)[-1] == {"type": "end", "status": "done"}
+    assert untimed(store.events(was_running.id))[-1] == {"type": "end", "status": "done"}
     # a job that never started keeps its place and runs
     wait_for(lambda: store.get(was_queued.id).status == "done", 10)
 
@@ -796,3 +797,13 @@ def test_page_and_book_events_reach_the_browser_dict():
         "scanned": [2],
         "blank": [5],
     }
+
+
+def test_every_stored_event_has_a_server_time(started, fake_worker):
+    store, run = started()
+    info = store.create([("a.md", io.BytesIO(b"# A"))], Options())
+    run.submit(info.id)
+    wait_for(lambda: store.get(info.id).status == "done", 10)
+    events = store.events(info.id)
+    assert events and all(isinstance(e["t"], float) for e in events)
+    assert [e["t"] for e in events] == sorted(e["t"] for e in events)

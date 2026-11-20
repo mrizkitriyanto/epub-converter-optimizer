@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
-from fakes import endless_work, wait_for
+from fakes import endless_work, untimed, wait_for
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
@@ -942,7 +942,9 @@ def test_the_script_asks_the_inspect_route_and_reads_what_the_route_sends(tmp_pa
     r = TestClient(app, base_url=LOCAL).post("/api/inspect", files={"file": ("a.pdf", pdf)})
     answer = r.json()
     # `scan` is what the page keeps of an answer, beside its own `status` and `message`
-    assert set(re.findall(r"\bscan\.(\w+)", js)) - {"status", "message"} == set(answer)
+    # `scanned` and `blank` feed the page map, which the redesign's Select task reads
+    read = set(re.findall(r"\bscan\.(\w+)", js)) - {"status", "message"}
+    assert read == set(answer) - {"scanned", "blank"}
     assert set(re.findall(r"\brate\.(\w+)", js)) == set(answer["seconds_per_page"])
 
 
@@ -1226,7 +1228,7 @@ def test_second_server_on_the_same_data_stops_before_it_touches_a_job(tmp_path, 
             refused = str(e)
         # the first server's job goes on as if nothing happened
         assert store.get(job.id).status == "running"
-        assert store.events(job.id) == [{"type": "file", "index": 0, "status": "started"}]
+        assert untimed(store.events(job.id)) == [{"type": "file", "index": 0, "status": "started"}]
         assert calls == []
         assert refused == f"Another eco web is already using {tmp_path}"
 

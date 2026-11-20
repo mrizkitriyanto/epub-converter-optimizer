@@ -22,7 +22,16 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import httpx
 import pytest
 import uvicorn
-from fakes import endless_work, epub_title, failing_work, fake_work, sse, wait_for, wire
+from fakes import (
+    endless_work,
+    epub_title,
+    failing_work,
+    fake_work,
+    sse,
+    untimed,
+    wait_for,
+    wire,
+)
 from fastapi.testclient import TestClient
 
 from eco.options import Options
@@ -1498,7 +1507,7 @@ def test_a_real_server_streams_events_as_they_happen_and_drops_a_closed_stream(
             assert r.headers["content-type"] == "text/event-stream"
             lines = r.iter_lines()
             first = next(line for line in lines if line)
-            assert json.loads(first.removeprefix("data: ")) == {
+            assert untimed(json.loads(first.removeprefix("data: "))) == {
                 "type": "file",
                 "index": 0,
                 "status": "started",
