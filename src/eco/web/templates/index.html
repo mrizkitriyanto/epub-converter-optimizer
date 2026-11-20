@@ -123,6 +123,12 @@
             <p class="hint">{{ strings.font_size_hint }}</p>
           </div>
           <div class="field">
+            <label class="check"><input id="embed-focus" type="checkbox"> {{ strings.embed_focus_label }}</label>
+            <p class="hint">{{ strings.embed_focus_hint }}</p>
+            <label for="embed-focus-strength">{{ strings.focus_strength_label }}</label>
+            <select id="embed-focus-strength">{{ choices([("low", strings.focus_low), ("medium", strings.focus_medium), ("high", strings.focus_high)]) }}</select>
+          </div>
+          <div class="field">
             <label for="book-title">{{ strings.title_label }}</label>
             <input id="book-title" type="text" autocomplete="off" placeholder="{{ strings.title_placeholder }}">
           </div>

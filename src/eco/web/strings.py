@@ -287,6 +287,8 @@ STRINGS = {
     "align_left": "Left",
     "align_center": "Center",
     "focus_mode_label": "Focus Mode",
+    "embed_focus_label": "Embed Focus Mode in EPUB",
+    "embed_focus_hint": "Bold the start of words in EPUB text and XTC pages. EPUB keeps the effect on other e-readers.",
     "focus_strength_label": "Focus strength",
     "focus_low": "Low",
     "focus_medium": "Medium",

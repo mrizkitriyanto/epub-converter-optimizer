@@ -103,6 +103,7 @@ Options of `eco convert INPUT...`:
 - `--landscape`: turn Xteink pages sideways.
 - `--title`, `--author`, `--lang`: override book metadata; `--lang` accepts a code such as `en` or `id`.
 - `--data DIR`: data folder; `ECO_DATA` also selects it. By default, eco uses your user data folder.
+- `--focus-mode`: bold the start of words in the EPUB's XHTML so it opens with Focus Mode on other e-readers. Also applies to XTC output. Use `--focus-strength low|medium|high` to set the amount (default: medium).
 
 For XTC or XTCH, use `--style NAME` to apply a saved page style, or `--style FILE.json` for a style file. `--font NAME` and `--font-size N` override that style. `eco styles list` shows saved styles and marks the default. Without `--style`, conversions use the default style when one is set.
 
@@ -122,7 +123,7 @@ eco web
 
 This starts a local server and opens `http://127.0.0.1:8000/` in your browser. Add PDF, Markdown or EPUB files (up to 200 per upload), choose the device and the settings, and start. Progress shows the stage and the page, and you can cancel a running conversion. Review shows the findings next to the original page and a preview of the e-reader page. A click on a finding moves both. "Change settings" converts again with other settings; a PDF is not read again. Then download the EPUBs. Everything is processed on this computer. The page is in English only.
 
-In Review, Page style controls alignment, margins, paragraph spacing, indent, and Focus Mode for XTC. Save a named style, make it the default, or delete it there. Settings on the Select files page has a Fonts section for shared font uploads and removal. A missing font uses Literata and reports a finding; missing characters in the chosen font also appear as a finding and in live preview.
+In Settings on Select files, select **Embed Focus Mode in EPUB** before conversion. It bolds the start of Latin, Greek, and Cyrillic words in the EPUB text itself, including when the input is an EPUB, so no e-reader setting or script is needed. Code and math are left alone. The e-reader may still override book formatting. In Review, Page style lets you change Focus Mode and its strength, then convert again; it also controls alignment, margins, paragraph spacing, and indent for XTC. Save a named style, make it the default, or delete it there. Settings on the Select files page has a Fonts section for shared font uploads and removal. A missing font uses Literata and reports a finding; missing characters in the chosen font also appear as a finding and in live preview.
 
 Options of `eco web`:
 

@@ -1282,3 +1282,8 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - The owner chose automatic EPUBCheck validation for every EPUB made by a native installation and separate native archives for Windows x64, macOS arm64, and Linux x64. A one-folder PyInstaller build carries Temurin JRE 21.0.13+9, EPUBCheck 5.4.0, its `lib/`, and license notices; no host Java or Python is needed. Third-party binaries are downloaded and SHA-256 checked at build time, never committed to Git.
 - The optimized EPUB is written under its output directory, checked, and moved to the published name only after validation. Errors or a broken bundle fail the file; warnings remain findings. Source installs without either validation environment variable keep their existing behavior, while a partial configuration fails.
 - The Windows build and smoke passed on this machine, including a 12-page PDF conversion with bundled validation. CI builds and smokes the other two archives on matching OS runners; fresh-machine installation checks remain separate.
+
+## 2026-11-20: Focus Mode embedded in EPUB
+
+- The existing reading style's Focus Mode also wraps word prefixes in presentational XHTML `<b>` elements during EPUB optimization. This covers Markdown, PDF, and EPUB inputs with one pass, and leaves code and math unchanged. EPUBCheck validates the resulting file before publication.
+- The Select files settings expose the option before conversion; Review can change it and reconvert. EPUB readers may override book formatting, but no reader feature or script is required.

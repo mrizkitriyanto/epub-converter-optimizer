@@ -169,6 +169,12 @@ def _page_style(args: argparse.Namespace, data_dir: Path) -> tuple[PageStyle, tu
                 names = ", ".join(families)
                 raise ValueError(f"Unknown font: {args.font}. Available families: {names}")
             values = {**values, "font": args.font}
+    if args.focus_mode or args.focus_strength is not None:
+        values = {
+            **values,
+            **({"focus_mode": True} if args.focus_mode else {}),
+            **({"focus_strength": args.focus_strength} if args.focus_strength else {}),
+        }
     style = PageStyle.from_json(values, extra_dirs)
     if args.font_size is not None:
         style = PageStyle.from_json({**style.to_json(), "font_size": args.font_size}, extra_dirs)
@@ -418,7 +424,17 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--title", help="set the title")
     convert.add_argument("--author", help="set the author")
     convert.add_argument("--lang", help="set the language, for example en or id")
-    convert.add_argument("--style", metavar="FILE.json", help="page style JSON for XTC output")
+    convert.add_argument(
+        "--style", metavar="FILE.json", help="reading style JSON or saved style name"
+    )
+    convert.add_argument(
+        "--focus-mode", action="store_true", help="embed Focus Mode in EPUB and apply it to XTC"
+    )
+    convert.add_argument(
+        "--focus-strength",
+        choices=("low", "medium", "high"),
+        help="Focus Mode strength (default: medium, or the selected style's value)",
+    )
     convert.add_argument("--font", metavar="NAME|PATH", help="font family or .ttf/.otf file")
     convert.add_argument("--font-size", type=int, metavar="N", help="override the style font size")
 

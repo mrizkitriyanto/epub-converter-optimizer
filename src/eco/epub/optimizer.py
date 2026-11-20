@@ -18,6 +18,7 @@ from fontTools.ttLib import TTFont
 from PIL import Image
 
 from eco.epub.css import rewrite_css
+from eco.epub.focus import focus_body
 from eco.epub.images import ImageResult, transform_image
 from eco.epub.split import anchors, split_document
 from eco.epub.zipio import check_expansion, write_epub_zip
@@ -361,6 +362,10 @@ class _Package:
         self._images()
         self._fonts()
         self._references()
+        if self.options.style.focus_mode:
+            for _, doc in self._pages():
+                if (body := doc.root.find("{*}body")) is not None:
+                    focus_body(body, self.options.style.focus_strength)
         if self.xteink:
             self._split_chapters()
         self._tidy()

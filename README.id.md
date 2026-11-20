@@ -103,6 +103,7 @@ Opsi `eco convert INPUT...`:
 - `--landscape`: putar halaman Xteink ke arah lanskap.
 - `--title`, `--author`, `--lang`: timpa metadata buku; `--lang` menerima kode seperti `en` atau `id`.
 - `--data DIR`: folder data; `ECO_DATA` juga dapat menentukannya. Bawaannya folder data pengguna.
+- `--focus-mode`: tanam penebalan awal kata dalam XHTML EPUB dan terapkan juga pada XTC. `--focus-strength low|medium|high` mengatur banyaknya huruf yang ditebalkan (bawaan: medium).
 
 Untuk XTC atau XTCH, gunakan `--style NAMA` untuk gaya halaman tersimpan, atau `--style FILE.json` untuk berkas gaya. `--font NAMA` dan `--font-size N` menimpa pengaturan gaya itu. `eco styles list` menampilkan gaya tersimpan dan penanda default. Tanpa `--style`, konversi memakai gaya default bila tersedia.
 
@@ -122,7 +123,7 @@ eco web
 
 Perintah ini menjalankan server lokal dan membuka `http://127.0.0.1:8000/` di browser Anda. Tambahkan file PDF, Markdown, atau EPUB (sampai 200 file per unggahan), pilih device dan pengaturan, lalu mulai. Kemajuan menampilkan tahap dan halaman, dan Anda bisa membatalkan konversi yang sedang berjalan. Tinjauan menampilkan temuan di samping halaman asli dan pratinjau halaman e-reader. Satu klik pada temuan menggerakkan keduanya. "Change settings" mengubah lagi dengan pengaturan lain; PDF tidak dibaca ulang. Setelah itu unduh EPUB-nya. Semuanya diproses di komputer ini. Halamannya hanya berbahasa Inggris, jadi nama tombol dan label di sini ditulis dalam bahasa Inggris.
 
-Di Review, Page style mengatur perataan, margin, jarak paragraf, inden, dan Focus Mode untuk XTC. Anda dapat menyimpan gaya bernama, menjadikannya default, atau menghapusnya. Settings pada halaman Select files memiliki bagian Fonts untuk mengunggah dan menghapus font bersama. Jika font hilang, eco memakai Literata dan mencatat temuan; karakter yang tidak ada pada font pilihan juga ditampilkan sebagai temuan dan dalam live preview.
+Di Settings pada halaman Select files, pilih **Embed Focus Mode in EPUB** sebelum konversi. Awal kata Latin, Yunani, dan Sirilik ditebalkan langsung dalam teks XHTML EPUB, termasuk jika inputnya EPUB, sehingga tidak perlu pengaturan atau skrip khusus pada e-reader. Kode dan rumus matematika tidak diubah. E-reader masih dapat menimpa format buku. Di Review, Page style dapat mengubah Focus Mode dan kekuatannya, lalu mengonversi ulang; panel itu juga mengatur perataan, margin, jarak paragraf, dan inden untuk XTC. Anda dapat menyimpan gaya bernama, menjadikannya default, atau menghapusnya. Settings pada halaman Select files memiliki bagian Fonts untuk mengunggah dan menghapus font bersama. Jika font hilang, eco memakai Literata dan mencatat temuan; karakter yang tidak ada pada font pilihan juga ditampilkan sebagai temuan dan dalam live preview.
 
 Opsi `eco web`:
 

@@ -186,6 +186,8 @@ async function loadDefaultStyle() {
     const style = chosen ? await getJson(`/api/styles/${encodeURIComponent(chosen.name)}`) : null;
     const input = $('font-size');
     if (!input.dataset.edited) input.value = String(style?.font_size || DEFAULT_FONT_SIZE);
+    if (!$('embed-focus').dataset.edited) $('embed-focus').checked = Boolean(style?.focus_mode);
+    if (!$('embed-focus-strength').dataset.edited) $('embed-focus-strength').value = style?.focus_strength || 'medium';
   } catch (error) {
     // A new job still uses the server's default when this hint cannot load.
   }
@@ -392,7 +394,11 @@ export function readOptions() {
     title: text($('book-title')),
     author: text($('book-author')),
     lang: text($('book-lang')),
-    ...($('font-size').dataset.edited ? { style: { font_size: wholeFontSize($('font-size').value) } } : {}),
+    style: {
+      ...($('font-size').dataset.edited ? { font_size: wholeFontSize($('font-size').value) } : {}),
+      focus_mode: $('embed-focus').checked,
+      focus_strength: $('embed-focus-strength').value,
+    },
   };
 }
 

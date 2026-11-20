@@ -42,6 +42,9 @@ function bind() {
     $('font-size').dataset.edited = 'true';
     $('font-size').value = String(wholeFontSize($('font-size').value));
   });
+  for (const id of ['embed-focus', 'embed-focus-strength']) {
+    $(id).addEventListener('change', () => { $(id).dataset.edited = 'true'; });
+  }
   $('library-font-upload').addEventListener('change', uploadLibraryFonts);
   for (const output of document.querySelectorAll('input[name="output"]')) {
     output.addEventListener('change', () => {

@@ -555,8 +555,16 @@ def test_the_font_size_limits_of_the_page_are_the_servers(tmp_path):
 def test_the_page_keeps_the_font_size_in_the_style_of_the_options(tmp_path):
     js = source("app.js")
     assert "options.font_size" not in js  # M2's key
-    assert "style: { font_size: wholeFontSize($('font-size').value) }" in js  # an edited upload
+    assert "font_size: wholeFontSize($('font-size').value)" in js  # an edited upload
     assert "style: review.live.style" in js  # a rebuild keeps every page-style field
+
+
+def test_focus_mode_can_be_selected_for_epub_before_and_after_conversion(tmp_path):
+    html, js = local(tmp_path).get("/").text, source("app.js")
+    assert 'id="embed-focus"' in html
+    assert 'id="embed-focus-strength"' in html
+    assert "focus_mode: $('embed-focus').checked" in js
+    assert "$('focus-controls').hidden = review.format === 'epub'" not in js
 
 
 def test_every_api_address_in_the_script_is_a_route(tmp_path):

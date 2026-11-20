@@ -16,8 +16,10 @@ from PIL import Image
 from eco.book import Block, Book
 from eco.bookfolder import load_source, write_book
 from eco.epub.builder import _Builder, build_epub
+from eco.epub.optimizer import optimize_epub
 from eco.epub.zipio import write_epub_zip
-from eco.options import CHAPTER_LIMIT_BYTES
+from eco.options import CHAPTER_LIMIT_BYTES, Options
+from eco.style import PageStyle
 
 OPF = "OEBPS/content.opf"
 NS = {
@@ -105,6 +107,82 @@ def xhtml(z):
 
 def tag(name):
     return f"{{{NS['h']}}}{name}"
+
+
+@pytest.mark.parametrize(
+    "strength,expected", [("low", "Hel"), ("medium", "Hello"), ("high", "HelloWo")]
+)
+def test_focus_mode_is_embedded_in_epub_text(tmp_path, strength, expected):
+    md = tmp_path / "focus.md"
+    md.write_text(
+        "---\ntitle: Focus\n---\n\n# Reading\n\nHelloWorld **bold** `code` [linked](https://example.com) & caf\u00e9.\n\n<p>Raw text</p>\n",
+        encoding="utf-8",
+    )
+    dst = tmp_path / "focus.epub"
+    built = tmp_path / "built.epub"
+    build_epub(load_source(md), built, device="general")
+    optimize_epub(
+        built,
+        dst,
+        Options(device="general", style=PageStyle(focus_mode=True, focus_strength=strength)),
+    )
+    with zipfile.ZipFile(dst) as z:
+        chapter = read_xml(z, "OEBPS/text/ch001.xhtml")
+        body = chapter.find("h:body", NS)
+        assert body is not None
+        assert "".join(body.itertext()).replace("\n", " ").split() == [
+            "Reading",
+            "HelloWorld",
+            "bold",
+            "code",
+            "linked",
+            "&",
+            "café.",
+            "Raw",
+            "text",
+        ]
+        assert any(node.text == expected for node in body.iter(tag("b")))
+        assert not body.findall(".//h:code/h:b", NS)
+        assert chapter.find(".//h:a/h:b", NS) is not None
+        assert chapter.find(".//h:p/h:b", NS) is not None
+
+
+def test_focus_mode_is_off_by_default(tmp_path):
+    z, _ = build(tmp_path, "---\ntitle: Plain\n---\n\n# Chapter\n\nHelloWorld")
+    with z:
+        assert read_xml(z, "OEBPS/text/ch001.xhtml").find(".//h:b", NS) is None
+
+
+def test_focus_mode_keeps_combining_marks_and_skips_cjk(tmp_path):
+    built, _ = build(tmp_path, "---\ntitle: Focus\n---\n\n# Chapter\n\nCafe\u0301 中文")
+    built.close()
+    out = tmp_path / "focused.epub"
+    optimize_epub(
+        tmp_path / "x.epub", out, Options(device="general", style=PageStyle(focus_mode=True))
+    )
+    with zipfile.ZipFile(out) as z:
+        body = read_xml(z, "OEBPS/text/ch001.xhtml").find("h:body", NS)
+        assert body is not None
+        assert "Cafe\u0301 中文" in "".join(body.itertext())
+        assert all("中" not in (node.text or "") for node in body.iter(tag("b")))
+
+
+def test_reoptimizing_focused_epub_does_not_nest_focus_spans(tmp_path):
+    built, _ = build(tmp_path, "---\ntitle: Focus\n---\n\n# Chapter\n\nHelloWorld")
+    built.close()
+    options = Options(device="general", style=PageStyle(focus_mode=True))
+    first, second = tmp_path / "first.epub", tmp_path / "second.epub"
+    optimize_epub(tmp_path / "x.epub", first, options)
+    optimize_epub(
+        first,
+        second,
+        Options(device="general", style=PageStyle(focus_mode=True, focus_strength="high")),
+    )
+    with zipfile.ZipFile(second) as z:
+        body = read_xml(z, "OEBPS/text/ch001.xhtml")
+        assert body.find(".//h:b/h:b", NS) is None
+        assert sum(node.get("class") == "eco-focus" for node in body.iter(tag("b"))) == 2
+        assert any(node.text == "HelloWo" for node in body.iter(tag("b")))
 
 
 def test_zip_layout_and_chapters(tmp_path, small_book):

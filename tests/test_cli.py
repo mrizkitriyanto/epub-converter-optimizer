@@ -1,12 +1,16 @@
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
+import zipfile
 from importlib.metadata import version
 from pathlib import Path
 
 import pytest
 
 from eco import __version__
+from eco.bookfolder import load_source
 from eco.cli import main
+from eco.epub.builder import build_epub
 from eco.models import MARKER
 from eco.pdf.pages import pdf_metadata
 
@@ -18,6 +22,45 @@ def convert(tmp_path, *args):
 def test_version(capsys):
     assert main(["--version"]) == 0
     assert capsys.readouterr().out.strip() == f"eco {__version__}"
+
+
+def test_focus_mode_embeds_bold_in_converted_epub(tmp_path):
+    md = tmp_path / "reading.md"
+    md.write_text("# Chapter\n\nHelloWorld", encoding="utf-8")
+    out = tmp_path / "out"
+    assert (
+        convert(
+            tmp_path,
+            md,
+            "--device",
+            "general",
+            "--focus-mode",
+            "--focus-strength",
+            "high",
+            "-o",
+            out,
+        )
+        == 0
+    )
+    [epub] = out.glob("*.epub")
+    with zipfile.ZipFile(epub) as archive:
+        chapter = next(name for name in archive.namelist() if name.endswith("ch001.xhtml"))
+        root = ET.fromstring(archive.read(chapter))
+    assert any(node.text == "HelloWo" for node in root.iter("{http://www.w3.org/1999/xhtml}b"))
+
+
+def test_focus_mode_embeds_bold_when_input_is_epub(tmp_path):
+    md = tmp_path / "reading.md"
+    md.write_text("# Chapter\n\nHelloWorld", encoding="utf-8")
+    source = tmp_path / "source.epub"
+    build_epub(load_source(md), source, device="general")
+    out = tmp_path / "out"
+    assert convert(tmp_path, source, "--device", "general", "--focus-mode", "-o", out) == 0
+    [epub] = out.glob("*.epub")
+    with zipfile.ZipFile(epub) as archive:
+        chapter = next(name for name in archive.namelist() if name.endswith("ch001.xhtml"))
+        root = ET.fromstring(archive.read(chapter))
+    assert any(node.text == "Hello" for node in root.iter("{http://www.w3.org/1999/xhtml}b"))
 
 
 def test_version_does_not_load_the_pipeline():
