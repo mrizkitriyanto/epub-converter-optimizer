@@ -166,6 +166,8 @@ def build(target: Target, jre_archive: Path | None, epubcheck_archive: Path | No
             "latex2mathml",
             "--collect-data",
             "docling_parse",
+            "--collect-data",
+            "rapidocr",
             "--copy-metadata",
             "docling-slim",
             "--hidden-import",
