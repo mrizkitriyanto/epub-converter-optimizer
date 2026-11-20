@@ -25,7 +25,7 @@ def test_source_install_without_tools_keeps_converting(monkeypatch, tmp_path):
     monkeypatch.delenv("ECO_EPUBCHECK_JAR", raising=False)
     monkeypatch.delattr(sys, "frozen", raising=False)
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("Java was called"))
-    assert validate_epub(tmp_path / "book.epub") == []
+    assert validate_epub(tmp_path / "book.epub") is None  # nothing ran, so nothing passed
 
 
 def test_partial_tool_configuration_fails_clearly(monkeypatch, tmp_path):

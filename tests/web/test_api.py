@@ -681,7 +681,7 @@ def test_post_returns_the_new_job(tmp_path):
     assert set(job) == {"id", "status", "created", "position", "options", "files"}
     assert re.fullmatch(r"[0-9a-f]{16}", job["id"])
     assert (job["status"], job["position"]) == ("queued", 0)
-    nothing = {"error": None, "outputs": {}, "sizes": {}}
+    nothing = {"error": None, "outputs": {}, "sizes": {}, "epubcheck": None}
     assert job["files"] == [
         {"index": 0, "name": "a.md", "kind": "md", "size": 4, **nothing},
         {"index": 1, "name": "b.PDF", "kind": "pdf", "size": 8, **nothing},
@@ -1357,6 +1357,7 @@ def test_the_finished_job_as_the_api_shows_it(finished):
             "error": None,
             "outputs": {"epub": "Bab Ü.x4.epub"},
             "sizes": {"epub": 15},
+            "epubcheck": "passed",
         },
         {
             "index": 1,
@@ -1366,6 +1367,7 @@ def test_the_finished_job_as_the_api_shows_it(finished):
             "error": None,
             "outputs": {"epub": "notes.x4.epub"},
             "sizes": {"epub": 15},
+            "epubcheck": "passed",
         },
     ]
 
@@ -1485,6 +1487,9 @@ def test_a_markdown_book_converts_through_the_real_worker_and_downloads(tmp_path
         shown = c.get(f"/api/jobs/{job['id']}").json()
         assert shown["files"][0]["outputs"] == done["outputs"]  # the job and its event agree
         assert shown["files"][0]["sizes"] == done["sizes"]
+        outcomes = ("passed", "passed_with_warnings", "not_run")
+        assert done["epubcheck"] in outcomes  # depends on whether EPUBCheck is configured
+        assert shown["files"][0]["epubcheck"] == done["epubcheck"]
         assert_no_path([shown, events], tmp_path)
         got = c.get(f"/api/jobs/{job['id']}/files/0/download/epub")
         assert got.headers["content-disposition"] == (

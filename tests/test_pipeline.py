@@ -172,6 +172,27 @@ def test_epubcheck_warnings_reach_findings_and_events(monkeypatch, tmp_path):
     assert matching[0] in [e.finding for e in seen if isinstance(e, FindingEvent)]
 
 
+@pytest.mark.parametrize(
+    "answer, outcome",
+    [(None, "not_run"), ([], "passed"), (["WARNING(OPF-003): x"], "passed_with_warnings")],
+)
+def test_the_result_names_the_epubcheck_outcome(monkeypatch, tmp_path, answer, outcome):
+    md = tmp_path / "book.md"
+    md.write_text("# One\n\nText.\n")
+    monkeypatch.setattr(pipeline, "validate_epub", lambda epub: answer)
+    result = convert_file(md, Options(), tmp_path / "out", data_dir=tmp_path / "data")
+    assert result.epubcheck == outcome
+
+
+def test_an_xtc_only_result_has_no_epubcheck_outcome(monkeypatch, tmp_path):
+    md = tmp_path / "book.md"
+    md.write_text("# One\n\nText.\n")
+    monkeypatch.setattr(pipeline, "validate_epub", lambda epub: pytest.fail("no EPUB to check"))
+    options = Options(formats=("xtc",))
+    result = convert_file(md, options, tmp_path / "out", data_dir=tmp_path / "data")
+    assert result.epubcheck is None
+
+
 def test_no_network_during_conversion(tmp_path, monkeypatch, fixtures_dir, fake_blocks):
     def boom(*a, **k):
         raise AssertionError("network used")

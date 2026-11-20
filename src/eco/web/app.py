@@ -617,6 +617,7 @@ def _public(info: JobInfo, scrub: Callable[[str], str]) -> dict:
                 "error": scrub(f.error) if f.error else None,
                 "outputs": {fmt: Path(path).name for fmt, path in f.outputs.items()},
                 "sizes": {fmt: _size(path) for fmt, path in f.outputs.items()},
+                "epubcheck": f.epubcheck,
             }
             for n, f in enumerate(info.files)
         ],

@@ -72,6 +72,8 @@ class Result:
     findings: list[Finding]
     seconds: float
     sizes: dict[str, int]  # format -> bytes of the output
+    # passed, passed_with_warnings or not_run; None when no EPUB was made
+    epubcheck: str | None = None
 
 
 @contextmanager
@@ -446,17 +448,23 @@ def convert_file(
                     _add(findings, build_epub(source, built, device=options.device), on_event)
         out_dir.mkdir(parents=True, exist_ok=True)
         outputs = {}
+        epubcheck = None
         if "epub" in options.formats:
             out = output_path(path, out_dir, options.device, "epub", (*inputs, path))
             with tempfile.TemporaryDirectory(dir=out_dir) as staged_dir:
                 staged = Path(staged_dir) / out.name
                 with _stage(on_event, "optimize"):
                     _add(findings, optimize_epub(built, staged, options).findings, on_event)
+                    warnings = validate_epub(staged)
+                    if warnings is None:
+                        epubcheck = "not_run"
+                    else:
+                        epubcheck = "passed_with_warnings" if warnings else "passed"
                     _add(
                         findings,
                         [
                             Finding(0, "epubcheck_warning", "warning", line)
-                            for line in validate_epub(staged)
+                            for line in warnings or []
                         ],
                         on_event,
                     )
@@ -486,4 +494,5 @@ def convert_file(
         findings,
         seconds,
         {fmt: out.stat().st_size for fmt, out in outputs.items()},
+        epubcheck,
     )

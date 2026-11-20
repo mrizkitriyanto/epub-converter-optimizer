@@ -77,6 +77,7 @@ class JobFile:
     outputs: dict[str, str]  # format -> file in output/
     book_dir: str | None  # a PDF's book folder in the extraction cache, for previews
     error: str | None  # why this file was not converted
+    epubcheck: str | None = None  # passed, passed_with_warnings or not_run; None: no EPUB or older
 
 
 @dataclass
@@ -452,6 +453,7 @@ def _work(job_dir: str, options: dict, data_dir: str, q: multiprocessing.Queue) 
                 "book_dir": book_dir,
                 "sizes": result.sizes,
                 "seconds": round(result.seconds, 2),
+                "epubcheck": result.epubcheck,
             }
         )
     q.put({"type": "end", "status": "done" if written else "failed"})
@@ -661,6 +663,7 @@ class Runner:
             f = info.files[event["index"]]
             if event["status"] == "done":
                 f.outputs, f.book_dir = event["outputs"], event.get("book_dir")
+                f.epubcheck = event.get("epubcheck")
             else:
                 f.error = event["error"]
         with self._lock:

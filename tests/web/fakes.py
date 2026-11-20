@@ -63,7 +63,15 @@ def fake_work(job_dir, options, data_dir, q) -> None:
         q.put({"type": "stage", "stage": "layout", "status": "finished"})
         out = job / "output" / f"{path.stem}.x4.epub"
         out.write_bytes(b"not a real EPUB")
-        q.put({"type": "file", "index": i, "status": "done", "outputs": {"epub": str(out)}})
+        q.put(
+            {
+                "type": "file",
+                "index": i,
+                "status": "done",
+                "outputs": {"epub": str(out)},
+                "epubcheck": "passed",
+            }
+        )
     q.put({"type": "end", "status": "done"})
 
 

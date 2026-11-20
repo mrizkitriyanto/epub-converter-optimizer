@@ -787,6 +787,25 @@ def test_server_lock_of_a_killed_process_is_free(tmp_path):
     wait_for(lambda: free(tmp_path), 10)
 
 
+def test_a_job_json_without_epubcheck_still_loads(tmp_path):
+    store = JobStore(tmp_path)
+    info = store.create([md()], Options())
+    path = tmp_path / "jobs" / info.id / "job.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for f in data["files"]:
+        f.pop("epubcheck", None)  # a job.json from before the field existed
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert store.get(info.id).files[0].epubcheck is None
+
+
+def test_a_done_file_keeps_its_epubcheck_outcome(started, fake_worker):
+    store, run = started()
+    info = store.create([md()], Options())
+    run.submit(info.id)
+    wait_for(lambda: store.get(info.id).status == "done", 10)
+    assert store.get(info.id).files[0].epubcheck == "passed"
+
+
 def test_page_and_book_events_reach_the_browser_dict():
     from eco.events import BookEvent, PageEvent
 

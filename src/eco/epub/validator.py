@@ -29,11 +29,12 @@ def _tools() -> tuple[str, str] | None:
     return str(java_path), str(jar_path)
 
 
-def validate_epub(path: Path) -> list[str]:
-    """Return EPUBCheck warnings, or raise before an invalid EPUB is published."""
+def validate_epub(path: Path) -> list[str] | None:
+    """Return EPUBCheck warnings, or raise before an invalid EPUB is published. None when no
+    EPUBCheck is configured (a source install): nothing ran."""
     tools = _tools()
     if tools is None:
-        return []
+        return None
     java, jar = tools
     try:
         result = subprocess.run(
