@@ -2,6 +2,8 @@
 
 import argparse
 import hashlib
+import importlib.util
+import os
 import platform
 import shutil
 import subprocess
@@ -134,6 +136,19 @@ def build(target: Target, jre_archive: Path | None, epubcheck_archive: Path | No
     )
     verify_sha256(jre_archive, target.jre_sha256)
     verify_sha256(epubcheck_archive, EPUBCHECK_SHA256)
+    vision = importlib.util.find_spec("torchvision")
+    if vision is None or vision.submodule_search_locations is None:
+        raise RuntimeError("torchvision is required to build the native app")
+    vision_dir = Path(next(iter(vision.submodule_search_locations)))
+    # PyInstaller's dynamic-library glob misses _C_stable.so and Windows .pyd files.
+    vision_binaries = sorted(vision_dir.glob("*_stable.*"))
+    if not any(path.name.startswith("_C_stable.") for path in vision_binaries):
+        raise RuntimeError("torchvision native operations are missing")
+    binary_args = [
+        arg
+        for path in vision_binaries
+        for arg in ("--add-binary", f"{path}{os.pathsep}torchvision")
+    ]
     dist = out / "dist"
     work = out / "work"
     subprocess.run(
@@ -157,6 +172,7 @@ def build(target: Target, jre_archive: Path | None, epubcheck_archive: Path | No
             "docling.models.plugins.defaults",
             "--collect-binaries",
             "torchvision",
+            *binary_args,
             "--distpath",
             str(dist),
             "--workpath",
