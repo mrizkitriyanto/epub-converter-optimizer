@@ -214,7 +214,11 @@ export function renderPageStrip() {
   const warned = place.source
     ? file.findings.filter((finding) => finding.level === 'warning' && finding.page > 0).map((finding) => finding.page)
     : [];
-  renderStrip(strip, stripBars(place.total, warned, place.current));
+  // about two pixels a bar: a bar and its gap
+  const room = strip.clientWidth > 0 ? Math.max(20, Math.floor(strip.clientWidth / 2)) : 600;
+  const bars = stripBars(place.total, warned, place.current, room);
+  strip.dataset.per = String(bars.length ? bars[0].last - bars[0].first + 1 : 1);
+  renderStrip(strip, bars);
   const label = t('strip_value', { page: place.current, total: place.total });
   setText($('strip-label'), label);
   strip.setAttribute('aria-valuemax', String(place.total));
@@ -239,8 +243,7 @@ export function onStripClick(event) {
   const place = stripPlace();
   if (!bar || !place) return;
   const index = Array.prototype.indexOf.call($('page-strip').children, bar);
-  const per = place.total <= 600 ? 1 : Math.ceil(place.total / 600);
-  goToPlace(index * per + 1);
+  goToPlace(index * Number($('page-strip').dataset.per || 1) + 1);
 }
 
 export function onStripKey(event) {

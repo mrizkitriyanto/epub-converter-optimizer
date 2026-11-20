@@ -114,6 +114,13 @@ export function apply(event, replaying) {
     file.book = { pages: event.pages, scanned: event.scanned || [], blank: event.blank || [] };
   } else if (event.type === 'finding' && file) {
     file.findings.push({ page: event.page, kind: event.kind, level: event.level, message: event.message });
+  } else if (event.type === 'end' && event.status === 'cancelled') {
+    // the file that was running stops where it was, and says so
+    for (const target of run.files) {
+      if (target.status !== 'running') continue;
+      target.status = 'cancelled';
+      target.endedAt = at;
+    }
   }
   scheduleRender();
 }
@@ -205,7 +212,7 @@ export function stagesFor(file, options, seen = {}) {
 export function stageStatus(file, names, name) {
   const seen = file.stages[name];
   if (seen === 'finished') return 'done';
-  if (seen === 'started') return file.status === 'failed' ? 'stopped' : 'now';
+  if (seen === 'started') return file.status === 'failed' || file.status === 'cancelled' ? 'stopped' : 'now';
   const later = names.slice(names.indexOf(name) + 1).some((other) => file.stages[other]);
   return later || file.status === 'done' ? 'reused' : 'todo';
 }

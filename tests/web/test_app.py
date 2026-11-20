@@ -674,12 +674,12 @@ def test_review_sliders_group_their_label_value_and_control(tmp_path):
 
 def test_review_responsive_css_stacks_comparison_and_keeps_touch_targets_large():
     css = source("app.css")
-    narrow = re.search(r"@media \(max-width: 700px\) \{(.*?)\n\}", css, re.DOTALL).group(1)
+    narrow = re.search(r"@media \(max-width: 600px\) \{(.*?)\n\}", css, re.DOTALL).group(1)
     assert re.search(
         r"\.review-grid,.*?grid-template-columns:\s*minmax\(0, 1fr\)", narrow, re.DOTALL
     )
     coarse = re.search(
-        r"@media \(pointer: coarse\), \(max-width: 700px\) \{(.*?)\n\}", css, re.DOTALL
+        r"@media \(pointer: coarse\), \(max-width: 600px\) \{(.*?)\n\}", css, re.DOTALL
     ).group(1)
     assert 'input[type="range"]' in coarse
     assert "min-height: 44px" in coarse
@@ -1786,7 +1786,7 @@ def test_the_strip_is_a_keyboard_slider():
         assert key in body, key
     render = function_body(js, "renderPageStrip")
     assert "aria-valuetext" in render and "stripBars(" in render and "renderStrip(" in render
-    assert "[role=\"slider\"]" in function_body(js, "onKey")  # the page keys leave the strip alone
+    assert '[role="slider"]' in function_body(js, "onKey")  # the page keys leave the strip alone
 
 
 def test_dirty_style_makes_apply_the_one_primary_and_blocks_continue():
@@ -1879,3 +1879,42 @@ def test_export_first_download_is_the_one_primary():
     assert "primary ? 'primary' : 'secondary'" in body
     assert "$('convert-another')" not in body  # bound once in bind()
     assert "$('convert-another').addEventListener" in function_body(source("app.js"), "bind")
+
+
+# Responsive and accessible
+
+
+def test_layouts_collapse_at_900_and_600_and_keep_touch_targets():
+    css = source("app.css")
+    assert "@media (max-width: 900px) {" in css and "@media (max-width: 600px) {" in css
+    coarse = re.search(
+        r"@media \(pointer: coarse\), \(max-width: 600px\) \{(.*?)\n\}", css, re.DOTALL
+    ).group(1)
+    assert "min-height: 44px" in coarse
+    narrow = re.search(r"@media \(max-width: 600px\) \{(.*?)\n\}", css, re.DOTALL).group(1)
+    assert ".stage-bar" in narrow and "flex-direction: column" in narrow  # a list of stages
+    assert ".review-grid" in narrow and "grid-template-columns: minmax(0, 1fr)" in narrow
+
+
+def test_reduced_motion_turns_off_fills_and_transitions():
+    css = source("app.css")
+    reduced = re.search(
+        r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n\}", css, re.DOTALL
+    ).group(1)
+    assert "transition: none" in reduced and "*" in reduced
+
+
+def test_focus_ring_is_the_accent_two_pixels_offset_two():
+    css = source("app.css")
+    assert re.search(
+        r":focus-visible\s*\{[^}]*outline:\s*2px solid var\(--accent\)[^}]*outline-offset:\s*2px",
+        css,
+    )
+
+
+def test_a_cancel_stops_the_running_stage_in_words():
+    js = source("app.js")
+    apply = function_body(js, "apply")
+    assert "event.type === 'end' && event.status === 'cancelled'" in apply
+    status = function_body(js, "stageStatus")
+    assert "file.status === 'cancelled'" in status

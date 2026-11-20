@@ -253,6 +253,7 @@ a:hover {
   display: flex;
   align-items: flex-end;
   gap: 1px;
+  overflow: hidden;
   height: 28px;
   cursor: pointer;
 }
@@ -1559,111 +1560,6 @@ output {
   margin: 10px 0;
 }
 
-/* Smaller screens */
-
-@media (max-width: 1100px) {
-  .review-grid,
-  .review-grid.with-panel {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  #findings,
-  #settings-panel {
-    grid-column: 1 / -1;
-  }
-
-  #page-style {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .review-dock {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-}
-
-@media (max-width: 860px) {
-  .split {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 700px) {
-  main {
-    padding: 12px;
-  }
-
-  .topbar {
-    padding: 10px 12px;
-  }
-
-  .stepper {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .review-grid,
-  .review-grid.with-panel {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .review-actions {
-    margin-left: 0;
-  }
-
-  .review-dock {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .export-file {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  #page-style {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 520px) {
-  .field {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .field > .hint {
-    grid-column: 1;
-  }
-}
-
-@media (pointer: coarse), (max-width: 700px) {
-  button,
-  .button,
-  select,
-  input[type="text"],
-  input[type="number"],
-  input[type="range"],
-  .choose,
-  .segmented span {
-    min-height: 44px;
-  }
-
-  .segmented span {
-    line-height: 30px;
-  }
-
-  .link-button,
-  .finding,
-  .check {
-    min-height: 44px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .seg-fill {
-    transition: none;
-  }
-}
-
 /* Export */
 
 .workspace-export {
@@ -1805,4 +1701,163 @@ output {
 
 .link-button.destructive {
   color: var(--error);
+}
+
+/* Smaller screens */
+
+@media (max-width: 1100px) {
+  .review-grid,
+  .review-grid.with-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  #findings,
+  #settings-panel {
+    grid-column: 1 / -1;
+  }
+
+  #page-style {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    padding: 28px 20px 40px;
+  }
+
+  .topbar {
+    padding: 12px 20px;
+  }
+
+  .stepper {
+    order: 3;
+    width: 100%;
+  }
+
+  .findings-list {
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+  }
+
+  .findings-list > li {
+    flex: 0 0 220px;
+  }
+
+  .convert-numbers {
+    text-align: left;
+  }
+}
+
+@media (max-width: 600px) {
+  .workspace {
+    padding: 20px 16px 32px;
+  }
+
+  .workspace-title {
+    font-size: 22px;
+  }
+
+  .topbar {
+    padding: 10px 16px;
+  }
+
+  .tiles {
+    flex-direction: column;
+  }
+
+  .stage-bar {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .seg {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 12px;
+    min-width: 0;
+  }
+
+  .seg-track {
+    grid-column: 1 / -1;
+  }
+
+  .seg-name {
+    margin-top: 0;
+  }
+
+  .review-grid,
+  .review-grid.with-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-top,
+  .review-actions {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .review-dock {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .review-control {
+    flex: 0 0 auto;
+  }
+
+  .dock-footer,
+  .dock-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .export-file {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  #page-style {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .field > .hint {
+    grid-column: 1;
+  }
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  button,
+  .button,
+  select,
+  input[type="text"],
+  input[type="number"],
+  input[type="range"],
+  .segmented span {
+    min-height: 44px;
+  }
+
+  .segmented span {
+    line-height: 34px;
+  }
+
+  .link-button,
+  .finding,
+  .check {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }

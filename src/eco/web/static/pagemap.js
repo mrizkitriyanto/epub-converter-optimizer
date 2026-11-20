@@ -79,9 +79,10 @@ export function renderPageMap(container, cells, size) {
   });
 }
 
-// Review's strip: one bar per page, or per group of pages past 600, so a bar stays visible.
-export function stripBars(pages, findings, current) {
-  const per = pages <= 600 ? 1 : Math.ceil(pages / 600);
+// Review's strip: one bar per page, or per group of pages past 600 (or past what the width holds),
+// so a bar stays visible.
+export function stripBars(pages, findings, current, room = 600) {
+  const per = pages <= 600 && pages <= room ? 1 : Math.ceil(pages / Math.min(600, room));
   const warned = new Set(findings);
   const bars = [];
   for (let first = 1; first <= pages; first += per) {
