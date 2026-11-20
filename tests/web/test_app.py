@@ -413,7 +413,7 @@ def source(name):
     if name == "app.js":
         return "\n".join(
             (SOURCES / folder / part).read_text(encoding="utf-8")
-            for part in ("core.js", "start.js", "job.js", "review.js", "app.js")
+            for part in ("core.js", "start.js", "job.js", "review.js", "pagemap.js", "app.js")
         )
     return (SOURCES / folder / name).read_text(encoding="utf-8")
 
@@ -434,7 +434,9 @@ def test_page_loads_its_script_and_style_from_the_static_folder(tmp_path):
     assert '<link rel="icon" href="data:,">' in html  # no request for /favicon.ico, no 404 logged
 
 
-@pytest.mark.parametrize("name", ["app.js", "core.js", "start.js", "job.js", "review.js"])
+@pytest.mark.parametrize(
+    "name", ["app.js", "core.js", "start.js", "job.js", "review.js", "pagemap.js"]
+)
 def test_app_modules_are_served_as_javascript(tmp_path, name):
     r = local(tmp_path).get(f"/static/{name}")
     assert r.status_code == 200
@@ -820,7 +822,7 @@ def test_a_late_reason_for_a_failed_picture_is_not_written_under_another_page():
 
 def test_the_select_step_link_puts_the_focus_on_the_file_picker():
     js = source("app.js")
-    assert "onclick: (event) => onStepLink(event, index)" in function_body(js, "stepItem")
+    assert "go = (event) => onStepLink(event, index)" in function_body(js, "stepItem")
     body = function_body(js, "onStepLink")
     assert "$('file-input').focus()" in body
     assert "$('device').focus()" not in body  # Settings is no longer a separate step.
@@ -1595,3 +1597,62 @@ def test_other_commands_do_not_import_the_web_stack(argv):
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout.splitlines()[-1] == "[]"
+
+
+# The page map redesign: tokens, font, shell and the page map module
+
+
+def test_the_page_uses_the_bundled_inter_font_and_the_new_tokens():
+    css = source("app.css")
+    assert 'url("fonts/InterVariable.woff2")' in css
+    tokens = ("#fafaf9", "#18181b", "#52525b", "#71717a", "#1d4ed8", "#15803d", "#b45309")
+    tokens += ("#f59e0b", "#b91c1c", "#3f3f46", "#6d28d9", "#d4d4d8", "#e4e4e7")
+    for token in tokens:
+        assert token in css.lower(), token
+    assert "font: 14px/1.5 Inter," in css
+
+
+def test_the_font_and_its_licence_are_served(tmp_path):
+    c = local(tmp_path)
+    font = c.get("/static/fonts/InterVariable.woff2")
+    assert font.status_code == 200 and font.headers["content-type"] == "font/woff2"
+    assert font.content[:4] == b"wOF2"
+    assert "SIL Open Font License" in c.get("/static/fonts/OFL.txt").text
+
+
+def test_the_header_names_the_four_steps_and_runs_locally(tmp_path):
+    html = local(tmp_path).get("/").text
+    header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+    assert 'id="stepper"' in header and STRINGS["runs_locally"] in header
+    assert STRINGS["runs_locally"] == "Runs on this computer"
+
+
+def test_the_stepper_links_back_to_convert_and_review_only_where_valid():
+    body = function_body(source("app.js"), "stepItem")
+    assert "showProcessing()" in body and "isActive(state.job)" in body
+    assert "backToReview()" in body and "state.stage === 'export'" in body
+
+
+def test_page_map_module_keeps_large_books_to_1500_squares():
+    js = source("app.js")
+    assert "<= 1500" in function_body(js, "pagesPerSquare")
+    assert "<= 600" in function_body(js, "squareSize")
+    cells = function_body(js, "mapCells")
+    assert "pagesPerSquare(" in cells and "document" not in cells  # pure
+    for state in ("'finding'", "'now'", "'todo'", "'done'", "'scanned'", "'digital'"):
+        assert state in js
+    assert "<= 600" in function_body(js, "stripBars")
+
+
+def test_page_map_renderer_reuses_its_squares():
+    body = function_body(source("app.js"), "renderPageMap")
+    assert "container.children.length !== cells.length" in body
+    assert "setProperty('--pm-size'" in body
+    assert "className" in body and "title" in body
+
+
+def test_page_map_labels_are_strings():
+    assert STRINGS["pagemap_page"] == "Page {n}"
+    assert STRINGS["pagemap_pages"] == "Pages {first} to {last}"
+    for key in ("pagemap_blank", "pagemap_scanned", "pagemap_finding"):
+        assert f"t('{key}')" in source("app.js")

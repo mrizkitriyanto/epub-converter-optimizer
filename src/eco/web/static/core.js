@@ -1,6 +1,6 @@
 import { newChoice, showSelect, showSetup } from './start.js';
 import { isActive, listen, newRun, pollQueue, showProcessing } from './job.js';
-import { abortReview, rebuild, showReview, step } from './review.js';
+import { abortReview, backToReview, rebuild, showReview, step } from './review.js';
 
 'use strict';
 
@@ -262,14 +262,28 @@ export function renderStepper() {
   if (states) $('stepper-list').replaceChildren(...states.map((status, i) => stepItem(i, status)));
 }
 
+// Going back is a link only where it is valid: Select always starts a new conversion, Convert
+// shows the progress while the job still runs, and Review is the way back from Export.
 export function stepItem(index, status) {
   const name = STEPS[index]();
   const completed = status === 'done' ? h('span', { class: 'visually-hidden' }, ` (${t('step_done')})`) : null;
-  // A completed Select step leads back to the start; later history stays in the open job.
-  const content =
-    status === 'done' && index === 0
-      ? h('a', { class: 'step-link', href: '#', onclick: (event) => onStepLink(event, index) }, name, completed)
-      : h('span', { class: 'step-label', 'aria-current': status === 'current' ? 'step' : null }, name, completed);
+  let go = null;
+  if (status === 'done' && index === 0) go = (event) => onStepLink(event, index);
+  if (index === 1 && state.stage === 'review' && state.job && isActive(state.job)) {
+    go = (event) => {
+      event.preventDefault();
+      showProcessing();
+    };
+  }
+  if (index === 2 && state.stage === 'export') {
+    go = (event) => {
+      event.preventDefault();
+      backToReview();
+    };
+  }
+  const content = go
+    ? h('a', { class: 'step-link', href: '#', onclick: go }, name, completed)
+    : h('span', { class: 'step-label', 'aria-current': status === 'current' ? 'step' : null }, name, completed);
   return h('li', { class: `step ${status}` }, content);
 }
 

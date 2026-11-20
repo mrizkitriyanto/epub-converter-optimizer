@@ -53,6 +53,13 @@ STRINGS = {
     # The page itself (templates/index.html and static/app.js). `{name}` marks a value that the
     # script puts in; the script has no sentence of its own.
     "tagline": "Convert PDF, Markdown and EPUB files for your e-reader",
+    "runs_locally": "Runs on this computer",
+    # The page map: one square per page of the book
+    "pagemap_page": "Page {n}",
+    "pagemap_pages": "Pages {first} to {last}",
+    "pagemap_blank": "blank",
+    "pagemap_scanned": "scanned",
+    "pagemap_finding": "has a finding",
     "noscript": "eco needs JavaScript. Turn it on in your browser, then reload this page.",
     "loading": "Loading…",
     "unit_b": "B",

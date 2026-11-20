@@ -710,6 +710,7 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     # StaticFiles takes the type from the system, and /etc/mime.types or the Windows registry may
     # say application/javascript for .js
     mimetypes.add_type("text/javascript", ".js")
+    mimetypes.add_type("font/woff2", ".woff2")  # Windows may not know it
     store = JobStore(data_dir)
     runner = Runner(store, data_dir)
 
