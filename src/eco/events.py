@@ -21,6 +21,16 @@ class StageEvent:
 class PageEvent:
     done: int
     total: int
+    page: int | None = None  # the source page that just finished, when the stage knows it
+
+
+@dataclass(frozen=True)
+class BookEvent:
+    """The pages of a PDF, sent once after the `read` stage: for the GUI's page map."""
+
+    pages: int
+    scanned: tuple[int, ...]
+    blank: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -28,7 +38,7 @@ class FindingEvent:
     finding: Finding
 
 
-Event = StageEvent | PageEvent | FindingEvent
+Event = StageEvent | PageEvent | FindingEvent | BookEvent
 
 
 class Cancelled(Exception):

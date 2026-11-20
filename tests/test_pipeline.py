@@ -12,7 +12,7 @@ from eco import pipeline
 from eco.book import Block
 from eco.bookfolder import load_source, read_report
 from eco.epub.validator import EpubValidationError
-from eco.events import Cancelled, FindingEvent, PageEvent, StageEvent
+from eco.events import BookEvent, Cancelled, FindingEvent, PageEvent, StageEvent
 from eco.models import ModelsMissing
 from eco.options import DEVICES, Options
 from eco.pdf.pages import PdfOpenError
@@ -195,7 +195,7 @@ def test_pdf_run_reports_stages_pages_and_findings(tmp_path, fixtures_dir, fake_
     seen = []
     r = convert(fixtures_dir["blank"], tmp_path, on_event=seen.append)
     assert stages(seen) == both(*ALL_STAGES)
-    assert [e for e in seen if isinstance(e, PageEvent)] == [PageEvent(1, 2), PageEvent(2, 2)]
+    assert [e for e in seen if isinstance(e, PageEvent)] == [PageEvent(1, 2, 1), PageEvent(2, 2, 3)]
     assert [e.finding for e in seen if isinstance(e, FindingEvent)] == r.findings
     blank = [f for f in r.findings if f.kind == "blank_page"]
     assert [(f.page, f.level) for f in blank] == [(2, "info")]
@@ -347,7 +347,7 @@ def test_page_that_never_reports_is_a_warning(tmp_path, fixtures_dir, fake_block
     assert [(f.page, f.level) for f in failed] == [(3, "warning")]
     assert FindingEvent(failed[0]) in seen
     assert failed == [f for f in read_report(r.book_dir) if f.kind == "page_failed"]
-    assert [e for e in seen if isinstance(e, PageEvent)] == [PageEvent(1, 2)]
+    assert [e for e in seen if isinstance(e, PageEvent)] == [PageEvent(1, 2, 1)]
 
 
 @pytest.mark.parametrize("asked_after", [0, 1, 2])
@@ -374,7 +374,7 @@ def test_layout_runs_in_chunks_of_contiguous_non_blank_pages(tmp_path, long_pdf,
     extract(long_pdf, tmp_path / "d", on_event=seen.append)
     assert [(c.first, c.last) for c in fake_blocks.calls] == [(1, 50), (51, 60), (62, 70)]
     assert {c.models for c in fake_blocks.calls} == {tmp_path / "d" / "models"}
-    assert [e for e in seen if isinstance(e, PageEvent)][-1] == PageEvent(69, 69)
+    assert [e for e in seen if isinstance(e, PageEvent)][-1] == PageEvent(69, 69, 70)
 
 
 def test_scanned_pages_get_an_ocr_finding_unless_ocr_is_off(tmp_path, fixtures_dir, fake_blocks):
@@ -447,7 +447,7 @@ def test_pages_mode_skips_blank_pages_and_needs_no_models_or_cache(tmp_path, fix
     assert image_count(r.outputs["epub"]) == 2
     assert [f.page for f in r.findings if f.kind == "blank_page"] == [2]
     assert stages(seen) == both("read", "layout", "epub", "optimize")
-    assert [e for e in seen if isinstance(e, PageEvent)] == [PageEvent(1, 2), PageEvent(2, 2)]
+    assert [e for e in seen if isinstance(e, PageEvent)] == [PageEvent(1, 2, 1), PageEvent(2, 2, 3)]
     assert r.book_dir is None
     assert not (tmp_path / "d" / "cache").exists()
 
@@ -593,3 +593,26 @@ def test_a_picture_page_1_of_a_digital_book_is_only_the_cover(tmp_path, fixtures
     markdown = (result.book_dir / "book.md").read_text(encoding="utf-8")
     assert "First page text." in markdown and "Words read from the cover" not in markdown
     assert [f.page for f in result.findings if f.kind == "cover_page"] == [1]
+
+
+def test_a_pdf_conversion_sends_one_book_event_after_read(tmp_path, fixtures_dir, fake_blocks):
+    seen = []
+    convert(fixtures_dir["blank"], tmp_path, on_event=seen.append)
+    books = [e for e in seen if isinstance(e, BookEvent)]
+    assert books == [BookEvent(pages=3, scanned=(), blank=(2,))]
+    read_done = seen.index(StageEvent("read", "finished"))
+    layout_start = seen.index(StageEvent("layout", "started"))
+    assert read_done < seen.index(books[0]) < layout_start
+
+
+def test_pages_mode_sends_the_book_event_too(tmp_path, fixtures_dir):
+    seen = []
+    convert(fixtures_dir["blank"], tmp_path, Options(mode="pages"), on_event=seen.append)
+    assert [e for e in seen if isinstance(e, BookEvent)] == [BookEvent(3, (), (2,))]
+
+
+def test_a_reused_extraction_sends_no_book_event(tmp_path, fixtures_dir, fake_blocks):
+    convert(fixtures_dir["blank"], tmp_path)
+    seen = []
+    convert(fixtures_dir["blank"], tmp_path, out="again", on_event=seen.append)
+    assert not [e for e in seen if isinstance(e, BookEvent)]

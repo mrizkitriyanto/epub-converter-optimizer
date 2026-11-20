@@ -19,7 +19,15 @@ from eco.epub.builder import build_epub
 from eco.epub.optimizer import optimize_epub
 from eco.epub.reader import epub_to_book
 from eco.epub.validator import validate_epub
-from eco.events import Cancelled, Event, Finding, FindingEvent, PageEvent, StageEvent
+from eco.events import (
+    BookEvent,
+    Cancelled,
+    Event,
+    Finding,
+    FindingEvent,
+    PageEvent,
+    StageEvent,
+)
 from eco.font_coverage import missing_characters
 from eco.models import models_dir
 from eco.options import DEVICES, Options, image_profile
@@ -118,6 +126,9 @@ def _read(
             elif ocr and info.is_scanned:
                 new.append(Finding(info.number, "ocr_page", "info", "Scanned page read with OCR."))
         _add(findings, new, on_event)
+    scanned = tuple(info.number for info in infos if info.is_scanned)
+    blank = tuple(info.number for info in infos if info.is_blank)
+    on_event(BookEvent(len(infos), scanned, blank))
     return infos
 
 
@@ -149,7 +160,7 @@ def _layout(
 
     def on_page(number: int) -> None:
         reported.add(number)
-        on_event(PageEvent(len(reported), len(numbers)))
+        on_event(PageEvent(len(reported), len(numbers), number))
 
     blocks: list[Block] = []
     for first, last in _chunks(numbers):
@@ -303,7 +314,7 @@ def page_book(
             for k, im in enumerate(page_slices(pdf, number, screen, options.landscape), 1):
                 image = _save_by_content(im, folder / "images", f"p{number:04d}-slice-{k}")
                 blocks.append(Block("image", f"Page {number}", page=number, image=image))
-            on_event(PageEvent(done, len(numbers)))
+            on_event(PageEvent(done, len(numbers), number))
     write_book(_pdf_book(pdf, _sha256(pdf), "en", blocks, folder), folder, findings)
     return folder
 

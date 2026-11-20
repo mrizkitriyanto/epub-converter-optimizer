@@ -784,3 +784,15 @@ def test_server_lock_of_a_killed_process_is_free(tmp_path):
         proc.kill()  # as a crash: the lock is never released by the process itself
         proc.join(10)
     wait_for(lambda: free(tmp_path), 10)
+
+
+def test_page_and_book_events_reach_the_browser_dict():
+    from eco.events import BookEvent, PageEvent
+
+    assert jobs._event(PageEvent(3, 10, 4)) == {"type": "page", "done": 3, "total": 10, "page": 4}
+    assert jobs._event(BookEvent(5, (2,), (5,))) == {
+        "type": "book",
+        "pages": 5,
+        "scanned": [2],
+        "blank": [5],
+    }

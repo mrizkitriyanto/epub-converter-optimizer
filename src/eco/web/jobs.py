@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from eco.events import FindingEvent, PageEvent, StageEvent
+from eco.events import BookEvent, FindingEvent, PageEvent, StageEvent
 from eco.options import Options, options_from_dict, upgrade_options
 
 if os.name == "nt":
@@ -377,7 +377,14 @@ def _event(e) -> dict:
     if isinstance(e, StageEvent):
         return {"type": "stage", "stage": e.stage, "status": e.status}
     if isinstance(e, PageEvent):
-        return {"type": "page", "done": e.done, "total": e.total}
+        return {"type": "page", "done": e.done, "total": e.total, "page": e.page}
+    if isinstance(e, BookEvent):
+        return {
+            "type": "book",
+            "pages": e.pages,
+            "scanned": list(e.scanned),
+            "blank": list(e.blank),
+        }
     f = e.finding
     return {
         "type": "finding",
