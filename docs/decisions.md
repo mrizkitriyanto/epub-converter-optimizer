@@ -1288,3 +1288,4 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - The existing reading style's Focus Mode also wraps word prefixes in presentational XHTML `<b>` elements during EPUB optimization. This covers Markdown, PDF, and EPUB inputs with one pass, and leaves code and math unchanged. EPUBCheck validates the resulting file before publication.
 - The Select files settings expose the option before conversion; Review can change it and reconvert. EPUB readers may override book formatting, but no reader feature or script is required.
 - The EPUB tab in Review exposes the Focus Mode switch and strength directly. Apply changes uses the existing rebuild route, preserving the original conversion.
+- The EPUB preview uses the same Focus Mode setting as the exported EPUB, and the Review controls request a live chapter preview before Apply changes. It remains an approximate page layout because the actual e-reader controls pagination.

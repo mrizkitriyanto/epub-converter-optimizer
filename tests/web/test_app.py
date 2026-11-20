@@ -577,6 +577,8 @@ def test_epub_review_exposes_focus_mode_and_strength_without_opening_settings(tm
     assert 'id="review-focus-apply"' in preview
     assert "review.format !== 'epub'" in js
     assert "focus_mode: $('review-focus-mode').checked" in js
+    assert "if (review.pages && review.pages.device_pages > 0) refreshDevice();" in js
+    assert "reviewFocusDirty()" in js
 
 
 def test_every_api_address_in_the_script_is_a_route(tmp_path):

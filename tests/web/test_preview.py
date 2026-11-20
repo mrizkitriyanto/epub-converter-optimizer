@@ -388,6 +388,31 @@ def test_an_epub_preview_simulates_the_style_of_the_job(c, app):
     )
 
 
+def test_epub_preview_shows_embedded_focus_setting(c, app):
+    source = ("a.md", b"# One\n\nHelloWorld reading sample.")
+    plain = make_job(app, source)
+    focused = make_job(app, source, options=Options(style=PageStyle(focus_mode=True)))
+    assert body(c.get(url(plain, "preview/epub/1.png"))) != body(
+        c.get(url(focused, "preview/epub/1.png"))
+    )
+    assert body(c.get(url(plain, "live.png?chapter=0"))) != body(
+        c.get(url(focused, "live.png?chapter=0"))
+    )
+
+
+def test_epub_live_preview_changes_with_focus_strength_before_rebuild(c, app):
+    job = make_job(app, ("a.md", b"# One\n\nHelloWorld reading sample."))
+
+    def preview(strength):
+        style = PageStyle(focus_mode=True, focus_strength=strength)
+        return c.get(
+            url(job, "live.png"),
+            params={"format": "epub", "chapter": 0, "style": json.dumps(style.to_json())},
+        )
+
+    assert body(preview("low")) != body(preview("high"))
+
+
 def test_an_epub_preview_is_not_turned(c, app):
     upright = make_job(app, ("a.md", TWO))
     turned = make_job(app, ("a.md", TWO), options=Options(style=PageStyle(orientation=90)))

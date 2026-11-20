@@ -503,7 +503,7 @@ class _Converter:
         bottom = s.margin_y + self.bar_area * (s.bar_position == "bottom")
         bar, bar_arguments = _bar(s, width, height)
         focus = ""
-        if s.focus_mode and self.view == "xtc":
+        if s.focus_mode:
             weights = available_weights(s.font, self.font_extra_dirs)
             heavier = [weight for weight in weights if weight > s.font_weight]
             if heavier:
@@ -604,9 +604,7 @@ class _Converter:
         if kind == "heading_open":
             return self._heading(int(token.tag[1]), inner[0], nested)
         if kind == "paragraph_open":
-            text = self._inline(
-                inner[0].children or [], focus=self.style.focus_mode and self.view == "xtc"
-            )
+            text = self._inline(inner[0].children or [], focus=self.style.focus_mode)
             return f"#align(center)[{text}]" if self.style.align == "center" else text
         if kind in ("bullet_list_open", "ordered_list_open"):
             return self._list(token, inner)

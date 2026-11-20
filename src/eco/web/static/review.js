@@ -370,7 +370,7 @@ export function refreshDevice() {
   const review = state.review;
   clearTimeout(review.liveTimer);
   if (review.liveAbort) review.liveAbort.abort();
-  if (review.panelOpen && liveDirty()) {
+  if ((review.panelOpen && liveDirty()) || (!review.panelOpen && review.format === 'epub' && reviewFocusDirty())) {
     setText($('device-status'), t('updating_preview')); // the old picture stays until the new one is here
     review.liveTimer = setTimeout(requestLive, LIVE_DELAY_MS);
     return;
@@ -395,16 +395,27 @@ export function liveDirty() {
   return JSON.stringify(live.style) !== JSON.stringify(options.style) || live.size !== options.size;
 }
 
+export function reviewFocusDirty() {
+  const { focus_mode, focus_strength } = state.job.options.style;
+  const { mode, strength } = state.review.focus;
+  return mode !== focus_mode || strength !== focus_strength;
+}
+
 export function liveQuery() {
   const review = state.review;
+  const style = review.panelOpen ? review.live.style : {
+    ...state.job.options.style,
+    focus_mode: review.focus.mode,
+    focus_strength: review.focus.strength,
+  };
   const format = review.format === 'epub'
     ? 'epub'
-    : (review.live.style.mode === 'xth' ? 'xtch' : 'xtc');
+    : (style.mode === 'xth' ? 'xtch' : 'xtc');
   const params = new URLSearchParams({
     format,
     view: review.view,
-    style: JSON.stringify(review.live.style),
-    size: review.live.size,
+    style: JSON.stringify(style),
+    size: review.panelOpen ? review.live.size : state.job.options.size,
   });
   const source = isPdf() ? review.sourceShown || nearestSource(review.page) : null;
   if (source) params.set('page', String(source));
@@ -628,6 +639,7 @@ export function onReviewFocusChange() {
   };
   $('review-focus-error').hidden = true;
   updateReviewFocus();
+  if (state.review.pages && state.review.pages.device_pages > 0) refreshDevice();
 }
 
 export async function applyReviewFocus() {
