@@ -1289,3 +1289,9 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - The Select files settings expose the option before conversion; Review can change it and reconvert. EPUB readers may override book formatting, but no reader feature or script is required.
 - The EPUB tab in Review exposes the Focus Mode switch and strength directly. Apply changes uses the existing rebuild route, preserving the original conversion.
 - The EPUB preview uses the same Focus Mode setting as the exported EPUB, and the Review controls request a live chapter preview before Apply changes. It remains an approximate page layout because the actual e-reader controls pagination.
+
+## 2026-11-20: End-to-end GUI redesign around a page map
+
+- The owner asked for an end-to-end redesign that is elegant, minimal and effective and clear about conversion progress. Of three Convert-screen directions (quiet column, pipeline rail, page map) the owner chose the page map: the book drawn as one square per source page, used on Select (scanned pages), Convert (progress and findings) and Review (navigation strip). Spec: `docs/superpowers/specs/2026-11-20-end-to-end-redesign-design.md`; it supersedes the Guided Workspace spec for visuals and interaction.
+- Review stays required before Export. Backend changes are additive only: page numbers in page events, a book event with scanned and blank pages, event timestamps, scanned/blank lists from inspect, and a recorded EPUBCheck outcome per EPUB.
+- Inter is bundled with the app; the GUI loads no font from the network.
