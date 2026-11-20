@@ -62,6 +62,7 @@ function bind() {
   $('page-strip').addEventListener('keydown', onStripKey);
   $('review-progress-link').addEventListener('click', showProcessing);
   $('back-to-review').addEventListener('click', backToReview);
+  $('convert-another').addEventListener('click', () => { location.hash = ''; });
   $('change-settings').addEventListener('click', () => {
     if (state.review.panelOpen) closePanel(true, true);
     else openPanel();

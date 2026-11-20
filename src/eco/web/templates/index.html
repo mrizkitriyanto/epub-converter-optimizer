@@ -390,12 +390,29 @@
   </section>
 
   <section id="stage-export" class="stage" aria-labelledby="export-title" hidden>
-    <div class="panel narrow export-panel">
-      <h2 id="export-title" tabindex="-1">{{ strings.export_title }}</h2>
-      <p id="export-status" class="notice" role="status"></p>
+    <div class="workspace workspace-export">
+      <span class="export-mark" aria-hidden="true"></span>
+      <h2 id="export-title" class="workspace-title" tabindex="-1">{{ strings.export_title }}</h2>
+      <p id="export-summary" class="workspace-intro"></p>
+      <p id="export-status" class="visually-hidden" role="status"></p>
       <ul id="export-files" class="export-files"></ul>
-      <div class="actions export-actions">
-        <button id="back-to-review" type="button" class="secondary">{{ strings.back_to_review }}</button>
+
+      <section class="export-section" aria-labelledby="checks-title">
+        <h3 id="checks-title">{{ strings.checks_title }}</h3>
+        <ul id="export-checks" class="export-checks"></ul>
+        <p id="export-style" class="export-check check-ok"></p>
+      </section>
+
+      <section id="export-others" class="export-section export-others" aria-labelledby="others-title" hidden>
+        <h3 id="others-title">{{ strings.other_files_title }}</h3>
+        <ul id="export-others-list" class="export-others-list"></ul>
+      </section>
+
+      <div class="export-footer">
+        <div class="export-links">
+          <button id="back-to-review" type="button" class="link-button">{{ strings.back_to_review }}</button>
+          <button id="convert-another" type="button" class="link-button">{{ strings.convert_another }}</button>
+        </div>
         <button id="delete-job" type="button" class="link-button destructive">{{ strings.delete_job }}</button>
       </div>
       <p id="delete-error" class="error-text" role="alert" hidden></p>

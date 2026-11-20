@@ -906,33 +906,70 @@ export function showExport() {
   focusStage();
 }
 
+// Export: what was made, what was checked, and what is left of the job. Only reviewed files are
+// here; the first download is the one blue button.
 export function renderExport() {
   const { job, review, run } = state;
+  const reviewed = job.files.map((info, index) => ({ info, index })).filter(({ info, index }) => isConverted(info) && review.reviewed.has(index));
   const rows = [];
+  const checks = [];
   let primary = true;
   let warnings = 0;
-  job.files.forEach((info, index) => {
-    if (!isConverted(info) || !review.reviewed.has(index)) return;
-    warnings += run.files[index].findings.filter((finding) => finding.level === 'warning').length;
+  const device = t(`device_${job.options.device.replace('-', '_')}`);
+  for (const { info, index } of reviewed) {
+    const file = run.files[index];
+    warnings += file.findings.filter((finding) => finding.level === 'warning').length;
     for (const [format, name] of Object.entries(info.outputs)) {
       const size = info.sizes[format];
-      const details = size === null || size === undefined
-        ? t(`output_${format === 'epub' ? 'epub' : 'xtc'}`)
-        : `${t(`output_${format === 'epub' ? 'epub' : 'xtc'}`)} · ${formatSize(size)}`;
-      const link = h('a', {
-        class: `button ${primary ? 'primary' : 'secondary'}`,
-        href: URLS.fileDownload(job.id, index, format),
-        download: true,
-      }, t('download_file', { format: t(`output_${format === 'epub' ? 'epub' : 'xtc'}`) }));
+      const parts = [t(format === 'epub' ? 'output_epub' : 'output_xtc')];
+      if (format === 'epub') parts.push(t('reflowable'));
+      else parts.push(t(format === 'xtch' ? 'xtc_kind_gray' : 'xtc_kind_bw', { device }));
+      if (size !== null && size !== undefined) {
+        parts.push(format === 'epub' && info.size ? `${formatSize(size)}, ${t('down_from', { before: formatSize(info.size) })}` : formatSize(size));
+      }
+      const label = t('download_file', { format: t(format === 'epub' ? 'output_epub' : 'output_xtc') });
+      const link = h('a', { class: `button ${primary ? 'primary' : 'secondary'}`, href: URLS.fileDownload(job.id, index, format), download: true }, label);
       primary = false;
-      rows.push(h('li', { class: 'export-file' },
-        h('span', { class: 'export-file-copy' }, h('strong', null, name), h('span', null, details)),
-        link,
-      ));
+      rows.push(h('li', { class: 'export-file' }, h('span', { class: 'export-file-copy' }, h('strong', null, name), h('span', null, parts.join(' · '))), link));
     }
-  });
+    if (!info.outputs.epub || !info.epubcheck) continue; // an XTC only, or a job from before the check was recorded
+    const lead = reviewed.length > 1 ? `${info.name}: ` : '';
+    const found = file.findings.filter((finding) => finding.kind === 'epubcheck_warning');
+    if (info.epubcheck === 'passed') {
+      checks.push(h('li', { class: 'export-check check-ok' }, lead + t('epubcheck_passed')));
+    } else if (info.epubcheck === 'passed_with_warnings') {
+      checks.push(h('li', { class: 'export-check check-warn' }, h('details', null, h('summary', null, lead + tn('epubcheck_warnings', found.length || 1)), h('ul', null, ...found.map((finding) => h('li', null, finding.message))))));
+    } else {
+      checks.push(h('li', { class: 'export-check check-off' }, lead + t('epubcheck_not_run')));
+    }
+  }
   $('export-files').replaceChildren(...rows);
+  $('export-checks').replaceChildren(...checks);
   setText($('export-status'), warnings ? tn('export_warnings', warnings) : t('export_ready'));
+  const seen = tn('findings_seen', warnings);
+  const first = reviewed[0];
+  const summary = [];
+  if (reviewed.length === 1) {
+    summary.push(first.info.name);
+    if (run.files[first.index].book) summary.push(tn('pages', run.files[first.index].book.pages));
+  } else {
+    summary.push(t('export_files', { n: reviewed.length }));
+  }
+  summary.push(t('reviewed_seen', { findings: seen }));
+  if (reviewed.length === 1 && run.files[first.index].seconds !== null) {
+    summary.push(t('converted_in', { time: formatDuration(run.files[first.index].seconds) }));
+  }
+  setText($('export-summary'), summary.join(' · '));
+  // the applied values, not a style name: the job does not keep one
+  const style = job.options.style;
+  const values = [t('style_value_size', { n: style.font_size }), t('style_value_spacing', { n: style.line_height }), t('style_value_margins', { n: style.margin_x })];
+  if (style.focus_mode) values.push(t('style_value_focus', { strength: t(`focus_${style.focus_strength}`) }));
+  setText($('export-style'), t('style_applied', { values: values.join(', ') }));
+  const others = job.files.map((info, index) => ({ info, index })).filter(({ info }) => !isConverted(info));
+  $('export-others').hidden = others.length === 0;
+  $('export-others-list').replaceChildren(
+    ...others.map(({ info, index }) => h('li', null, h('span', null, `${info.name} · ${t('review_not_converted')}`), ' ', h('a', { href: '#', onclick: (event) => { event.preventDefault(); showFile(index); } }, t('review_it')))),
+  );
 }
 
 export function backToReview() {

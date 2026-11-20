@@ -1088,7 +1088,7 @@ def test_the_focus_leaves_the_models_note_before_the_note_is_hidden(tmp_path):
 
 
 def test_the_texts_of_ruling_m2_r45():
-    assert STRINGS["delete_job"] == "Delete conversion"
+    assert STRINGS["delete_job"] == "Delete this conversion"  # the page map redesign's wording
     assert STRINGS["deleting"] == "Deleting…"
     assert STRINGS["delete_confirm"] == (
         "Delete this conversion? The uploaded files, the EPUB files and the previews are "
@@ -1844,3 +1844,38 @@ def test_review_texts():
         "{n} changes shown in the preview, not yet in the files"
     )
     assert STRINGS["apply_wait"] == "Available when every file has converted"
+
+
+# Export with files, checks, other files and a quiet delete
+
+
+def test_export_has_files_checks_other_files_and_quiet_delete(tmp_path):
+    export = stage_markup(local(tmp_path).get("/").text, "export")
+    names = ("export-title", "export-summary", "export-files", "export-checks", "export-style")
+    names += ("export-others", "back-to-review", "convert-another", "delete-job")
+    for name in names:
+        assert f'id="{name}"' in export, name
+    assert export.index('id="export-files"') < export.index('id="export-checks"')
+    assert export.index('id="export-checks"') < export.index('id="delete-job"')
+    assert STRINGS["export_title"] == "Ready to download"
+
+
+def test_export_states_each_epubcheck_outcome_and_omits_it_for_old_jobs():
+    body = function_body(source("app.js"), "renderExport")
+    for key in ("epubcheck_passed", "epubcheck_warnings", "epubcheck_not_run"):
+        assert f"'{key}" in body, key
+    assert "info.epubcheck" in body
+    assert STRINGS["epubcheck_not_run"] == "EPUBCheck did not run, so this EPUB was not validated."
+    assert STRINGS["epubcheck_warnings_other"] == "EPUBCheck passed with {n} warnings."
+
+
+def test_export_restates_style_values_not_a_name():
+    body = function_body(source("app.js"), "renderExport")
+    assert "t('style_applied'" in body and "saved" not in body
+
+
+def test_export_first_download_is_the_one_primary():
+    body = function_body(source("app.js"), "renderExport")
+    assert "primary ? 'primary' : 'secondary'" in body
+    assert "$('convert-another')" not in body  # bound once in bind()
+    assert "$('convert-another').addEventListener" in function_body(source("app.js"), "bind")
