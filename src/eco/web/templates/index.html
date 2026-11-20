@@ -316,14 +316,22 @@
     </div>
 
     <div id="review-dock" class="review-dock" aria-label="{{ strings.review_controls_label }}">
-      <label for="style-font-size">{{ strings.live_font_label }} <output id="style-font-size-value" for="style-font-size"></output></label>
-      <input id="style-font-size" type="range" min="16" max="64" step="1">
-      <label for="line-height">{{ strings.line_height_label }} <output id="line-height-value" for="line-height"></output></label>
-      <input id="line-height" type="range" min="100" max="250" step="1">
-      <label for="margin-x">{{ strings.margin_x_label }} <output id="margin-x-value" for="margin-x"></output></label>
-      <input id="margin-x" type="range" min="0" max="80" step="1">
-      <label for="first-line-indent">{{ strings.first_line_indent_label }} <output id="first-line-indent-value" for="first-line-indent"></output></label>
-      <input id="first-line-indent" type="range" min="0" max="400" step="1">
+      <div class="review-control">
+        <label for="style-font-size">{{ strings.live_font_label }} <output id="style-font-size-value" for="style-font-size"></output></label>
+        <input id="style-font-size" type="range" min="16" max="64" step="1">
+      </div>
+      <div class="review-control">
+        <label for="line-height">{{ strings.line_height_label }} <output id="line-height-value" for="line-height"></output></label>
+        <input id="line-height" type="range" min="100" max="250" step="1">
+      </div>
+      <div class="review-control">
+        <label for="margin-x">{{ strings.margin_x_label }} <output id="margin-x-value" for="margin-x"></output></label>
+        <input id="margin-x" type="range" min="0" max="80" step="1">
+      </div>
+      <div class="review-control">
+        <label for="first-line-indent">{{ strings.first_line_indent_label }} <output id="first-line-indent-value" for="first-line-indent"></output></label>
+        <input id="first-line-indent" type="range" min="0" max="400" step="1">
+      </div>
       <label class="review-focus-toggle"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
       <div id="focus-strength-field" class="review-control">
         <label for="focus-strength">{{ strings.focus_strength_label }} <output id="focus-strength-value" for="focus-strength"></output></label>

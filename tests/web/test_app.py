@@ -569,7 +569,7 @@ def test_focus_mode_can_be_selected_for_epub_before_and_after_conversion(tmp_pat
 
 def test_epub_review_exposes_focus_mode_and_strength_without_opening_settings(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
-    dock = html.split('<div id="review-dock"', 1)[1].split('</section>', 1)[0]
+    dock = html.split('<div id="review-dock"', 1)[1].split("</section>", 1)[0]
     assert 'id="focus-mode"' in dock
     assert 'id="focus-strength"' in dock
     assert "review.live.style[name] = value" in js
@@ -580,9 +580,7 @@ def test_epub_review_exposes_focus_mode_and_strength_without_opening_settings(tm
 def test_expert_review_keeps_common_reading_controls_in_the_main_dock(tmp_path):
     html = local(tmp_path).get("/").text
     review = stage_markup(html, "review")
-    dock = review.split('<div id="review-dock"', 1)[1].split(
-        '<aside id="settings-panel"', 1
-    )[0]
+    dock = review.split('<div id="review-dock"', 1)[1].split('<aside id="settings-panel"', 1)[0]
     for control in ("style-font-size", "line-height", "margin-x", "first-line-indent"):
         assert re.search(rf'<input id="{control}" type="range"', dock)
         assert f'for="{control}"' in dock
@@ -659,6 +657,45 @@ def test_returning_from_export_reuses_the_existing_review_state():
     assert "showReview();" in back
 
 
+def test_review_sliders_group_their_label_value_and_control(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    dock = review.split('<div id="review-dock"', 1)[1]
+    for control in ("style-font-size", "line-height", "margin-x", "first-line-indent"):
+        pattern = (
+            rf'<div class="review-control">\s*<label for="{control}">.*?'
+            rf'<output id="{control}-value".*?</output></label>\s*'
+            rf'<input id="{control}" type="range"'
+        )
+        assert re.search(pattern, dock, re.DOTALL), control
+
+
+def test_review_responsive_css_stacks_comparison_and_keeps_touch_targets_large():
+    css = source("app.css")
+    narrow = re.search(r"@media \(max-width: 700px\) \{(.*?)\n\}", css, re.DOTALL).group(1)
+    assert re.search(
+        r"\.review-grid,.*?grid-template-columns:\s*minmax\(0, 1fr\)", narrow, re.DOTALL
+    )
+    coarse = re.search(
+        r"@media \(pointer: coarse\), \(max-width: 700px\) \{(.*?)\n\}", css, re.DOTALL
+    ).group(1)
+    assert 'input[type="range"]' in coarse
+    assert "min-height: 44px" in coarse
+
+
+def test_step_navigation_wraps_in_document_flow():
+    css = source("app.css")
+    stepper = re.search(r"\.stepper ol \{(.*?)\n\}", css, re.DOTALL).group(1)
+    assert "flex-wrap: wrap" in stepper
+    assert "position: fixed" not in css
+
+
+def test_review_and_export_statuses_are_text_not_color_only():
+    assert STRINGS["reviewed"] == "reviewed"
+    assert STRINGS["review_required"] == "review required"
+    assert "warning" in STRINGS["export_warnings_one"].lower()
+    assert "warnings" in STRINGS["export_warnings_other"].lower()
+
+
 def test_every_api_address_in_the_script_is_a_route(tmp_path):
     app = create_app(tmp_path, token=None)
     found = re.findall(r"""['"`](/api/[^'"`]*)['"`]""", source("app.js"))
@@ -690,7 +727,9 @@ def stage_markup(html, name):
 
 def test_guided_workspace_has_four_product_steps_and_no_settings_step(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
-    assert [STRINGS[key] for key in ("step_select", "step_processing", "step_review", "step_export")] == [
+    assert [
+        STRINGS[key] for key in ("step_select", "step_processing", "step_review", "step_export")
+    ] == [
         "Select",
         "Convert",
         "Review",
@@ -1073,7 +1112,7 @@ def test_export_has_a_low_emphasis_delete_button_and_a_line_for_its_failure(tmp_
     export = stage_markup(local(tmp_path).get("/").text, "export")
     button = (
         f'<button id="delete-job" type="button" class="link-button destructive">'
-        f'{STRINGS["delete_job"]}'
+        f"{STRINGS['delete_job']}"
     )
     assert f"{button}</button>" in export
     assert '<p id="delete-error" class="error-text" role="alert" hidden></p>' in export

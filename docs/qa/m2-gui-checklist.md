@@ -1,5 +1,27 @@
 # M2 web GUI: manual QA checklist
 
+## Guided Workspace redesign
+
+- Complete the required **Select → Convert → Review → Export** path. Export must not open until
+  every successfully converted file has been approved in Review.
+- In a mixed multi-file job, approve every successful file. Failed and cancelled files remain
+  inspectable but do not block Export; the file picker says `reviewed`, `review required`, or
+  `not converted` in text.
+- Keep Original and device output side by side at desktop width. Selecting a finding and using page
+  navigation must keep both panes synchronized.
+- Move Text size, Line height, Left and right margin, and First-line indent sliders. Each value and
+  the device preview update after the debounce; only the newest response may replace the image.
+- Toggle Focus Mode. Focus strength disappears and cannot receive keyboard focus while off, then
+  returns with its previous Low, Medium, or High value when Focus Mode is enabled.
+- Open Advanced typography and verify saved styles, font/weight, vertical margin, paragraph
+  spacing, alignment, images, progress bar, orientation, quality, and JSON copy remain available.
+- In Export, verify every reviewed output has the correct name, size, format, and download. Return
+  to Review and confirm the selected file, finding, page, view, format, and style values remain.
+- At 1280, 1000, and 390 px, confirm there is no horizontal page scroll. At 390 px, findings,
+  Original, and device output stack in that order and every control remains at least 44 px tall.
+- Complete the whole path with only the keyboard. Focus is always visible; page arrow shortcuts do
+  not fire while a button, link, slider, input, select, or textarea has focus.
+
 ## M5 reading style
 
 Run the additional [M5 reading style checks](m5-reading-style-checklist.md) in the same browsers, including shared fonts, saved defaults, Focus Mode, fallback warnings, and X4 device comparison.

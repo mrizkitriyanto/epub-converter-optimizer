@@ -799,15 +799,13 @@ li.finding.plain {
   border-radius: var(--radius-panel);
 }
 
-.review-dock > label:not(.review-focus-toggle),
 .review-control label {
   display: flex;
   justify-content: space-between;
   gap: 8px;
 }
 
-.review-dock > input[type="range"] {
-  grid-row: 2;
+.review-control input[type="range"] {
   width: 100%;
   accent-color: var(--accent);
 }
@@ -992,9 +990,6 @@ output {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .review-dock > input[type="range"] {
-    grid-row: auto;
-  }
 }
 
 @media (max-width: 860px) {
@@ -1056,6 +1051,7 @@ output {
   select,
   input[type="text"],
   input[type="number"],
+  input[type="range"],
   .choose,
   .segmented span {
     min-height: 44px;
