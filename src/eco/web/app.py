@@ -201,9 +201,14 @@ class _Guard:
         # any other kind of scope never reaches the app
 
     async def _http(self, scope: Scope, receive: Receive, send: Send) -> None:
+        static = scope.get("path", "").startswith("/static/")
+
         async def send_secured(message: Message) -> None:
             if message["type"] == "http.response.start":
-                MutableHeaders(scope=message).update(SECURITY_HEADERS)
+                headers = MutableHeaders(scope=message)
+                headers.update(SECURITY_HEADERS)
+                if static:  # after an upgrade the page must not run the old modules
+                    headers["Cache-Control"] = "no-cache"
             await send(message)
 
         refusal = self._refusal(Request(scope))
@@ -764,7 +769,11 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
         # tojson escapes <, > and &, so no string can end the script element
-        context = {"strings": STRINGS, "max_upload_mb": str(app.state.max_upload_mb)}
+        context = {
+            "strings": STRINGS,
+            "max_upload_mb": str(app.state.max_upload_mb),
+            "builtin_style": PageStyle().to_json(),  # what "eco default" on Select sends
+        }
         return _templates.TemplateResponse(request, "index.html", context)
 
     # One answer for every error, so the page reads one key: FastAPI's own 404, 405 and 422, the

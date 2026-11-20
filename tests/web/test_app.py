@@ -559,7 +559,9 @@ def test_the_font_size_limits_of_the_page_are_the_servers(tmp_path):
 def test_the_page_keeps_the_font_size_in_the_style_of_the_options(tmp_path):
     js = source("app.js")
     assert "options.font_size" not in js  # M2's key
-    assert "...selectedStyle" in function_body(js, "readOptions")  # the chosen saved style
+    assert "...(selectedStyle || builtinStyle())" in function_body(
+        js, "readOptions"
+    )  # the chosen saved style
     assert "style: review.live.style" in js  # a rebuild keeps every page-style field
 
 
@@ -1681,7 +1683,7 @@ def test_a_pdf_row_draws_its_page_map_from_the_inspect_lists():
 def test_the_start_options_take_style_values_from_the_chosen_style():
     body = function_body(source("app.js"), "readOptions")
     assert "$('font-size')" not in body and "$('embed-focus')" not in body
-    assert "...selectedStyle" in body
+    assert "...(selectedStyle || builtinStyle())" in body
     assert 'input[name="size"]:checked' in body
 
 
@@ -1918,3 +1920,80 @@ def test_a_cancel_stops_the_running_stage_in_words():
     assert "event.type === 'end' && event.status === 'cancelled'" in apply
     status = function_body(js, "stageStatus")
     assert "file.status === 'cancelled'" in status
+
+
+# Final review fixes
+
+
+def test_layout_counts_its_pages_and_never_a_guessed_half():
+    body = function_body(source("app.js"), "stageFraction")
+    assert "if (name === 'layout') return file.page && file.page.total > 0" in body
+
+
+def test_every_percent_shown_goes_through_one_never_falling_value():
+    js = source("app.js")
+    assert "file.shown = Math.max(file.shown" in function_body(js, "shownFraction")
+    assert "shownFraction(" in function_body(js, "renderProcessing")
+    assert "shownFraction(" in function_body(js, "renderReviewStatus")
+    assert "file.segShown" in function_body(js, "renderStageBar")
+
+
+def test_a_queued_job_says_why_it_waits():
+    body = function_body(source("app.js"), "renderProcessing")
+    assert "tn('queue_waiting', job.position)" in body and "t('queue_starting')" in body
+
+
+def test_apply_waits_for_the_carried_file_before_review_opens():
+    js = source("app.js")
+    apply = function_body(js, "apply")
+    assert "carry.fileIndex" in apply
+    take = function_body(js, "takeCarry")
+    assert "if (!isConverted(state.job.files[carry.fileIndex] || {}))" in take
+
+
+def test_the_style_panel_opens_with_the_live_size():
+    body = function_body(source("app.js"), "openPanel")
+    assert "$('live-size').value = review.live.size;" in body and "options.size" not in body
+
+
+def test_eco_default_sends_the_built_in_style(tmp_path):
+    from eco.style import PageStyle
+
+    html = local(tmp_path).get("/").text
+    found = re.search(r'<script id="builtin-style" type="application/json">(.*?)</script>', html)
+    assert found and json.loads(found.group(1)) == PageStyle().to_json()
+    assert "builtinStyle()" in function_body(source("app.js"), "readOptions")
+
+
+def test_review_names_every_failed_file_and_the_file_select_says_each_state():
+    js = source("app.js")
+    status = function_body(js, "renderReviewStatus")
+    assert "parts.push(" in status and "forEach" in status
+    pick = function_body(js, "renderFilePick")
+    for key in ("queue_converting", "queue_failed", "queue_cancelled"):
+        assert f"t('{key}')" in pick, key
+    assert "state.job.files[event.index].error = event.error" in function_body(js, "apply")
+
+
+def test_the_strip_steps_back_past_pages_without_a_device_page():
+    js = source("app.js")
+    assert "lastPageUpTo(" in function_body(js, "goToPlace")
+    assert "map[i] <= source" in function_body(js, "lastPageUpTo")
+
+
+def test_static_files_are_revalidated_after_an_upgrade(tmp_path):
+    r = local(tmp_path).get("/static/app.js")
+    assert r.headers["cache-control"] == "no-cache"
+    assert "cache-control" not in {k.lower() for k in local(tmp_path).get("/api/health").headers}
+
+
+def test_a_reverted_edit_is_not_a_change():
+    assert "changedCount() > 0" in function_body(source("app.js"), "liveDirty")
+
+
+def test_no_module_looks_up_the_page_while_it_loads():
+    # the modules import each other: one that runs $() at its top level runs before core.js has
+    # made $, and the whole page stops
+    for name in ("start.js", "job.js", "review.js", "pagemap.js"):
+        text = (SOURCES / "static" / name).read_text(encoding="utf-8")
+        assert not re.search(r"^(?:export )?(?:const|let) \w+ = .*\$\(", text, re.MULTILINE), name

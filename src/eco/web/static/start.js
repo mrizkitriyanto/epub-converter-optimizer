@@ -160,8 +160,13 @@ export async function uploadLibraryFonts() {
 }
 
 // The saved styles fill Reading style, the default one chosen. The chosen style's values are the
-// style of the new job; "eco default" sends none, so the server's own default applies.
-let selectedStyle = {};
+// style of the new job. "eco default" sends the built-in values: sending none would let the
+// server fill in the saved default style.
+// Read when asked, not when the module loads: core.js has not made $ yet then.
+export function builtinStyle() {
+  return JSON.parse($('builtin-style').textContent);
+}
+let selectedStyle = null;
 
 async function loadStyles() {
   const select = $('select-style');
@@ -184,7 +189,7 @@ async function loadStyles() {
 
 export async function chooseStyle() {
   const name = $('select-style').value;
-  selectedStyle = name ? await getJson(`/api/styles/${encodeURIComponent(name)}`) : {};
+  selectedStyle = name ? await getJson(`/api/styles/${encodeURIComponent(name)}`) : null;
 }
 
 // Markdown and EPUB files need no model, and neither does a PDF read as page images. While the
@@ -421,7 +426,7 @@ export function readOptions() {
     title: text($('book-title')),
     author: text($('book-author')),
     lang: text($('book-lang')),
-    style: { ...selectedStyle },
+    style: { ...(selectedStyle || builtinStyle()) },
   };
 }
 

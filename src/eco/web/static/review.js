@@ -1,5 +1,5 @@
 import { $, JSON_HEADERS, LIVE_DELAY_MS, URLS, VIEW_FOR_FIRMWARE, errorText, focusStage, formatDuration, formatSize, getJson, h, readAsDataUrl, request, route, setStage, setText, state, t, tn } from './core.js';
-import { findingParts, isActive, isConverted, progressFraction, stagesFor } from './job.js';
+import { findingParts, isActive, isConverted, shownFraction, stagesFor } from './job.js';
 import { renderStrip, stripBars } from './pagemap.js';
 
 const STYLE_IDS = {
@@ -104,8 +104,10 @@ export function showReview() {
 export function takeCarry(review) {
   const carry = state.carry;
   if (!carry || carry.toJob !== state.job.id) return;
+  // the carried place belongs to its own file: never applied to another one
+  if (!isConverted(state.job.files[carry.fileIndex] || {})) return;
   state.carry = null;
-  if (isConverted(state.job.files[carry.fileIndex] || {})) review.fileIndex = carry.fileIndex;
+  review.fileIndex = carry.fileIndex;
   const outputs = state.job.files[review.fileIndex].outputs || {};
   if (outputs[carry.format] || (carry.format !== 'epub' && (outputs.xtch || outputs.xtc))) review.format = carry.format;
   review.view = carry.view;
@@ -172,22 +174,21 @@ export function renderReview() {
 // cancelled, and leads back to Convert.
 export function renderReviewStatus(job) {
   const run = state.run;
-  let text = '';
+  const parts = [];
   const active = isActive(job);
   const ready = job.files.findIndex((info, i) => i !== state.review.fileIndex && isConverted(info) && !state.review.reviewed.has(i));
-  const failed = run.files.findIndex((file) => file.status === 'failed');
   if (active && run.current !== null && run.files[run.current].status === 'running') {
     const file = run.files[run.current];
     const info = job.files[run.current];
-    const percent = Math.round(Math.max(file.shown, progressFraction(file, stagesFor(info, job.options, file.stages))) * 100);
-    text = t('converting_status', { name: info.name, percent });
-  } else if (job.status === 'cancelled') {
-    text = t('job_cancelled_status');
-  } else if (failed >= 0) {
-    text = t('file_failed_status', { name: job.files[failed].name });
+    const percent = Math.round(shownFraction(file, stagesFor(info, job.options, file.stages)) * 100);
+    parts.push(t('converting_status', { name: info.name, percent }));
   }
-  if (ready >= 0) text = [text, t('ready_to_review', { name: job.files[ready].name })].filter(Boolean).join(' · ');
-  setText($('review-status'), text);
+  run.files.forEach((file, i) => {
+    if (file.status === 'failed') parts.push(t('file_failed_status', { name: job.files[i].name }));
+  });
+  if (job.status === 'cancelled') parts.push(t('job_cancelled_status'));
+  if (ready >= 0) parts.push(t('ready_to_review', { name: job.files[ready].name }));
+  setText($('review-status'), parts.join(' · '));
   $('review-progress-link').hidden = !active;
 }
 
@@ -234,8 +235,17 @@ export function goToPlace(page) {
     goTo(target);
     return;
   }
-  const device = firstPageFrom(state.review.pages, target);
+  // backwards, the last device page at or before the page: a blank page has none of its own
+  const pages = state.review.pages;
+  const device = target < place.current ? lastPageUpTo(pages, target) || firstPageFrom(pages, target) : firstPageFrom(pages, target);
   if (device) goTo(device);
+}
+
+// the last device page whose source page is `source` or an earlier one
+export function lastPageUpTo(pages, source) {
+  const map = pages.page_map;
+  for (let i = map.length - 1; i >= 0; i -= 1) if (map[i] > 0 && map[i] <= source) return i + 1;
+  return null;
 }
 
 export function onStripClick(event) {
@@ -281,11 +291,16 @@ export function renderFilePick(job) {
   pick.hidden = job.files.length < 2;
   if (pick.hidden) return;
   const select = $('review-file');
-  const key = `${job.id}:${job.files.map(isConverted).join()}:${[...state.review.reviewed].join()}`;
+  const statuses = state.run.files.map((file) => file.status);
+  const key = `${job.id}:${job.status}:${job.files.map(isConverted).join()}:${statuses.join()}:${[...state.review.reviewed].join()}`;
   if (select.dataset.key !== key) {
     select.dataset.key = key;
     const label = (file, i) => {
-      if (!isConverted(file)) return `${file.name} (${t('review_not_converted')})`;
+      let word = t('review_not_converted');
+      if (statuses[i] === 'running') word = t('queue_converting');
+      else if (statuses[i] === 'failed') word = t('queue_failed');
+      else if (job.status === 'cancelled' && !isConverted(file)) word = t('queue_cancelled');
+      if (!isConverted(file)) return `${file.name} (${word})`;
       return `${file.name} (${t(state.review.reviewed.has(i) ? 'reviewed' : 'review_required')})`;
     };
     select.replaceChildren(...job.files.map((file, i) => h('option', { value: String(i) }, label(file, i))));
@@ -546,10 +561,9 @@ export function deviceCaption(text) {
   return `${t(`device_${device.replace('-', '_')}`)} · ${text}`;
 }
 
+// Compared value by value: the panel and the job keep the style's keys in other orders.
 export function liveDirty() {
-  const { live } = state.review;
-  const options = state.job.options;
-  return JSON.stringify(live.style) !== JSON.stringify(options.style) || live.size !== options.size;
+  return changedCount() > 0;
 }
 
 export function liveQuery() {
@@ -657,7 +671,7 @@ export async function openPanel() {
   const review = state.review;
   review.panelOpen = true;
   writeStyle(review.live.style);
-  $('live-size').value = options.size;
+  $('live-size').value = review.live.size;
   $('settings-panel').hidden = false;
   $('review-grid').classList.add('with-panel');
   $('change-settings').setAttribute('aria-expanded', 'true');

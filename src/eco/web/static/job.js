@@ -26,6 +26,7 @@ export function newFileRun() {
     endedAt: null,
     error: null,
     shown: 0,
+    segShown: {}, // the fill shown per stage, which never goes back either
   };
 }
 
@@ -91,8 +92,11 @@ export function apply(event, replaying) {
       state.job.files[event.index].outputs = event.outputs || {};
       state.job.files[event.index].sizes = event.sizes || {};
       state.job.files[event.index].epubcheck = event.epubcheck;
-      // the first file that converts opens Review; later ones never take the user away from it
-      if (!run.reviewOpened && state.stage === 'processing') {
+      // the first file that converts opens Review, or after Apply the file the user was on; later
+      // files never take the user away from it
+      const carry = state.carry && state.carry.toJob === state.job.id ? state.carry : null;
+      const awaited = carry ? carry.fileIndex === event.index : true;
+      if (!run.reviewOpened && state.stage === 'processing' && awaited) {
         run.reviewOpened = true;
         showReview();
       }
@@ -100,6 +104,16 @@ export function apply(event, replaying) {
       target.status = 'failed';
       target.endedAt = at;
       target.error = event.error || null;
+      state.job.files[event.index].error = event.error || null;
+      // the file Apply was waiting for failed: Review opens on the first one that converted
+      const carry = state.carry && state.carry.toJob === state.job.id ? state.carry : null;
+      if (carry && carry.fileIndex === event.index) {
+        state.carry = null;
+        if (!run.reviewOpened && state.stage === 'processing' && state.job.files.some(isConverted)) {
+          run.reviewOpened = true;
+          showReview();
+        }
+      }
     }
   } else if (event.type === 'stage' && file) {
     file.stages[event.stage] = event.status;
@@ -225,13 +239,14 @@ export function stageWeight(names, name) {
   return STAGE_WEIGHTS[name] / total;
 }
 
-// How far a stage is: done or reused 1, a running stage its pages, or half when it counts none.
-// A stage a failure stopped keeps only the pages it finished.
+// How far a stage is: done or reused 1; layout its pages (0 until the first page, while the models
+// load); another running stage half, as it counts nothing. A stage a failure stopped keeps only the
+// pages it finished.
 export function stageFraction(file, names, name) {
   const status = stageStatus(file, names, name);
   if (status === 'done' || status === 'reused') return 1;
   if (status !== 'now' && status !== 'stopped') return 0;
-  if (name === 'layout' && file.page && file.page.total > 0) return file.page.done / file.page.total;
+  if (name === 'layout') return file.page && file.page.total > 0 ? file.page.done / file.page.total : 0;
   return status === 'stopped' ? 0 : 0.5;
 }
 
@@ -242,6 +257,12 @@ export function progressFraction(file, names) {
   let done = 0;
   for (const name of names) done += stageWeight(names, name) * stageFraction(file, names, name);
   return Math.min(done, 0.99);
+}
+
+// The percent the screens show: the largest value so far, so it never goes back, wherever it is drawn.
+export function shownFraction(file, names) {
+  file.shown = Math.max(file.shown, progressFraction(file, names));
+  return file.shown;
 }
 
 export function formatClock(seconds) {
@@ -292,10 +313,12 @@ export function renderProcessing() {
   if (file.book) meta.push(tn('pages', file.book.pages));
   meta.push(t(`device_${job.options.device.replace('-', '_')}`), outputsText(job.options));
   setText($('file-meta'), meta.join(' · '));
-  file.shown = Math.max(file.shown, progressFraction(file, names));
-  const percent = Math.round(file.shown * 100);
+  const percent = Math.round(shownFraction(file, names) * 100);
   setText($('percent'), `${percent}%`);
-  setText($('time-line'), timeLine(file));
+  let line = timeLine(file);
+  // a queued job says why it waits: the jobs ahead of it, or that it starts soon
+  if (job.status === 'queued') line = job.position > 0 ? tn('queue_waiting', job.position) : t('queue_starting');
+  setText($('time-line'), line);
   renderStageBar(names, file);
   renderMap(file);
   // a square of a converted file opens that page in Review: a mouse shortcut, the keyboard has the
@@ -380,7 +403,8 @@ export function renderStageBar(names, file) {
     const status = stageStatus(file, names, name);
     const shown = status === 'reused' ? 'done' : status;
     segment.className = `seg seg-${shown}`;
-    segment.querySelector('.seg-fill').style.width = `${Math.round(stageFraction(file, names, name) * 100)}%`;
+    file.segShown[name] = Math.max(file.segShown[name] || 0, stageFraction(file, names, name));
+    segment.querySelector('.seg-fill').style.width = `${Math.round(file.segShown[name] * 100)}%`;
     setText(segment.querySelector('.seg-state'), stageText(file, name, status));
   }
 }
