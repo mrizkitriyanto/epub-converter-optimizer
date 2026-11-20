@@ -8,29 +8,39 @@ eco berupa alat baris perintah dengan GUI web yang berjalan di komputer Anda sen
 
 ## Persyaratan
 
-Tabel ini menjelaskan pemasangan dari sumber. Ukuran arsip dan versi OS minimum untuk paket native dijelaskan di bawah.
-
-| | macOS | Windows | Linux |
+| | Windows | macOS | Linux |
 |---|---|---|---|
-| Sistem | 14+, Apple Silicon (Mac Intel tidak didukung) | 10/11, x64 | x64, glibc 2.28+ (Ubuntu 20.04+, Debian 10+, RHEL 8+) |
-| RAM | 8 GB | 8 GB | 8 GB |
-| Disk | sekitar 3 GB | sekitar 3 GB | sekitar 3 GB (dengan PyTorch versi CPU) |
-| Unduhan pertama | sekitar 0,8 GB (paket 0,35 GB, model 0,42 GB) | sekitar 0,9 GB | sekitar 1 GB (wajib PyTorch versi CPU) |
-| GPU | opsional (GPU Apple dipakai otomatis) | opsional | opsional |
+| Paket native | Windows 10/11 x64 | macOS 15+ Apple Silicon | Ubuntu 22.04 x64 atau distribusi yang kompatibel |
+| Pemasangan dari sumber | Windows 10/11 x64 | macOS 14+ Apple Silicon | x64, glibc 2.28+ |
+| Memori | RAM 8 GB disarankan | RAM 8 GB disarankan | RAM 8 GB disarankan |
+| Ruang kosong | Sekitar 3 GB, ditambah ruang untuk file sumber dan hasil | Sekitar 3 GB, ditambah ruang untuk file sumber dan hasil | Sekitar 3 GB, ditambah ruang untuk file sumber dan hasil |
 
-Arsip aplikasi native sudah memuat Python, Java portabel, dan EPUBCheck. Di Windows, [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) masih diperlukan oleh PyTorch dan pustaka native lainnya. Paket macOS dibuat di macOS 15 Apple Silicon, dan paket Linux dibuat di Ubuntu 22.04 x64. Sistem yang lebih lama dapat memakai pemasangan dari sumber di bawah.
+Setiap arsip native sudah memuat eco, Python, Java Temurin portabel, dan EPUBCheck. Anda tidak perlu memasang Python atau Java di sistem. Windows masih memerlukan [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) untuk PyTorch dan pustaka native lainnya. Arsip native dibangun dan diuji pada OS masing-masing; kompatibilitas dengan versi OS yang lebih lama belum dipastikan.
+
+Pengaliran ulang PDF, tabel, dan OCR memerlukan unduhan model satu kali sekitar 417 MB. Markdown, masukan EPUB, dan PDF berupa gambar halaman bisa diproses sebelum model diunduh. Konversi tidak memakai jaringan.
 
 ## Pasang paket native
 
-Unduh arsip sesuai OS dari [Releases](https://github.com/mrizkitriyanto/epub-converter-optimizer/releases): `eco-<versi>-windows-x64.zip`, `eco-<versi>-macos-arm64.tar.gz`, atau `eco-<versi>-linux-x64.tar.gz`. Ekstrak arsip, lalu jalankan `eco.exe` di Windows atau `./eco` di macOS dan Linux dari folder `eco` yang diekstrak. Contoh di Windows:
+Pilih `eco-<versi>-windows-x64.zip`, `eco-<versi>-macos-arm64.tar.gz`, atau `eco-<versi>-linux-x64.tar.gz` dari [Releases](https://github.com/mrizkitriyanto/epub-converter-optimizer/releases). Sebelum rilis native bertag pertama, unduh `eco-native-<OS>` dari bagian **Artifacts** pada [build tiga OS yang berhasil](https://github.com/mrizkitriyanto/epub-converter-optimizer/actions/runs/44693577065); unduhan itu berupa ZIP yang berisi arsip sesuai OS, dan artifact GitHub memiliki masa berlaku. Biarkan folder `eco` hasil ekstraksi tetap utuh: folder `runtime/` dan `_internal/` diperlukan.
+
+### Windows
+
+Ekstrak ZIP, buka PowerShell di dalam folder `eco` hasil ekstraksi, lalu jalankan:
 
 ```powershell
-cd eco
-.\eco.exe setup
+.\eco.exe --help
 .\eco.exe web
 ```
 
-Di macOS atau Linux, gunakan `./eco setup` dan `./eco web`. Perintah `setup` mengunduh model AI satu kali setelah menampilkan ukuran dan meminta persetujuan. Setiap EPUB dari paket native diperiksa dengan EPUBCheck bawaan sebelum diserahkan. Kesalahan EPUBCheck menggagalkan file itu; peringatan ditampilkan bersama temuan lain. Pengguna tidak perlu memasang Java atau Python di sistem.
+GUI akan terbuka di `http://127.0.0.1:8000/`. Jika model belum ada, GUI akan menawarkan unduhan. Untuk konversi PDF lewat CLI, jalankan `.\eco.exe setup` lebih dulu; perintah ini menampilkan ukuran unduhan dan meminta persetujuan. Untuk mencoba aplikasi tanpa model, unggah file Markdown melalui GUI.
+
+### macOS dan Linux
+
+Ekstrak TAR.GZ, buka terminal dalam folder `eco` hasil ekstraksi, lalu jalankan `./eco --help` dan `./eco web`. Untuk konversi PDF lewat CLI, jalankan `./eco setup` lebih dulu. Arsip macOS belum ditandatangani, sehingga macOS mungkin meminta persetujuan saat pertama kali dibuka.
+
+Setiap EPUB yang dibuat paket native diperiksa dengan EPUBCheck bawaannya sebelum file diserahkan. Kesalahan EPUBCheck menggagalkan konversi file tersebut; peringatan tampil bersama temuan. `runtime/jre/bin/java` dan `runtime/epubcheck/epubcheck.jar` adalah bagian dari eco dan tidak perlu dipasang terpisah.
+
+Untuk memperbarui, ekstrak arsip baru ke folder baru. Model, font, gaya tersimpan, dan job GUI berada di folder data pengguna kecuali Anda memilih `--data` atau `ECO_DATA`, sehingga penggantian folder aplikasi tidak mengganti data tersebut.
 
 ## Pasang dari sumber dengan uv
 
@@ -71,12 +81,14 @@ Buka `http://<server>:8000/?token=<your-secret>`. Kunjungan pertama menyimpan to
 
 ## Penggunaan
 
-Ubah satu file atau lebih. EPUB diberi nama seperti `buku.x4.epub` dan ditulis di samping file input, atau ke folder `-o DIR`:
+Contoh di bawah memakai perintah `eco`. Dalam arsip native, gunakan `./eco` di macOS/Linux atau `.\eco.exe` di PowerShell. Ubah satu atau beberapa file PDF, Markdown, atau EPUB; Anda juga bisa menyebut folder untuk memproses semua file yang didukung di dalamnya. EPUB diberi nama seperti `buku.x4.epub` dan ditulis di samping file input, atau ke folder `-o DIR`:
 
 ```bash
 eco convert buku.pdf
 eco convert buku.pdf catatan.md -o out/
 eco convert buku.pdf --device x4 --size small --mode reflow --ocr off
+eco convert buku.pdf --device x4 --format epub,xtc --firmware crosspoint
+eco convert buku-lama.epub --device general -o out/
 ```
 
 Opsi `eco convert INPUT...`:
@@ -86,6 +98,11 @@ Opsi `eco convert INPUT...`:
 - `--size small|balanced|best`: preset ukuran file.
 - `--mode auto|reflow|pages`: alirkan ulang teks atau pertahankan halaman tetap.
 - `--ocr auto|force|off`: OCR untuk halaman hasil pindai.
+- `--format epub|xtch|xtc`: format keluaran; pisahkan dengan koma, misalnya `epub,xtc`, untuk lebih dari satu format. XTC dan XTCH memerlukan device Xteink yang didukung.
+- `--firmware any|stock|crosspoint|crossink`: profil firmware untuk keluaran Xteink.
+- `--landscape`: putar halaman Xteink ke arah lanskap.
+- `--title`, `--author`, `--lang`: timpa metadata buku; `--lang` menerima kode seperti `en` atau `id`.
+- `--data DIR`: folder data; `ECO_DATA` juga dapat menentukannya. Bawaannya folder data pengguna.
 
 Untuk XTC atau XTCH, gunakan `--style NAMA` untuk gaya halaman tersimpan, atau `--style FILE.json` untuk berkas gaya. `--font NAMA` dan `--font-size N` menimpa pengaturan gaya itu. `eco styles list` menampilkan gaya tersimpan dan penanda default. Tanpa `--style`, konversi memakai gaya default bila tersedia.
 
@@ -114,7 +131,7 @@ Opsi `eco web`:
 - `--token TOKEN`: token akses, minimal 16 karakter, masing-masing salah satu dari A-Z, a-z, 0-9, `-`, atau `_`. `ECO_TOKEN` berfungsi sama.
 - `--max-upload-mb MB`: unggahan terbesar dalam MiB, untuk semua file dalam satu unggahan, bilangan bulat di atas 0 (bawaan 500).
 - `--no-browser`: jangan buka browser. Alamatnya dicetak sebagai `Open: ...`.
-- `--data DIR`: folder data untuk model dan job (bawaan: `ECO_DATA` atau folder aplikasi).
+- `--data DIR`: folder data untuk model dan job (bawaan: `ECO_DATA` atau folder data pengguna).
 
 Jika model AI belum ada, halaman pertama memintanya (sekitar 417 MB: layout 172 MB, tabel 213 MB, OCR 32 MB). Model baru diunduh setelah Anda mengklik "Download models". "Continue without models" melewati langkah ini: file Markdown, EPUB, dan PDF dengan Layout "Page images" bisa diubah tanpa model.
 
@@ -137,6 +154,16 @@ Perintah ini mencetak `Open: http://127.0.0.1:8000/?token=...`, alamat untuk kom
 ## Privasi
 
 Konversi tidak pernah memakai jaringan. Hanya `eco setup` dan tombol "Download models" di `eco web` yang mengunduh model, dan hanya setelah Anda setuju. Model hanya dimuat dalam format data (`.safetensors`, `.onnx`, `.npz`); file pickle ditolak. Dependency dikunci dengan hash dan diperiksa ke database kerentanan di CI.
+
+## Jika ada masalah
+
+- **PDF meminta model:** jalankan `eco setup` atau klik **Download models** di GUI. Masukan Markdown dan EPUB bisa diproses tanpa model. PDF sebagai gambar halaman tersedia melalui GUI tanpa model.
+- **Windows melaporkan DLL hilang:** pasang Visual C++ Redistributable x64 yang ditautkan di [Persyaratan](#persyaratan), lalu buka eco lagi.
+- **EPUBCheck atau Java tidak ditemukan:** ekstrak ulang seluruh arsip native. Executable membutuhkan folder `runtime/` di sebelahnya; memindahkan `eco.exe` atau `eco` saja membuat validasi gagal.
+- **Port 8000 sedang dipakai:** jalankan `eco web --port 8765` dan buka `http://127.0.0.1:8765/`.
+- **Konversi native gagal saat EPUBCheck:** EPUB yang tidak valid tidak diserahkan. Lihat pesan galat atau peringatan dari eco, coba mode konversi lain, atau laporkan file sumber dan pesannya melalui issue. Pemasangan dari sumber hanya menjalankan EPUBCheck bila `ECO_JAVA` dan `ECO_EPUBCHECK_JAR` sama-sama disetel.
+
+Untuk pemeriksaan pemasangan lengkap, termasuk konversi PDF dan GUI pada tiap OS, ikuti [docs/install-check.md](docs/install-check.md).
 
 ## Lisensi
 

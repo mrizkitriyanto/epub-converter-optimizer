@@ -8,29 +8,39 @@ eco is a command-line tool with a web GUI that runs on your own computer. It als
 
 ## Requirements
 
-The table describes the source install. Native archive sizes and minimum OS versions are described below.
-
-| | macOS | Windows | Linux |
+| | Windows | macOS | Linux |
 |---|---|---|---|
-| System | 14+, Apple Silicon (Intel Macs are not supported) | 10/11, x64 | x64, glibc 2.28+ (Ubuntu 20.04+, Debian 10+, RHEL 8+) |
-| RAM | 8 GB | 8 GB | 8 GB |
-| Disk | about 3 GB | about 3 GB | about 3 GB (with the CPU build of PyTorch) |
-| First download | about 0.8 GB (packages 0.35 GB, models 0.42 GB) | about 0.9 GB | about 1 GB (CPU build of PyTorch required) |
-| GPU | optional (Apple GPU is used automatically) | optional | optional |
+| Native package | Windows 10/11 x64 | macOS 15+ Apple Silicon | Ubuntu 22.04 x64 or a compatible distribution |
+| Source install | Windows 10/11 x64 | macOS 14+ Apple Silicon | x64, glibc 2.28+ |
+| Memory | 8 GB recommended | 8 GB recommended | 8 GB recommended |
+| Free disk space | About 3 GB, plus room for input and output files | About 3 GB, plus room for input and output files | About 3 GB, plus room for input and output files |
 
-The native archives include Python, a private Java runtime, and EPUBCheck. Windows still needs the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) for PyTorch and other native libraries. The macOS native archive is built on macOS 15 Apple Silicon; the Linux archive is built on Ubuntu 22.04 x64. Older systems can use the source install below.
+Each native archive includes eco, Python, a private Temurin Java runtime, and EPUBCheck. You do not need a system Python or Java installation. Windows still needs the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) for PyTorch and other native libraries. Native archives are built and smoke tested on their matching OS; compatibility with older releases is not established.
+
+PDF reflow, tables, and OCR need an additional one-time model download of about 417 MB. Markdown, EPUB input, and PDF page images can work before that download. Conversion itself uses no network.
 
 ## Install the native app
 
-Download the archive for your OS from [Releases](https://github.com/mrizkitriyanto/epub-converter-optimizer/releases): `eco-<version>-windows-x64.zip`, `eco-<version>-macos-arm64.tar.gz`, or `eco-<version>-linux-x64.tar.gz`. Unpack it and run `eco.exe` on Windows or `./eco` on macOS and Linux from the extracted `eco` folder. For example:
+Choose `eco-<version>-windows-x64.zip`, `eco-<version>-macos-arm64.tar.gz`, or `eco-<version>-linux-x64.tar.gz` from [Releases](https://github.com/mrizkitriyanto/epub-converter-optimizer/releases). Before the first tagged native release, download `eco-native-<OS>` under **Artifacts** on the [successful three-OS build](https://github.com/mrizkitriyanto/epub-converter-optimizer/actions/runs/44693577065); that download is a ZIP containing the platform archive, and GitHub artifacts expire. Keep the extracted `eco` folder intact: its `runtime/` and `_internal/` folders are required.
+
+### Windows
+
+Extract the ZIP, open PowerShell in the extracted `eco` folder, then run:
 
 ```powershell
-cd eco
-.\eco.exe setup
+.\eco.exe --help
 .\eco.exe web
 ```
 
-On macOS or Linux, use `./eco setup` and `./eco web` instead. `setup` downloads the AI models once, showing their size and asking first. Every EPUB made by a native package is checked with bundled EPUBCheck before it is delivered. EPUBCheck errors fail that file; warnings are shown with the other findings. No host Java or Python installation is needed.
+The web app opens at `http://127.0.0.1:8000/`. It will offer the model download if needed. For CLI PDF conversion, run `.\eco.exe setup` first; it shows the download size and asks before downloading. To try the app without models, upload a Markdown file in the web app.
+
+### macOS and Linux
+
+Extract the TAR.GZ archive, open a terminal in the extracted `eco` folder, then run `./eco --help` and `./eco web`. For CLI PDF conversion, run `./eco setup` first. The macOS archive is unsigned, so macOS may require you to approve its first launch.
+
+Every EPUB produced by a native package is checked with its bundled EPUBCheck before the file is published. An EPUBCheck error fails that conversion; warnings appear in the findings. `runtime/jre/bin/java` and `runtime/epubcheck/epubcheck.jar` belong to eco and do not need to be installed separately.
+
+To update, extract the newer archive to a new folder. Your models, fonts, saved styles, and web jobs live in the user data folder unless you chose `--data` or `ECO_DATA`, so replacing the application folder does not replace that data.
 
 ## Install from source with uv
 
@@ -71,12 +81,14 @@ Open `http://<server>:8000/?token=<your-secret>`. The first visit stores the tok
 
 ## Usage
 
-Convert one or more files. The EPUB is named like `book.x4.epub` and is written next to the input, or into `-o DIR`:
+The examples below use `eco`. In a native archive, run `./eco` on macOS/Linux or `.\eco.exe` in PowerShell instead. Convert one or more PDF, Markdown, or EPUB files, or name a folder to convert its supported files. The EPUB is named like `book.x4.epub` and is written next to the input, or into `-o DIR`:
 
 ```bash
 eco convert book.pdf
 eco convert book.pdf notes.md -o out/
 eco convert book.pdf --device x4 --size small --mode reflow --ocr off
+eco convert book.pdf --device x4 --format epub,xtc --firmware crosspoint
+eco convert existing.epub --device general -o out/
 ```
 
 Options of `eco convert INPUT...`:
@@ -86,6 +98,11 @@ Options of `eco convert INPUT...`:
 - `--size small|balanced|best`: file size preset.
 - `--mode auto|reflow|pages`: reflow the text or keep fixed pages.
 - `--ocr auto|force|off`: OCR for scanned pages.
+- `--format epub|xtch|xtc`: output format; use a comma-separated list such as `epub,xtc` for more than one. XTC and XTCH need a supported Xteink device.
+- `--firmware any|stock|crosspoint|crossink`: firmware profile for Xteink output.
+- `--landscape`: turn Xteink pages sideways.
+- `--title`, `--author`, `--lang`: override book metadata; `--lang` accepts a code such as `en` or `id`.
+- `--data DIR`: data folder; `ECO_DATA` also selects it. By default, eco uses your user data folder.
 
 For XTC or XTCH, use `--style NAME` to apply a saved page style, or `--style FILE.json` for a style file. `--font NAME` and `--font-size N` override that style. `eco styles list` shows saved styles and marks the default. Without `--style`, conversions use the default style when one is set.
 
@@ -114,7 +131,7 @@ Options of `eco web`:
 - `--token TOKEN`: access token, at least 16 characters, each one of A-Z, a-z, 0-9, `-` or `_`. `ECO_TOKEN` does the same.
 - `--max-upload-mb MB`: largest upload in MiB, for all files of one upload together, a whole number above 0 (default 500).
 - `--no-browser`: do not open a browser. The address is printed as `Open: ...`.
-- `--data DIR`: data folder for the models and the jobs (default: `ECO_DATA` or the app folder).
+- `--data DIR`: data folder for the models and jobs (default: `ECO_DATA` or your user data folder).
 
 If the AI models are missing, the first page asks for them (about 417 MB: layout 172 MB, tables 213 MB, OCR 32 MB). It downloads them only after you click "Download models". "Continue without models" skips this: Markdown, EPUB and PDF files with Layout set to "Page images" convert without models.
 
@@ -137,6 +154,16 @@ It prints `Open: http://127.0.0.1:8000/?token=...`, the address for this compute
 ## Privacy
 
 Conversion never uses the network. Only `eco setup` and the "Download models" button of `eco web` download models, and only after you agree. Models load only as data formats (`.safetensors`, `.onnx`, `.npz`); pickle files are rejected. Dependencies are hash-locked and checked against a vulnerability database in CI.
+
+## Troubleshooting
+
+- **PDF asks for models:** run `eco setup` or use the GUI's **Download models** button. Markdown and EPUB input work without models. PDF page images are available through the GUI without them.
+- **Windows reports a missing DLL:** install the x64 Visual C++ Redistributable linked under [Requirements](#requirements), then reopen eco.
+- **EPUBCheck or Java is missing:** extract the whole native archive again. The executable needs its sibling `runtime/` folder; moving only `eco.exe` or `eco` breaks validation.
+- **Port 8000 is in use:** start the GUI with `eco web --port 8765` and open `http://127.0.0.1:8765/`.
+- **A native conversion fails EPUBCheck:** the invalid EPUB is not published. Review the error or warning shown by eco and try a different conversion mode or report the input and message in an issue. Source installs only run EPUBCheck when both `ECO_JAVA` and `ECO_EPUBCHECK_JAR` are set.
+
+For a full installation check, including a PDF and a GUI conversion on each OS, follow [docs/install-check.md](docs/install-check.md).
 
 ## License
 
