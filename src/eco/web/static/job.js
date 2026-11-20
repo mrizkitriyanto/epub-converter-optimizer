@@ -1,6 +1,6 @@
-import { $, MIN_SAMPLE_MS, QUEUE_POLL_MS, REPLAY_GAP_MS, STAGES, STAGE_NAME, URLS, approximateLeft, focusStage, formatDuration, getJson, h, setStage, setText, showBanner, state, t, tn } from './core.js';
-import { mapCells, renderPageMap, squareSize } from './pagemap.js';
-import { rebuild, renderReview, showFile, showReview } from './review.js';
+import { $, MIN_SAMPLE_MS, QUEUE_POLL_MS, REPLAY_GAP_MS, STAGES, STAGE_NAME, URLS, approximateLeft, focusStage, formatDuration, getJson, h, renderStepper, setStage, setText, showBanner, state, t, tn } from './core.js';
+import { mapCells, pagesPerSquare, renderPageMap, squareSize } from './pagemap.js';
+import { openReviewAt, rebuild, renderReview, showFile, showReview } from './review.js';
 
 // ------------------------------------------------ a job and its events
 
@@ -145,6 +145,7 @@ export async function finish(id) {
     return;
   }
   const converted = state.job.files.some(isConverted);
+  renderStepper(); // the way back to Convert goes with the running job
   if (state.stage === 'processing' && converted) showReview();
   else if (state.stage === 'processing') renderProcessing();
   else renderReview();
@@ -290,6 +291,17 @@ export function renderProcessing() {
   setText($('time-line'), timeLine(file));
   renderStageBar(names, file);
   renderMap(file);
+  // a square of a converted file opens that page in Review: a mouse shortcut, the keyboard has the
+  // findings and Review's strip
+  $('page-map').onclick = file.status === 'done' && file.book
+    ? (event) => {
+      const square = event.target.closest('.pm-cell');
+      if (!square) return;
+      const position = Array.prototype.indexOf.call($('page-map').children, square);
+      openReviewAt(position * pagesPerSquare(file.book.pages) + 1);
+    }
+    : null;
+  $('page-map').classList.toggle('clickable', file.status === 'done');
   renderFeed(file, index);
   // what a screen reader hears, at most every 2 seconds
   const now = performance.now();

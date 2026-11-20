@@ -2,8 +2,8 @@
 
 import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
 import { addFiles, chooseStyle, renderDetails, setSetupButtons, showDropErrors, startConversion, startDownload, syncSettingHints, uploadLibraryFonts } from './start.js';
-import { cancelJob, retryJob } from './job.js';
-import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, explainImage, makeSavedDefault, onFileSwitch, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
+import { cancelJob, retryJob, showProcessing } from './job.js';
+import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, discardChanges, explainImage, makeSavedDefault, onFileSwitch, onStripClick, onStripKey, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
 
@@ -56,7 +56,11 @@ function bind() {
   $('process-back').addEventListener('click', () => { location.hash = ''; });
   $('try-again').addEventListener('click', tryAgain);
   $('delete-job').addEventListener('click', deleteJob);
-  $('review-delete-job').addEventListener('click', deleteJob);
+  $('process-delete').addEventListener('click', deleteJob);
+  $('discard').addEventListener('click', discardChanges);
+  $('page-strip').addEventListener('click', onStripClick);
+  $('page-strip').addEventListener('keydown', onStripKey);
+  $('review-progress-link').addEventListener('click', showProcessing);
   $('back-to-review').addEventListener('click', backToReview);
   $('change-settings').addEventListener('click', () => {
     if (state.review.panelOpen) closePanel(true, true);

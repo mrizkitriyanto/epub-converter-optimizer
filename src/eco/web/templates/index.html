@@ -184,6 +184,8 @@
       <div id="process-actions" class="actions" hidden>
         <button id="process-try-again" type="button" class="primary">{{ strings.try_again }}</button>
         <button id="process-back" type="button" class="secondary">{{ strings.back_to_select }}</button>
+        <button id="process-delete" type="button" class="link-button destructive">{{ strings.delete_job }}</button>
+        <p id="process-delete-error" class="error-text" role="alert" hidden></p>
       </div>
       <div id="convert-grid" class="convert-grid">
         <section id="page-map-panel" class="panel map-panel" aria-labelledby="page-map-title" hidden>
@@ -210,51 +212,54 @@
   </section>
 
   <section id="stage-review" class="stage" hidden>
-    <div class="review-bar">
-      <h2 id="review-title" tabindex="-1"></h2>
-      <ul id="chips" class="chips"></ul>
+    <div class="workspace workspace-review">
+    <div class="review-top">
+      <div class="review-heading">
+        <h2 id="review-title" class="review-title" tabindex="-1"></h2>
+        <div id="file-pick" class="file-pick" hidden>
+          <label for="review-file">{{ strings.review_file_label }}</label>
+          <select id="review-file"></select>
+        </div>
+        <ul id="chips" class="chips"></ul>
+      </div>
       <div class="review-actions">
+        <p id="review-status" class="review-status" role="status"></p>
+        <button id="review-progress-link" type="button" class="link-button" hidden>{{ strings.show_progress }}</button>
+        <p id="approve-hint" class="hint"></p>
         <button id="try-again" type="button" class="primary" hidden>{{ strings.try_again }}</button>
-        <button id="change-settings" type="button" class="secondary" aria-controls="settings-panel" aria-expanded="false" hidden>{{ strings.change_settings }}</button>
-        <button id="approve-review" type="button" class="primary" hidden>{{ strings.approve_review }}</button>
-        <button id="review-delete-job" type="button" class="link-button destructive">{{ strings.delete_job }}</button>
+        <button id="approve-review" type="button" class="primary" hidden>{{ strings.continue_to_export }}</button>
       </div>
     </div>
-    <p id="review-delete-error" class="error-text" role="alert" hidden></p>
-    <div id="file-pick" class="inline-field" hidden>
-      <label for="review-file">{{ strings.review_file_label }}</label>
-      <select id="review-file"></select>
-    </div>
     <p id="review-note" class="notice" role="status" hidden></p>
+
+    <div id="strip-section" class="strip-section">
+      <p class="strip-head"><span id="strip-label" class="num"></span><span class="hint">{{ strings.strip_hint }}</span></p>
+      <div id="page-strip" class="strip" role="slider" tabindex="0" aria-label="{{ strings.strip_aria }}" aria-valuemin="1" aria-valuemax="1" aria-valuenow="1"></div>
+    </div>
 
     <div id="review-grid" class="review-grid">
       <section id="findings" class="panel" aria-live="polite" aria-labelledby="findings-title">
         <h3 id="findings-title"></h3>
         <ul id="findings-list" class="findings-list"></ul>
         <p id="findings-empty" class="muted" hidden>{{ strings.findings_empty }}</p>
-        <p class="muted note">{{ strings.findings_hint }}</p>
+        <details id="notes" class="notes" hidden>
+          <summary id="notes-title"></summary>
+          <ul id="notes-list" class="findings-list notes-list"></ul>
+        </details>
+        <p class="caption">{{ strings.findings_hint }}</p>
       </section>
 
       <section id="source-pane" class="pane" aria-label="{{ strings.source_pane_label }}">
+        <p id="source-caption" class="pane-heading"></p>
         <div id="source-page" class="page" hidden><img id="source-img" alt=""></div>
         <pre id="source-text" class="text-pane" tabindex="0" aria-label="{{ strings.source_text_label }}" hidden></pre>
-        <p id="source-caption" class="caption"></p>
         <p id="source-status" class="caption muted" role="status"></p>
       </section>
 
       <section id="device-pane" class="pane" aria-label="{{ strings.device_pane_label }}">
-        <div class="device">
-          <div id="device-screen" class="screen"><img id="device-img" alt=""></div>
-        </div>
-        <p id="device-caption" class="caption"></p>
-        <p class="caption approx">{{ strings.approximate }}</p>
-        <p id="device-status" class="caption muted" role="status"></p>
-        <div class="pager">
-          <button id="prev" type="button" class="secondary">{{ strings.prev_page }}</button>
-          <button id="next" type="button" class="secondary">{{ strings.next_page }}</button>
-        </div>
-        <p class="caption muted">{{ strings.keys_hint }}</p>
-        <div class="view-controls">
+        <div class="pane-head">
+          <p id="device-caption" class="pane-heading"></p>
+          <div class="view-controls">
           <div class="inline-field">
             <label for="view-as">{{ strings.view_as_label }}</label>
             <select id="view-as">{{ choices([
@@ -268,7 +273,20 @@
             <label><input type="radio" name="preview-format" value="epub" checked><span>{{ strings.output_epub }}</span></label>
             <label><input type="radio" name="preview-format" value="xtc"><span>{{ strings.output_xtc }}</span></label>
           </fieldset>
+          </div>
         </div>
+        <div class="device-stage">
+          <div class="device">
+            <div id="device-screen" class="screen"><img id="device-img" alt=""></div>
+          </div>
+        </div>
+        <p id="device-status" class="caption muted" role="status"></p>
+        <div class="pager">
+          <button id="prev" type="button" class="secondary icon-button" aria-label="{{ strings.prev_page }}">&#8249;</button>
+          <span class="caption approx">{{ strings.approximate }}</span>
+          <button id="next" type="button" class="secondary icon-button" aria-label="{{ strings.next_page }}">&#8250;</button>
+        </div>
+        <p class="caption center">{{ strings.keys_hint }}</p>
       </section>
 
       <aside id="settings-panel" class="panel" aria-labelledby="settings-panel-title" hidden>
@@ -359,7 +377,15 @@
         <input id="focus-strength" type="range" min="0" max="2" step="1">
       </div>
       <p id="focus-unavailable" class="hint" hidden>{{ strings.focus_unavailable }}</p>
-      <button id="apply" type="button" class="secondary" disabled>{{ strings.apply }}</button>
+      <div class="dock-footer">
+        <button id="change-settings" type="button" class="link-button" aria-controls="settings-panel" aria-expanded="false">{{ strings.change_settings }}</button>
+        <div class="dock-actions">
+          <p id="apply-status" class="apply-status" role="status"></p>
+          <button id="discard" type="button" class="secondary" hidden>{{ strings.discard }}</button>
+          <button id="apply" type="button" class="secondary" disabled>{{ strings.apply_to_book }}</button>
+        </div>
+      </div>
+    </div>
     </div>
   </section>
 

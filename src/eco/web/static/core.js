@@ -212,6 +212,7 @@ export const state = {
   cancelError: '', // why Cancel did not work
   lost: false, // the stream ended without an end event
   review: null, // the Review stage's own state
+  carry: null, // where Review was when Apply rebuilt the job; it outlives the route to the new job
   sequence: 0, // a new number at each route: an answer that comes late is dropped
 };
 

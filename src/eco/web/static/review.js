@@ -1,5 +1,6 @@
 import { $, JSON_HEADERS, LIVE_DELAY_MS, URLS, VIEW_FOR_FIRMWARE, errorText, focusStage, formatDuration, formatSize, getJson, h, readAsDataUrl, request, route, setStage, setText, state, t, tn } from './core.js';
-import { apply, findingParts, isConverted } from './job.js';
+import { findingParts, isActive, isConverted, progressFraction, stagesFor } from './job.js';
+import { renderStrip, stripBars } from './pagemap.js';
 
 const STYLE_IDS = {
   font: 'font', font_size: 'style-font-size', font_weight: 'font-weight', line_height: 'line-height',
@@ -44,6 +45,7 @@ export function newReview(job) {
     sourceShown: null, // the source page shown, from 1
     showing: 'main', // main: the page as converted; live: a page drawn with the new settings
     selected: null, // the finding that was clicked
+    pendingAnchor: null, // where to open the pages once they load: after Apply, or a page map square
     panelOpen: false,
     applying: false,
     live: { style: { ...job.options.style }, size: job.options.size },
@@ -68,12 +70,12 @@ export function resetReviewDom() {
   hidePanel();
   $('panel-error').hidden = true;
   setText($('panel-error'), '');
-  setText($('apply'), t('apply'));
+  setText($('apply'), t('apply_to_book'));
   $('apply').disabled = true;
   $('try-again').disabled = false;
   for (const [buttonId, errorId] of [
     ['delete-job', 'delete-error'],
-    ['review-delete-job', 'review-delete-error'],
+    ['process-delete', 'process-delete-error'],
   ]) {
     $(buttonId).disabled = false;
     setText($(buttonId), t('delete_job'));
@@ -87,6 +89,7 @@ export function showReview() {
   if (!state.review || state.review.jobId !== state.job.id) {
     state.review = newReview(state.job);
     resetReviewDom();
+    takeCarry(state.review);
   }
   $('view-as').value = state.review.view;
   writeStyle(state.review.live.style);
@@ -94,6 +97,36 @@ export function showReview() {
   renderReview();
   focusStage();
   loadFilePreview();
+}
+
+// After Apply to book, the rebuilt job opens Review where the user was: the same file, page,
+// finding, format and view. Every output changed, so every file needs review again.
+export function takeCarry(review) {
+  const carry = state.carry;
+  if (!carry || carry.toJob !== state.job.id) return;
+  state.carry = null;
+  if (isConverted(state.job.files[carry.fileIndex] || {})) review.fileIndex = carry.fileIndex;
+  const outputs = state.job.files[review.fileIndex].outputs || {};
+  if (outputs[carry.format] || (carry.format !== 'epub' && (outputs.xtch || outputs.xtc))) review.format = carry.format;
+  review.view = carry.view;
+  review.pendingAnchor = carry.anchor;
+  if (carry.selected) {
+    const findings = state.run.files[review.fileIndex].findings;
+    review.selected = findings.find((f) => f.page === carry.selected.page && f.message === carry.selected.message) || null;
+  }
+}
+
+// A square of Convert's page map: Review of that file, at the first device page of that page.
+export function openReviewAt(sourcePage) {
+  const index = state.run.current === null ? 0 : state.run.current;
+  showFile(index);
+  const review = state.review;
+  if (review.pages && review.pages.device_pages > 0) {
+    const page = firstPageFrom(review.pages, sourcePage);
+    if (page) goTo(page);
+  } else {
+    review.pendingAnchor = { source: sourcePage };
+  }
 }
 
 // Review of one file of the job: from a queue pill on Convert, or a file that becomes ready.
@@ -124,12 +157,101 @@ export function renderReview() {
   $('change-settings').hidden = !converted;
   $('review-dock').hidden = !converted;
   $('approve-review').hidden = !converted;
-  updateApproval();
+  $('strip-section').hidden = !converted;
+  updateApply();
   $('try-again').hidden = job.files.some(isConverted); // with nothing converted, trying again is the one action
   renderFilePick(job);
   renderNote(job, info, converted);
+  renderReviewStatus(job);
   $('review-grid').hidden = !converted;
   renderFindings(file);
+  renderPageStrip();
+}
+
+// While the job runs on, the top bar says what the other files do: converting, ready, failed, or
+// cancelled, and leads back to Convert.
+export function renderReviewStatus(job) {
+  const run = state.run;
+  let text = '';
+  const active = isActive(job);
+  const ready = job.files.findIndex((info, i) => i !== state.review.fileIndex && isConverted(info) && !state.review.reviewed.has(i));
+  const failed = run.files.findIndex((file) => file.status === 'failed');
+  if (active && run.current !== null && run.files[run.current].status === 'running') {
+    const file = run.files[run.current];
+    const info = job.files[run.current];
+    const percent = Math.round(Math.max(file.shown, progressFraction(file, stagesFor(info, job.options, file.stages))) * 100);
+    text = t('converting_status', { name: info.name, percent });
+  } else if (job.status === 'cancelled') {
+    text = t('job_cancelled_status');
+  } else if (failed >= 0) {
+    text = t('file_failed_status', { name: job.files[failed].name });
+  }
+  if (ready >= 0) text = [text, t('ready_to_review', { name: job.files[ready].name })].filter(Boolean).join(' · ');
+  setText($('review-status'), text);
+  $('review-progress-link').hidden = !active;
+}
+
+// The strip: one bar per page of the book (source pages of a PDF, device pages otherwise), the
+// warnings and the page shown marked. It is one slider for the keyboard.
+export function stripPlace() {
+  const review = state.review;
+  if (!review.pages) return null;
+  if (isPdf() && review.pages.source_pages > 0) {
+    return { total: review.pages.source_pages, current: review.sourceShown || nearestSource(review.page) || 1, source: true };
+  }
+  return { total: review.pages.device_pages, current: review.page, source: false };
+}
+
+export function renderPageStrip() {
+  const place = stripPlace();
+  const strip = $('page-strip');
+  if (!place || place.total < 1) {
+    strip.replaceChildren();
+    setText($('strip-label'), '');
+    return;
+  }
+  const file = state.run.files[state.review.fileIndex];
+  const warned = place.source
+    ? file.findings.filter((finding) => finding.level === 'warning' && finding.page > 0).map((finding) => finding.page)
+    : [];
+  renderStrip(strip, stripBars(place.total, warned, place.current));
+  const label = t('strip_value', { page: place.current, total: place.total });
+  setText($('strip-label'), label);
+  strip.setAttribute('aria-valuemax', String(place.total));
+  strip.setAttribute('aria-valuenow', String(place.current));
+  strip.setAttribute('aria-valuetext', warned.includes(place.current) ? t('strip_value_finding', { page: place.current, total: place.total }) : label);
+}
+
+export function goToPlace(page) {
+  const place = stripPlace();
+  if (!place) return;
+  const target = Math.min(Math.max(1, page), place.total);
+  if (!place.source) {
+    goTo(target);
+    return;
+  }
+  const device = firstPageFrom(state.review.pages, target);
+  if (device) goTo(device);
+}
+
+export function onStripClick(event) {
+  const bar = event.target.closest && event.target.closest('.strip-bar');
+  const place = stripPlace();
+  if (!bar || !place) return;
+  const index = Array.prototype.indexOf.call($('page-strip').children, bar);
+  const per = place.total <= 600 ? 1 : Math.ceil(place.total / 600);
+  goToPlace(index * per + 1);
+}
+
+export function onStripKey(event) {
+  const place = stripPlace();
+  if (!place) return;
+  const moves = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -10, PageUp: 10 };
+  if (event.key === 'Home') goToPlace(1);
+  else if (event.key === 'End') goToPlace(place.total);
+  else if (event.key in moves) goToPlace(place.current + moves[event.key]);
+  else return;
+  event.preventDefault();
 }
 
 export function renderChips(info, file, converted) {
@@ -178,21 +300,30 @@ export function renderNote(job, info, converted) {
   note.classList.toggle('problem', !converted);
 }
 
+// Warnings are the findings; notes (blank pages, OCR pages) sit in a group of their own, closed.
 export function renderFindings(file) {
   const list = $('findings-list');
-  const key = `${state.job.id}:${state.review.fileIndex}:${file.findings.length}`;
-  setText($('findings-title'), t('findings_title', { n: file.findings.length }));
-  $('findings-empty').hidden = file.findings.length > 0;
+  const warnings = file.findings.filter((finding) => finding.level === 'warning');
+  const notes = file.findings.filter((finding) => finding.level !== 'warning');
+  const selected = state.review.selected ? file.findings.indexOf(state.review.selected) : -1;
+  const key = `${state.job.id}:${state.review.fileIndex}:${file.findings.length}:${selected}`;
+  setText($('findings-title'), t('findings_title', { n: warnings.length }));
+  $('findings-empty').hidden = warnings.length > 0;
+  $('notes').hidden = notes.length === 0;
+  setText($('notes-title'), tn('notes_title', notes.length));
   if (list.dataset.key === key) return;
   list.dataset.key = key;
-  list.replaceChildren(...file.findings.map(findingItem));
+  list.replaceChildren(...warnings.map(findingItem));
+  $('notes-list').replaceChildren(...notes.map((finding) => h('li', { class: 'finding plain' }, ...findingParts(finding))));
 }
 
 export function findingItem(finding) {
   const parts = findingParts(finding);
   if (!(finding.page > 0)) return h('li', { class: 'finding plain' }, ...parts);
-  const button = h('button', { type: 'button', class: 'finding', onclick: () => selectFinding(finding, button) }, ...parts);
-  if (state.review.selected === finding) button.setAttribute('aria-current', 'true');
+  const current = state.review.selected === finding;
+  if (current) parts.splice(1, 0, h('span', { class: 'showing' }, ` · ${t('showing')}`));
+  const button = h('button', { type: 'button', class: 'finding', onclick: () => selectFinding(finding) }, ...parts);
+  if (current) button.setAttribute('aria-current', 'true');
   return h('li', null, button);
 }
 
@@ -254,7 +385,9 @@ export async function loadPages(anchor) {
     if (state.review !== review || mine !== review.pagesSeq) return; // left, or the view changed
     review.pages = pages;
     setText($('device-status'), pages.device_pages > 0 ? '' : t('error_no_preview'));
-    if (pages.device_pages > 0) goTo(pageOfAnchor(pages, anchor) || firstPageOfSelected(pages) || 1);
+    const pending = review.pendingAnchor;
+    review.pendingAnchor = null;
+    if (pages.device_pages > 0) goTo(pageOfAnchor(pages, anchor || pending) || firstPageOfSelected(pages) || 1);
   } catch (error) {
     if (error.name !== 'AbortError' && mine === review.pagesSeq) setText($('device-status'), error.message);
   }
@@ -320,6 +453,7 @@ export function goTo(page) {
   $('next').disabled = review.page >= count;
   updateSource();
   refreshDevice();
+  renderPageStrip();
 }
 
 export const step = (delta) => {
@@ -349,11 +483,12 @@ export function setImage(image, address, alt) {
   if (image.getAttribute('src') !== address) image.setAttribute('src', address);
 }
 
-export function selectFinding(finding, button) {
+export function selectFinding(finding) {
   const review = state.review;
   review.selected = finding;
-  for (const other of $('findings-list').querySelectorAll('[aria-current]')) other.removeAttribute('aria-current');
-  button.setAttribute('aria-current', 'true');
+  renderFindings(state.run.files[review.fileIndex]);
+  const button = $('findings-list').querySelector('[aria-current]');
+  if (button) button.focus();
   if (!review.pages || review.pages.device_pages < 1) return;
   const page = firstPageFrom(review.pages, finding.page);
   if (page) goTo(page);
@@ -400,7 +535,12 @@ export function showMain() {
     state.job.id, review.fileIndex, review.format, review.page, encodeURIComponent(review.view),
   );
   setImage($('device-img'), address, t('device_alt', { page: review.page }));
-  setText($('device-caption'), t('device_caption', { page: review.page, total: review.pages.device_pages }));
+  setText($('device-caption'), deviceCaption(t('device_caption', { page: review.page, total: review.pages.device_pages })));
+}
+
+export function deviceCaption(text) {
+  const device = state.job.options.device;
+  return `${t(`device_${device.replace('-', '_')}`)} · ${text}`;
 }
 
 export function liveDirty() {
@@ -613,9 +753,63 @@ export function closePanel(moveFocus, restore) {
   if (moveFocus) $('change-settings').focus();
 }
 
+// The number of style values that differ from the files: the dock and the panel edit one style.
+export function changedCount() {
+  const { live } = state.review;
+  const options = state.job.options;
+  const names = new Set([...Object.keys(live.style), ...Object.keys(options.style)]);
+  let count = live.size !== options.size ? 1 : 0;
+  for (const name of names) if (JSON.stringify(live.style[name]) !== JSON.stringify(options.style[name])) count += 1;
+  return count;
+}
+
+// A change that is only in the preview makes Apply the one blue button and holds Continue back;
+// Apply waits while files of the job still convert.
 export function updateApply() {
-  $('apply').disabled = !liveDirty() || state.review.applying;
-  updateApproval();
+  const review = state.review;
+  if (!review) return;
+  const dirty = liveDirty();
+  const busy = isActive(state.job);
+  const converted = isConverted(state.job.files[review.fileIndex]);
+  $('apply').disabled = !dirty || review.applying || busy;
+  $('apply').classList.toggle('primary', dirty);
+  $('apply').classList.toggle('secondary', !dirty);
+  $('discard').hidden = !dirty || review.applying;
+  let status = '';
+  if (review.applying) status = t('applying_rebuild');
+  else if (dirty && busy) status = t('apply_wait');
+  else if (dirty) status = tn('changes_pending', changedCount());
+  setText($('apply-status'), status);
+  const next = nextUnreviewed();
+  setText($('approve-review'), next !== undefined ? t('continue_next_file') : t('continue_to_export'));
+  const waiting = next === undefined && !exportReady(true);
+  $('approve-review').disabled = !converted || dirty || review.applying || waiting;
+  $('approve-review').classList.toggle('primary', !dirty);
+  $('approve-review').classList.toggle('secondary', dirty);
+  let hint = '';
+  if (dirty) hint = t('apply_or_discard');
+  else if (waiting && busy) {
+    const left = state.job.files.find((info, i) => state.run.files[i].status !== 'done' && state.run.files[i].status !== 'failed');
+    if (left) hint = t('export_waiting_for', { name: left.name });
+  }
+  setText($('approve-hint'), hint);
+}
+
+export function nextUnreviewed() {
+  const review = state.review;
+  return state.job.files
+    .map((file, index) => index)
+    .find((index) => index !== review.fileIndex && isConverted(state.job.files[index]) && !review.reviewed.has(index));
+}
+
+export function discardChanges() {
+  const review = state.review;
+  review.live = { style: { ...state.job.options.style }, size: state.job.options.size };
+  writeStyle(review.live.style);
+  $('live-size').value = review.live.size;
+  syncReviewDock();
+  updateApply();
+  if (review.pages && review.pages.device_pages > 0) refreshDevice();
 }
 
 export function onLiveChange() {
@@ -641,6 +835,15 @@ export function syncReviewDock() {
   setText($('margin-x-value'), String(style.margin_x));
   setText($('first-line-indent-value'), `${style.first_line_indent}%`);
   setText($('focus-strength-value'), t(`focus_${style.focus_strength}`));
+  // a value that differs from the files says so, in words beside the number
+  const applied = state.job.options.style;
+  const dock = [['font_size', 'style-font-size'], ['line_height', 'line-height'], ['margin_x', 'margin-x'], ['first_line_indent', 'first-line-indent'], ['focus_strength', 'focus-strength']];
+  for (const [name, id] of dock) {
+    const output = $(`${id}-value`);
+    const changed = style[name] !== applied[name];
+    output.classList.toggle('changed', changed);
+    if (changed) output.append(` · ${t('changed')}`);
+  }
   $('focus-strength').disabled = !focus;
   $('focus-strength-field').hidden = !focus;
 }
@@ -661,9 +864,7 @@ export function onReviewDockChange(event) {
 }
 
 export function updateApproval() {
-  if (!state.review) return;
-  const converted = isConverted(state.job.files[state.review.fileIndex]);
-  $('approve-review').disabled = !converted || liveDirty() || state.review.applying;
+  updateApply();
 }
 
 export async function approveCurrentFile() {
@@ -681,13 +882,18 @@ export async function approveCurrentFile() {
     await loadFilePreview();
     return;
   }
-  showExport();
+  if (exportReady()) showExport();
+  else renderReview();
 }
 
-export function exportReady() {
+// Export is per job: every file has ended, and every one that converted is reviewed. `counting`
+// asks whether only the current file's review is missing.
+export function exportReady(counting = false) {
   const { review } = state;
+  if (isActive(state.job)) return false;
   const converted = state.job.files.filter(isConverted);
-  return converted.length > 0 && review.reviewed.size >= converted.length;
+  const reviewed = review.reviewed.size + (counting && !review.reviewed.has(review.fileIndex) ? 1 : 0);
+  return converted.length > 0 && reviewed >= converted.length;
 }
 
 export function showExport() {
@@ -780,6 +986,7 @@ export async function rebuild(options, fail) {
   try {
     const init = { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(options) };
     const job = await getJson(URLS.rebuild(state.job.id), init);
+    if (state.carry && !state.carry.toJob) state.carry.toJob = job.id;
     location.hash = `#job=${job.id}`;
     return true;
   } catch (error) {
@@ -794,6 +1001,17 @@ export async function applyChanges() {
   $('apply').disabled = true;
   setText($('apply'), t('applying'));
   $('panel-error').hidden = true;
+  updateApply();
+  const selected = review.selected ? { page: review.selected.page, message: review.selected.message } : null;
+  state.carry = {
+    fromJob: state.job.id,
+    toJob: null,
+    fileIndex: review.fileIndex,
+    anchor: anchorHere(),
+    selected,
+    format: review.format,
+    view: review.view,
+  };
   const options = {
     ...state.job.options,
     formats: state.job.options.formats.map((format) => {
@@ -808,8 +1026,9 @@ export async function applyChanges() {
     $('panel-error').hidden = false;
   });
   if (ok || state.review !== review) return;
+  state.carry = null;
   review.applying = false;
-  setText($('apply'), t('apply'));
+  setText($('apply'), t('apply_to_book'));
   updateApply();
 }
 
@@ -830,7 +1049,7 @@ export async function deleteJob(event) {
   const mine = state.sequence;
   const id = state.job.id;
   const button = event.currentTarget;
-  const errorLine = $(button.id === 'delete-job' ? 'delete-error' : 'review-delete-error');
+  const errorLine = $(button.id === 'delete-job' ? 'delete-error' : 'process-delete-error');
   button.disabled = true;
   setText(button, t('deleting'));
   errorLine.hidden = true;
@@ -893,7 +1112,7 @@ export function onKey(event) {
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
   if (state.stage !== 'review' || !state.review || !state.review.pages) return;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-  if (event.target.closest && event.target.closest('button, a, input, select, textarea')) return;
+  if (event.target.closest && event.target.closest('button, a, input, select, textarea, [role="slider"]')) return;
   event.preventDefault();
   step(event.key === 'ArrowRight' ? 1 : -1);
 }

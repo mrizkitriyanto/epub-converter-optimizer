@@ -787,7 +787,7 @@ def test_a_new_review_starts_with_the_panel_closed_and_the_buttons_as_new():
     assert "resetReviewDom();" in function_body(js, "showReview")
     reset = function_body(js, "resetReviewDom")
     assert "hidePanel();" in reset
-    assert "setText($('apply'), t('apply'))" in reset  # not "Applying…" from the job before
+    assert "setText($('apply'), t('apply_to_book'))" in reset  # not "Applying…" from before
     assert "$('try-again').disabled = false" in reset
     assert "$('panel-error').hidden = true" in reset and "setText($('panel-error'), '')" in reset
     hide = function_body(js, "hidePanel")
@@ -1109,21 +1109,23 @@ def test_export_has_a_low_emphasis_delete_button_and_a_line_for_its_failure(tmp_
     assert '<p id="delete-error" class="error-text" role="alert" hidden></p>' in export
 
 
-def test_a_failed_review_still_offers_a_low_emphasis_delete_action(tmp_path):
-    review = stage_markup(local(tmp_path).get("/").text, "review")
+def test_a_failed_conversion_still_offers_a_low_emphasis_delete_action(tmp_path):
+    html = local(tmp_path).get("/").text
+    failed = stage_markup(html, "processing").split('id="process-actions"', 1)[1]
     button = (
-        '<button id="review-delete-job" type="button" class="link-button destructive">'
+        '<button id="process-delete" type="button" class="link-button destructive">'
         f"{STRINGS['delete_job']}"
     )
-    assert f"{button}</button>" in review
-    assert '<p id="review-delete-error" class="error-text" role="alert" hidden></p>' in review
+    assert f"{button}</button>" in failed
+    assert '<p id="process-delete-error" class="error-text" role="alert" hidden></p>' in failed
+    assert 'id="review-delete-job"' not in stage_markup(html, "review")
 
 
 def test_delete_asks_first_and_then_goes_to_select_files_which_reads_the_recent_ones_again():
     js = source("app.js")
     bind = function_body(js, "bind")
     assert "$('delete-job').addEventListener('click', deleteJob);" in bind
-    assert "$('review-delete-job').addEventListener('click', deleteJob);" in bind
+    assert "$('process-delete').addEventListener('click', deleteJob);" in bind
     body = function_body(js, "deleteJob")
     asked = body.index("if (!window.confirm(t('delete_confirm'))) return;")
     assert asked < body.index("request(URLS.job(id), { method: 'DELETE' })")
@@ -1144,7 +1146,7 @@ def test_a_failed_delete_shows_the_servers_text_and_a_job_already_gone_counts_as
     # a disabled button loses the keyboard focus; after a failure it gets it back
     assert body.index("button.disabled = false;") < body.index("button.focus();")
     reset = function_body(js, "resetReviewDom")  # one button for every job
-    for part in ("['delete-job', 'delete-error']", "['review-delete-job', 'review-delete-error']"):
+    for part in ("['delete-job', 'delete-error']", "['process-delete', 'process-delete-error']"):
         assert part in reset
     assert "$(errorId).hidden = true" in reset
 
@@ -1758,3 +1760,87 @@ def test_convert_texts():
     assert (STRINGS["pages_title"], STRINGS["pages_read"]) == ("Pages", "{done} of {total} read")
     assert STRINGS["elapsed_so_far"] == "{elapsed} so far"
     assert STRINGS["review_opens"] == "Review opens by itself when this file is done."
+
+
+# Review with a page strip, honest style status and the place carried through Apply
+
+
+def test_review_top_bar_strip_columns_and_style_panel(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    names = ("review-title", "chips", "approve-review", "review-status", "review-progress-link")
+    names += ("page-strip", "strip-label", "findings-list", "notes", "notes-list", "source-pane")
+    names += ("device-pane", "review-dock", "apply", "discard", "apply-status", "change-settings")
+    for name in names:
+        assert f'id="{name}"' in review, name
+    order = ("page-strip", "findings", "source-pane", "device-pane", "review-dock")
+    places = [review.index(f'id="{name}"') for name in order]
+    assert places == sorted(places)
+    assert re.search(r'<div id="page-strip"[^>]*role="slider"', review)
+    assert re.search(r'<div id="page-strip"[^>]*tabindex="0"', review)
+
+
+def test_the_strip_is_a_keyboard_slider():
+    js = source("app.js")
+    body = function_body(js, "onStripKey")
+    for key in ("ArrowLeft", "ArrowRight", "Home", "End"):
+        assert key in body, key
+    render = function_body(js, "renderPageStrip")
+    assert "aria-valuetext" in render and "stripBars(" in render and "renderStrip(" in render
+    assert "[role=\"slider\"]" in function_body(js, "onKey")  # the page keys leave the strip alone
+
+
+def test_dirty_style_makes_apply_the_one_primary_and_blocks_continue():
+    body = function_body(source("app.js"), "updateApply")
+    assert "classList.toggle('primary', dirty)" in body
+    assert "$('approve-review').classList.toggle('primary', !dirty)" in body
+    assert "tn('changes_pending'" in body and "$('discard').hidden = !dirty" in body
+
+
+def test_apply_carries_the_review_place_to_the_rebuilt_job():
+    js = source("app.js")
+    assert "state.carry = {" in function_body(js, "applyChanges")
+    assert "takeCarry(state.review)" in function_body(js, "showReview")
+    take = function_body(js, "takeCarry")
+    assert "carry.toJob !== state.job.id" in take and "state.carry = null" in take
+    assert "state.carry.toJob = job.id" in function_body(js, "rebuild")
+    assert "carry" not in function_body(js, "stopWork")
+
+
+def test_apply_waits_until_every_file_has_converted():
+    body = function_body(source("app.js"), "updateApply")
+    assert "isActive(state.job)" in body and "t('apply_wait')" in body
+
+
+def test_continue_goes_to_the_next_file_until_export_is_ready():
+    js = source("app.js")
+    assert "t('continue_next_file')" in js and "t('continue_to_export')" in js
+    ready = function_body(js, "exportReady")
+    assert "isActive(state.job)" in ready and "filter(isConverted)" in ready
+
+
+def test_info_findings_are_notes_not_warnings():
+    body = function_body(source("app.js"), "renderFindings")
+    assert "level === 'warning'" in body and "$('notes')" in body
+    assert "tn('notes_title'" in body or "t('notes_title'" in body
+
+
+def test_a_running_job_shows_its_status_in_review():
+    body = function_body(source("app.js"), "renderReviewStatus")
+    for key in ("converting_status", "file_failed_status", "job_cancelled_status"):
+        assert f"t('{key}'" in body, key
+    assert "$('review-progress-link').hidden" in body
+
+
+def test_convert_map_squares_open_review_at_their_page():
+    js = source("app.js")
+    assert "openReviewAt(" in function_body(js, "renderProcessing")
+    assert "firstPageFrom(" in function_body(js, "openReviewAt")
+
+
+def test_review_texts():
+    assert STRINGS["continue_to_export"] == "Continue to export"
+    assert STRINGS["apply_to_book"] == "Apply to book"
+    assert STRINGS["changes_pending_other"] == (
+        "{n} changes shown in the preview, not yet in the files"
+    )
+    assert STRINGS["apply_wait"] == "Available when every file has converted"
