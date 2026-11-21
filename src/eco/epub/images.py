@@ -6,6 +6,31 @@ from PIL import Image, ImageFilter, ImageOps
 from eco.options import ImageProfile
 
 _LINE_ART_COLORS = 16
+_QUALITY_STEP = 2  # an enhanced photo bigger than a plain one is encoded again, this much lower,
+_MAX_QUALITY_DROP = 15  # down to at most this far below the profile's quality
+
+
+def _jpeg(im: Image.Image, quality: int) -> bytes:
+    out = BytesIO()
+    im.save(out, "JPEG", progressive=False, optimize=True, quality=quality)
+    return out.getvalue()
+
+
+def _enhanced_jpeg(im: Image.Image, quality: int) -> bytes:
+    """A flat, muddy photo on e-ink: its levels stretched and a little sharpening, never bigger
+    than the photo without them. The quality steps down to make room; when even the lowest one is
+    too big, the photo keeps only the stretched levels, and failing that it stays as it was."""
+    plain = _jpeg(im, quality)
+    contrast = ImageOps.autocontrast(im, cutoff=1)
+    sharp = contrast.filter(ImageFilter.UnsharpMask(radius=1, percent=50, threshold=2))
+    for candidate in (sharp, contrast):
+        for lower in range(quality, quality - _MAX_QUALITY_DROP - 1, -_QUALITY_STEP):
+            encoded = _jpeg(candidate, lower)
+            if len(encoded) <= len(plain):
+                return encoded
+    return plain
+
+
 _WIDE_INT_MODES = ("I", "I;16", "I;16L", "I;16B", "I;16N")
 _ORIENTATION = 0x0112
 
@@ -73,12 +98,10 @@ def transform_image(data: bytes, profile: ImageProfile) -> ImageResult | None:
     if png:
         im.save(out, "PNG", optimize=True)
         result = ImageResult(out.getvalue(), "image/png", "png")
+    elif profile.enhance:
+        result = ImageResult(_enhanced_jpeg(im, profile.jpeg_quality), "image/jpeg", "jpg")
     else:
-        if profile.enhance:  # a flat, muddy photo on e-ink: stretch its levels, sharpen a little
-            im = ImageOps.autocontrast(im, cutoff=1)
-            im = im.filter(ImageFilter.UnsharpMask(radius=1, percent=50, threshold=2))
-        im.save(out, "JPEG", progressive=False, optimize=True, quality=profile.jpeg_quality)
-        result = ImageResult(out.getvalue(), "image/jpeg", "jpg")
+        result = ImageResult(_jpeg(im, profile.jpeg_quality), "image/jpeg", "jpg")
     # an enhanced photo is never swapped back for its source
     enhanced = profile.enhance and not png
     if final_form and not enhanced and im.size == size and len(data) <= len(result.data):

@@ -26,7 +26,10 @@ photo size growth).
 - After: an enhanced photo is encoded at the profile's quality; when that is bigger than the
   same photo encoded without enhancement, the quality steps down by 2 until it is not, at most 15
   below the profile. Measured on the sample, a fixed drop could not hold the size at every level
-  (small needed more than 12, best 4), so the step is per photo.
+  (small needed more than 12, best 4), so the step is per photo. When even the lowest quality is
+  too big, the photo keeps only the stretched levels (same steps), and failing that its plain
+  encoding: size wins, as the owner chose. On the sample, at the default size 18 of 23 photos are
+  sharpened, 2 only stretched and 3 stay plain; at the best size all 23 are sharpened.
 
 ## Non-goals
 No other optimization changes; `general` untouched.

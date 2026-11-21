@@ -1333,3 +1333,9 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - Photos get `autocontrast(cutoff=1)` and a light unsharp mask; PNGs and line art are unchanged.
 - Empty `p` and `div` (no text, image or id) and runs of `<br/>` go; a spine page with nothing to read is removed and every link, nav and NCX entry to it moves to the next page.
 - A table of contents that is missing, empty or more than half broken is rebuilt from `h1` to `h3` (or one entry per page): an NCX always, a nav document too for EPUB 3 only, since EPUB 2 has no nav document. A working table of contents is never replaced.
+
+## 2026-11-21: Xteink EPUB follow-ups
+
+- The nav document and the NCX are judged each on its own; a missing or broken one is written from the one that works (the publisher's contents), and from the headings only when neither works. It is not known which file each Xteink firmware reads. Spec: `docs/superpowers/specs/2026-11-21-epub-xteink-followups-design.md`.
+- The page box also covers `body` with a class or id, a class the book puts on its `<body>` (Calibre's `.calibre`), `@page`, and the style attribute of `<body>`. The `font` shorthand's size and line height become relative like `font-size` and `line-height`.
+- An enhanced photo is never bigger than the same photo without enhancement: its quality steps down by 2, at most 15; then it keeps only the stretched levels, and failing that its plain encoding. The owner chose to keep the size; on the sample the JPEGs went from 16% bigger to 1% smaller at the default size.

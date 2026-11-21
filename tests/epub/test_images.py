@@ -209,12 +209,14 @@ def test_unreadable_data_raises():
 
 
 def test_xteink_photos_get_more_contrast():
-    rng = random.Random(3)  # a flat photo: noise between 110 and 150, many shades, not line art
-    flat = Image.frombytes("L", (300, 300), bytes(rng.randrange(110, 151) for _ in range(90000)))
+    # a flat photo, a soft gradient squeezed between 70 and 190, at the size with room for it:
+    # a stretched photo may never be bigger than the plain one, and the flattest only fit there
+    flat = _photo(3).convert("L").point(lambda v: 70 + v * 120 // 255)
     data = _encode(flat.convert("RGB"), "JPEG", quality=95)
-    with Image.open(BytesIO(transform_image(data, X4).data)) as out:
+    best = image_profile(Options(device="x4", size="best"))
+    with Image.open(BytesIO(transform_image(data, best).data)) as out:
         low, high = out.getextrema()
-    assert low < 60 and high > 200  # stretched from 110 to 150
+    assert low < 30 and high > 225  # stretched from 70 to 190
 
 
 def test_general_photos_are_not_enhanced():
@@ -226,3 +228,23 @@ def test_line_art_is_not_enhanced():
 
     data = _encode(_line_art(), "PNG")
     assert transform_image(data, X4).data == transform_image(data, replace(X4, enhance=False)).data
+
+
+def _photo(seed):
+    """A photo-like picture: a soft gradient with a little grain."""
+    rng = random.Random(seed)
+    im = Image.linear_gradient("L").resize((400, 400)).convert("RGB")
+    grain = bytes(rng.randrange(-12, 13) % 256 for _ in range(400 * 400 * 3))
+    noise = Image.frombytes("RGB", (400, 400), grain)
+    return Image.blend(im, noise, 0.15)
+
+
+@pytest.mark.parametrize("size", ["small", "balanced", "best"])
+def test_an_enhanced_photo_is_no_bigger_than_a_plain_one(size):
+    from dataclasses import replace
+
+    profile = image_profile(Options(device="x4-pro", size=size))
+    for seed in range(3):
+        data = _encode(_photo(seed), "JPEG", quality=95)
+        plain = transform_image(data, replace(profile, enhance=False)).data
+        assert len(transform_image(data, profile).data) <= len(plain), (size, seed)
