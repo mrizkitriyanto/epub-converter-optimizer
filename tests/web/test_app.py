@@ -572,11 +572,11 @@ def test_focus_mode_comes_from_the_reading_style_before_and_is_set_in_review(tmp
     assert "$('focus-controls').hidden = review.format === 'epub'" not in js
 
 
-def test_epub_review_exposes_focus_mode_and_strength_without_opening_settings(tmp_path):
+def test_epub_review_exposes_focus_mode_and_weight_without_opening_settings(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
     dock = html.split('<div id="review-dock"', 1)[1].split("</section>", 1)[0]
     assert 'id="focus-mode"' in dock
-    assert 'id="focus-strength"' in dock
+    assert 'id="focus-weight"' in dock
     assert "review.live.style[name] = value" in js
     assert "if (review.pages && review.pages.device_pages > 0) refreshDevice();" in js
     assert "reviewFocusDirty()" not in js
@@ -591,14 +591,14 @@ def test_expert_review_keeps_common_reading_controls_in_the_main_dock(tmp_path):
         assert f'for="{control}"' in dock
         assert f'id="{control}-value"' in dock
     assert 'id="focus-mode"' in dock
-    assert 'id="focus-strength"' in dock
+    assert 'id="focus-weight"' in dock
     assert review.index('id="source-pane"') < review.index('id="device-pane"')
 
 
-def test_focus_strength_leaves_keyboard_navigation_when_focus_mode_is_off():
+def test_focus_weight_leaves_keyboard_navigation_when_focus_mode_is_off():
     body = function_body(source("app.js"), "syncReviewDock")
-    assert "$('focus-strength').disabled = !focus" in body
-    assert "$('focus-strength-field').hidden = !focus" in body
+    assert "$('focus-weight').disabled = !focus" in body
+    assert "$('focus-weight-field').hidden = !focus" in body
 
 
 def test_review_dock_changes_shared_live_style_and_refreshes_the_preview():
@@ -1795,7 +1795,7 @@ def test_dirty_style_makes_apply_the_one_primary_and_blocks_continue():
     body = function_body(source("app.js"), "updateApply")
     assert "classList.toggle('primary', dirty)" in body
     assert "$('approve-review').classList.toggle('primary', !dirty)" in body
-    assert "tn('changes_pending'" in body and "$('discard').hidden = !dirty" in body
+    assert "tn('changes_pending'" in body and "$('discard').hidden = !(dirty || shownOnly)" in body
 
 
 def test_apply_carries_the_review_place_to_the_rebuilt_job():
@@ -2092,9 +2092,6 @@ def test_review_copy_and_values_follow_the_spec(tmp_path):
     html = local(tmp_path).get("/").text
     review = stage_markup(html, "review")
     assert STRINGS["live_font_label"] == "Text size"
-    strength = re.search(r'<select id="focus-strength">(.*?)</select>', review, re.DOTALL)
-    assert strength and re.findall(r'value="(\w+)"', strength.group(1)) == ["low", "medium", "high"]
-    assert "focus-strength-value" not in html
     assert STRINGS["notes_title_one"] == "Notes (1)"
     assert STRINGS["notes_title_other"] == "Notes ({n})"
     css = source("app.css")
@@ -2110,8 +2107,8 @@ def test_export_gives_the_page_count_of_an_xtc():
     assert "URLS.xtcPages(" in body and "URLS.pages(" not in body
 
 
-def test_the_focus_strength_select_is_heard():
-    # the strength is a select now: the dock listens to its selects as well as its inputs
+def test_the_focus_weight_select_is_heard():
+    # the weight is a select: the dock listens to its selects as well as its inputs
     assert "$('review-dock').querySelectorAll('input, select')" in function_body(
         source("app.js"), "bind"
     )
@@ -2139,13 +2136,13 @@ def test_start_stops_when_the_chosen_style_cannot_load():
     assert re.search(r"catch \(error\) \{\s*showDropErrors\(\[error.message\]\);\s*return;", body)
 
 
-def test_focus_strength_marks_the_change_like_focus_mode(tmp_path):
+def test_focus_weight_marks_the_change_like_focus_mode(tmp_path):
     review = stage_markup(local(tmp_path).get("/").text, "review")
     assert re.search(
-        r'<label for="focus-strength">[^<]*<span id="focus-strength-changed" class="changed" hidden>',
+        r'<label for="focus-weight">[^<]*<span id="focus-weight-changed" class="changed" hidden>',
         review,
     )
-    assert "$('focus-strength-changed').hidden" in function_body(source("app.js"), "syncReviewDock")
+    assert "$('focus-weight-changed').hidden" in function_body(source("app.js"), "syncReviewDock")
 
 
 def test_no_comment_names_the_old_select_files_step():
@@ -2166,3 +2163,40 @@ def test_the_dock_uses_the_spec_words_and_the_panel_column_fits_the_findings():
     assert re.search(
         r"\.review-grid\.with-panel \{[^}]*grid-template-columns: minmax\(240px, 280px\)", css
     )
+
+
+# ------------------------------------------------- Focus Mode weight and the honest dock
+
+
+def test_the_dock_offers_the_focus_weight(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    weight = re.search(r'<select id="focus-weight">(.*?)</select>', review, re.DOTALL)
+    assert re.findall(r'value="(\d+)"', weight.group(1)) == ["600", "700"]
+    assert 'id="focus-weight-changed"' in review and "focus-strength" not in review
+    assert (STRINGS["focus_weight_600"], STRINGS["focus_weight_700"]) == ("Semibold", "Bold")
+
+
+def test_the_epub_preview_says_what_changes_the_epub(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    assert 'id="dock-epub-note"' in review and 'id="focus-weight-note"' in review
+    assert 'id="panel-epub-note"' in review
+    assert "Xteink" in STRINGS["dock_epub_note"]
+    body = function_body(source("app.js"), "renderReview")
+    assert "$('dock-epub-note').hidden = review.format !== 'epub'" in body
+    assert "$('focus-weight-note').hidden = review.format !== 'epub'" in body
+
+
+def test_an_epub_only_job_applies_only_focus_changes():
+    js = source("app.js")
+    count = function_body(js, "fileChangeCount")
+    assert "'focus_mode'" in count and "'focus_weight'" in count and "xtc" in count
+    apply = function_body(js, "updateApply")
+    assert "fileChangeCount()" in apply and "changes_preview_only" in apply
+    assert "fileChangeCount() > 0" in function_body(js, "approveCurrentFile")
+    assert "changedCount() > 0" in function_body(js, "liveDirty")
+
+
+def test_export_names_the_focus_weight():
+    body = function_body(source("app.js"), "renderExport")
+    assert "focus_weight_${style.focus_weight}" in body
+    assert "{weight}" in STRINGS["style_value_focus"]

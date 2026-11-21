@@ -6,7 +6,7 @@ const STYLE_IDS = {
   font: 'font', font_size: 'style-font-size', font_weight: 'font-weight', line_height: 'line-height',
   margin_x: 'margin-x', margin_y: 'margin-y', paragraph_spacing: 'paragraph-spacing',
   first_line_indent: 'first-line-indent', align: 'align', hyphenate: 'hyphenate',
-  focus_mode: 'focus-mode', focus_strength: 'focus-strength',
+  focus_mode: 'focus-mode', focus_weight: 'focus-weight',
   lang: 'style-lang', mode: 'color-mode',
   dither: 'dither', dither_strength: 'dither-strength', negative: 'negative', bar_position: 'bar-position',
   bar_line: 'bar-line', bar_page: 'bar-page', bar_book_percent: 'bar-book-percent',
@@ -21,7 +21,7 @@ const STYLE_FLAGS = new Set([
 ]);
 const STYLE_NUMBERS = new Set([
   'font_size', 'font_weight', 'line_height', 'margin_x', 'margin_y', 'paragraph_spacing',
-  'first_line_indent', 'dither_strength', 'bar_font_size',
+  'first_line_indent', 'focus_weight', 'dither_strength', 'bar_font_size',
   'bar_edge_margin', 'bar_side_margin', 'orientation',
 ]);
 const STYLE_NAMES = new Map(Object.entries(STYLE_IDS).map(([name, id]) => [id, name]));
@@ -157,6 +157,10 @@ export function renderReview() {
   xtcToggle.disabled = !xtc;
   (review.format === 'epub' ? epubToggle : xtcToggle).checked = true;
   document.querySelector('.approx').hidden = review.format !== 'epub';
+  // what reaches the EPUB on the Xteink: Focus Mode only, the reader sets the rest
+  $('dock-epub-note').hidden = review.format !== 'epub';
+  $('focus-weight-note').hidden = review.format !== 'epub';
+  $('panel-epub-note').hidden = makesXtc();
   $('change-settings').hidden = !converted;
   $('review-dock').hidden = !converted;
   $('approve-review').hidden = !converted;
@@ -794,22 +798,43 @@ export function changedCount() {
   return count;
 }
 
-// A change that is only in the preview makes Apply the one blue button and holds Continue back;
-// Apply waits while files of the job still convert.
+export const makesXtc = () => (state.job.options.formats || []).some((format) => format.startsWith('xtc'));
+
+// The changes that a rebuild would put into the files: the image size and Focus Mode always (Focus
+// Mode is written into the EPUB), the other style values only when the job makes an XTC. On the
+// Xteink the EPUB follows the reader's own text size, spacing and margins.
+export function fileChangeCount() {
+  const { live } = state.review;
+  const options = state.job.options;
+  const xtc = makesXtc();
+  const names = new Set([...Object.keys(live.style), ...Object.keys(options.style)]);
+  let count = live.size !== options.size ? 1 : 0;
+  for (const name of names) {
+    if (!xtc && name !== 'focus_mode' && name !== 'focus_weight') continue;
+    if (JSON.stringify(live.style[name]) !== JSON.stringify(options.style[name])) count += 1;
+  }
+  return count;
+}
+
+// A change that a rebuild would put into the files makes Apply the one blue button and holds
+// Continue back; Apply waits while files of the job still convert. A change that only the preview
+// shows says so, and holds nothing back.
 export function updateApply() {
   const review = state.review;
   if (!review) return;
-  const dirty = liveDirty();
+  const dirty = fileChangeCount() > 0;
+  const shownOnly = !dirty && liveDirty();
   const busy = isActive(state.job);
   const converted = isConverted(state.job.files[review.fileIndex]);
   $('apply').disabled = !dirty || review.applying || busy;
   $('apply').classList.toggle('primary', dirty);
   $('apply').classList.toggle('secondary', !dirty);
-  $('discard').hidden = !dirty || review.applying;
+  $('discard').hidden = !(dirty || shownOnly) || review.applying;
   let status = '';
   if (review.applying) status = t('applying_rebuild');
-  else if (dirty && busy) status = `${tn('changes_pending', changedCount())} · ${t('apply_wait')}`;
-  else if (dirty) status = tn('changes_pending', changedCount());
+  else if (dirty && busy) status = `${tn('changes_pending', fileChangeCount())} · ${t('apply_wait')}`;
+  else if (dirty) status = tn('changes_pending', fileChangeCount());
+  else if (shownOnly) status = tn('changes_preview_only', changedCount());
   setText($('apply-status'), status);
   const next = nextUnreviewed();
   setText($('approve-review'), next !== undefined ? t('continue_next_file') : t('continue_to_export'));
@@ -860,7 +885,7 @@ export function syncReviewDock() {
   $('margin-x').value = String(style.margin_x);
   $('first-line-indent').value = String(style.first_line_indent);
   $('focus-mode').checked = focus;
-  $('focus-strength').value = style.focus_strength;
+  $('focus-weight').value = String(style.focus_weight);
   setText($('style-font-size-value'), String(style.font_size));
   setText($('line-height-value'), `${style.line_height}%`);
   setText($('margin-x-value'), String(style.margin_x));
@@ -875,9 +900,9 @@ export function syncReviewDock() {
     if (changed) output.append(` · ${t('changed')}`);
   }
   $('focus-mode-changed').hidden = focus === Boolean(applied.focus_mode);
-  $('focus-strength-changed').hidden = !focus || style.focus_strength === applied.focus_strength;
-  $('focus-strength').disabled = !focus;
-  $('focus-strength-field').hidden = !focus;
+  $('focus-weight-changed').hidden = !focus || style.focus_weight === applied.focus_weight;
+  $('focus-weight').disabled = !focus;
+  $('focus-weight-field').hidden = !focus;
 }
 
 export function onReviewDockChange(event) {
@@ -900,7 +925,7 @@ export function updateApproval() {
 
 export async function approveCurrentFile() {
   const review = state.review;
-  if (liveDirty() || !isConverted(state.job.files[review.fileIndex])) return;
+  if (fileChangeCount() > 0 || !isConverted(state.job.files[review.fileIndex])) return;
   review.reviewed.add(review.fileIndex);
   const successful = state.job.files
     .map((file, index) => index)
@@ -1004,7 +1029,7 @@ export function renderExport() {
   // the applied values, not a style name: the job does not keep one
   const style = job.options.style;
   const values = [t('style_value_size', { n: style.font_size }), t('style_value_spacing', { n: style.line_height }), t('style_value_margins', { n: style.margin_x })];
-  if (style.focus_mode) values.push(t('style_value_focus', { strength: t(`focus_${style.focus_strength}`) }));
+  if (style.focus_mode) values.push(t('style_value_focus', { weight: t(`focus_weight_${style.focus_weight}`).toLowerCase() }));
   setText($('export-style'), t('style_applied', { values: values.join(', ') }));
   const others = job.files.map((info, index) => ({ info, index })).filter(({ info }) => !isConverted(info));
   $('export-others').hidden = others.length === 0;

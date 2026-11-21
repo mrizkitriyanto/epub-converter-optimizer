@@ -1438,6 +1438,11 @@ li.finding.plain {
   margin: 0;
 }
 
+.dock-note {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
 .dock-footer {
   display: flex;
   flex: 1 1 100%;

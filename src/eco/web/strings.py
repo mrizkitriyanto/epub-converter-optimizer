@@ -152,7 +152,7 @@ STRINGS = {
     "style_value_size": "text size {n}",
     "style_value_margins": "side margins {n}",
     "style_value_spacing": "line height {n}%",
-    "style_value_focus": "Focus Mode {strength}",
+    "style_value_focus": "Focus Mode {weight}",
     "other_files_title": "Other files",
     "convert_another": "Convert another book",
     "review_it": "Review it",
@@ -408,12 +408,22 @@ STRINGS = {
     "align_left": "Left",
     "align_center": "Center",
     "focus_mode_label": "Focus Mode",
-    "embed_focus_label": "Embed Focus Mode in EPUB",
-    "embed_focus_hint": "Bold the start of words in EPUB text and XTC pages. EPUB keeps the effect on other e-readers.",
-    "focus_strength_label": "Focus strength",
-    "focus_low": "Low",
-    "focus_medium": "Medium",
-    "focus_high": "High",
+    "focus_weight_label": "Bold weight",
+    "focus_weight_600": "Semibold",
+    "focus_weight_700": "Bold",
+    "focus_weight_note": "On a reader font without semibold, both weights look bold.",
+    "dock_epub_note": (
+        "Text size, spacing and margins change the XTC and this preview. On the Xteink, the EPUB "
+        "follows the reader's own settings."
+    ),
+    "changes_preview_only_one": "1 change in the preview only: the EPUB follows the reader's settings",
+    "changes_preview_only_other": (
+        "{n} changes in the preview only: the EPUB follows the reader's settings"
+    ),
+    "panel_epub_note": (
+        "This job makes only an EPUB: these values change the preview, not the file. Focus Mode is "
+        "written into the EPUB."
+    ),
     "hyphenate_label": "Hyphenate words",
     "style_lang_label": "Text language",
     "color_mode_label": "Color mode",

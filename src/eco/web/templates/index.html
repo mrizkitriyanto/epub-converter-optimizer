@@ -349,6 +349,7 @@
           <select id="live-size">{{ choices(sizes) }}</select>
         </div>
         <p class="muted note">{{ strings.panel_note }}</p>
+        <p id="panel-epub-note" class="muted note" hidden>{{ strings.panel_epub_note }}</p>
         <p id="panel-error" class="error-text" role="alert" hidden></p>
         <div class="actions">
           <button id="copy-style" type="button" class="secondary">{{ strings.copy_style }}</button>
@@ -376,14 +377,15 @@
         <input id="first-line-indent" type="range" min="0" max="400" step="1">
       </div>
       <label class="review-focus-toggle"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }} <span id="focus-mode-changed" class="changed" hidden>· {{ strings.changed }}</span></label>
-      <div id="focus-strength-field" class="review-control">
-        <label for="focus-strength">{{ strings.focus_strength_label }} <span id="focus-strength-changed" class="changed" hidden>· {{ strings.changed }}</span></label>
-        <select id="focus-strength">
-          <option value="low">{{ strings.focus_low }}</option>
-          <option value="medium">{{ strings.focus_medium }}</option>
-          <option value="high">{{ strings.focus_high }}</option>
+      <div id="focus-weight-field" class="review-control">
+        <label for="focus-weight">{{ strings.focus_weight_label }} <span id="focus-weight-changed" class="changed" hidden>· {{ strings.changed }}</span></label>
+        <select id="focus-weight">
+          <option value="600">{{ strings.focus_weight_600 }}</option>
+          <option value="700">{{ strings.focus_weight_700 }}</option>
         </select>
+        <p id="focus-weight-note" class="hint" hidden>{{ strings.focus_weight_note }}</p>
       </div>
+      <p id="dock-epub-note" class="hint dock-note" hidden>{{ strings.dock_epub_note }}</p>
       <p id="focus-unavailable" class="hint" hidden>{{ strings.focus_unavailable }}</p>
       <div class="dock-footer">
         <button id="change-settings" type="button" class="link-button" aria-controls="settings-panel" aria-expanded="false">{{ strings.change_settings }}</button>
