@@ -113,6 +113,8 @@ def test_a_declaration_after_a_nested_block_or_behind_a_star_hack_is_rewritten()
         "p{font-size:" + "1" * 16000 + "}",
         "body{" + " " * 16000 + "}",
         "p{a:b" + " " * 16000 + "c}",
+        "p{font:" + "1" * 16000 + "}",
+        "p{font:" + "small " * 3000 + "}",
     ],
 )
 def test_crafted_css_takes_linear_time(css):
@@ -190,3 +192,30 @@ def test_general_keeps_sizes_and_colors():
 def test_a_longer_property_name_is_not_a_page_box_margin():
     out = rewrite_css("html, body { -webkit-padding-start: 40px; font-size: 12pt }", keep, True)
     assert "-webkit-padding-start: 40px" in out and "font-size: 1em" in out
+
+
+def test_body_with_a_class_and_page_rules_lose_margins():
+    css = "body.calibre { margin: 40px } @page { margin: 1in } @page :first { margin: 2cm }"
+    out = rewrite_css(css, keep, xteink=True)
+    assert "margin" not in out
+
+
+def test_a_body_class_rule_loses_margins_only():
+    css = ".calibre { margin: 5pt; font-size: 12pt } .other { margin: 40px }"
+    out = rewrite_css(css, keep, xteink=True, page_classes=frozenset({"calibre"}))
+    assert ".calibre { font-size: 1em }" in out and ".other { margin: 2em }" in out
+
+
+def test_a_page_box_declaration_list_loses_margins():
+    out = rewrite_css("margin: 40px; color: #222; padding: 1em", keep, xteink=True, page_box=True)
+    assert "margin" not in out and "padding: 1em" in out
+
+
+def test_font_shorthand_sizes_become_relative():
+    out = rewrite_css("p { font: italic 9pt/14px serif }", keep, xteink=True)
+    assert "font: italic 0.75em/1.2 serif" in out
+    out = rewrite_css("p { font: small-caps 12px serif }", keep, xteink=True)
+    assert "font: small-caps 0.75em serif" in out
+    assert (
+        rewrite_css("p { font: 1em/1.4 serif }", keep, xteink=True) == "p { font: 1em/1.4 serif }"
+    )

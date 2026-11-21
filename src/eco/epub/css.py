@@ -52,6 +52,17 @@ _BOX_DECLARATION = re.compile(
     re.IGNORECASE,
 )
 _MAX_SPACING_PX = 32  # 2em
+# the size, and an optional line height after "/", of a font shorthand: the first one, whole
+# tokens only, so small-caps is no size and a run of digits is scanned once
+_FONT_SIZE = re.compile(
+    r"(?<![\w.-])(?:(?P<abs>-?(?:\d+(?:\.\d*)?|\.\d+)(?:px|pt|pc|in|cm|mm))"
+    r"|(?P<kw>xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large))(?![\w.-])"
+    r"(?:\s*/\s*(?P<lh>-?(?:\d+(?:\.\d*)?|\.\d+)(?:px|pt|pc|in|cm|mm))(?![\w.-]))?",
+    re.IGNORECASE,
+)
+_BODY_SELECTOR = re.compile(r"body(?:[.#][\w-]+)+")
+_PAGE_SELECTOR = re.compile(r"@page(?:\s*:[\w-]+)?")
+_CLASS_SELECTOR = re.compile(r"\.([\w-]+)")
 
 
 def _number(value: float) -> str:
@@ -75,6 +86,16 @@ def _relative(name: str, value: str) -> str | None:
             new = f"{_number(_KEYWORD_EM[text.lower()])}em"
         elif absolute:
             new = f"{_number(_px(absolute) / 16)}em"
+    elif lowered == "font":
+        found = _FONT_SIZE.search(text)
+        if found:
+            if found["kw"]:
+                size = f"{_number(_KEYWORD_EM[found['kw'].lower()])}em"
+            else:
+                size = f"{_number(_px(_ABSOLUTE.fullmatch(found['abs'])) / 16)}em"
+            if found["lh"]:
+                size += "/" + _number(max(1.2, _px(_ABSOLUTE.fullmatch(found["lh"])) / 16))
+            new = text[: found.start()] + size + text[found.end() :]
     elif lowered == "line-height":
         absolute = _ABSOLUTE.fullmatch(text)
         if absolute:
@@ -92,11 +113,18 @@ def _relative(name: str, value: str) -> str | None:
     )
 
 
-def _page_box(m: re.Match, counts: Counter | None) -> str:
-    """A rule for html or body loses its absolute margins and paddings."""
-    selectors = [s.strip().lower() for s in m["sel"].split(",")]
-    if not all(s in ("html", "body") for s in selectors):
-        return m[0]
+def _is_page_box(selector: str, page_classes: frozenset[str]) -> bool:
+    """html, body, body with classes or an id, @page, or a class the book puts on its <body>."""
+    if selector in ("html", "body") or _BODY_SELECTOR.fullmatch(selector):
+        return True
+    if _PAGE_SELECTOR.fullmatch(selector):
+        return True
+    found = _CLASS_SELECTOR.fullmatch(selector)
+    return bool(found) and found[1] in page_classes
+
+
+def _drop_box(declarations: str, counts: Counter | None) -> str:
+    """A declaration list without its absolute margins and paddings."""
 
     def drop(d: re.Match) -> str:
         if not _ABSOLUTE.search(d["value"]):
@@ -105,7 +133,15 @@ def _page_box(m: re.Match, counts: Counter | None) -> str:
             counts["sizes"] += 1
         return ""
 
-    return m["sel"] + "{" + _BOX_DECLARATION.sub(drop, m["body"]) + "}"
+    return _BOX_DECLARATION.sub(drop, declarations)
+
+
+def _page_box(m: re.Match, counts: Counter | None, page_classes: frozenset[str]) -> str:
+    """A rule for the page box loses its absolute margins and paddings."""
+    selectors = [s.strip().lower() for s in m["sel"].split(",")]
+    if not all(_is_page_box(s, page_classes) for s in selectors):
+        return m[0]
+    return m["sel"] + "{" + _drop_box(m["body"], counts) + "}"
 
 
 def rewrite_css(
@@ -113,6 +149,8 @@ def rewrite_css(
     retarget: Callable[[str], str | None],
     xteink: bool = False,
     counts: Counter | None = None,
+    page_classes: frozenset[str] = frozenset(),
+    page_box: bool = False,
 ) -> str:
     """Rewrite the url() of every declaration in a stylesheet, a <style> or a style attribute.
 
@@ -120,11 +158,15 @@ def rewrite_css(
     goes with it. With `xteink`, comments, @font-face blocks and the declarations an e-ink
     reader cannot lay out (float, position, columns, flex and grid) go too; absolute sizes become
     relative, colors go, and html and body lose their absolute margins. `counts` adds up the
-    sizes changed ("sizes") and the colors removed ("colors").
+    sizes changed ("sizes") and the colors removed ("colors"). `page_classes` are the classes of
+    the book's <body> elements, whose rules count as the page box too; `page_box` says that
+    `text` is the style attribute of <body>.
     """
     if xteink:
         text = _FONT_FACE.sub("", _COMMENT.sub("", text))
-        text = _BLOCK.sub(lambda m: _page_box(m, counts), text)
+        if page_box:
+            text = _drop_box(text, counts)
+        text = _BLOCK.sub(lambda m: _page_box(m, counts, page_classes), text)
     return _DECLARATION.sub(lambda m: _declaration(m, retarget, xteink, counts), text)
 
 

@@ -457,13 +457,22 @@ class _Package:
         """Rewrite every stylesheet, <style> element and style attribute; `retarget_for(owner)`
         gives the url callback of the file the CSS sits in."""
         counts: Counter = Counter()
+        # a class the book puts on <body> (Calibre's "calibre") styles the page box
+        classes = frozenset(
+            name.lower()
+            for _, doc in self._pages()
+            if (body := doc.root.find("{*}body")) is not None
+            for name in (body.get("class") or "").split()
+        )
         for path, doc in self._pages():
             retarget = retarget_for(path)
             for el in doc.root.iter():
                 if _local(el) == "style" and el.text:
-                    el.text = rewrite_css(el.text, retarget, xteink, counts)
+                    el.text = rewrite_css(el.text, retarget, xteink, counts, classes)
                 if el.get("style"):
-                    style = rewrite_css(el.get("style"), retarget, xteink, counts)
+                    style = rewrite_css(
+                        el.get("style"), retarget, xteink, counts, classes, _local(el) == "body"
+                    )
                     if style.strip():
                         el.set("style", style)
                     else:
@@ -471,7 +480,7 @@ class _Package:
         for path, item in list(self.items.items()):
             if item.get("media-type") == "text/css" and path in self.files:
                 text = self.files[path].decode("utf-8", "surrogateescape")
-                new = rewrite_css(text, retarget_for(path), xteink, counts)
+                new = rewrite_css(text, retarget_for(path), xteink, counts, classes)
                 if new != text:
                     self.files[path] = new.encode("utf-8", "surrogateescape")
         if counts["sizes"]:

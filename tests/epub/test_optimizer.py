@@ -1389,3 +1389,21 @@ def test_a_working_ncx_fills_a_broken_nav(tmp_path):
     assert ncx_labels(z, "OEBPS/toc.ncx") == ["First", "Second"]
     [finding] = [f for f in report.findings if f.kind == "toc_rebuilt"]
     assert "nav from the NCX" in finding.message
+
+
+def test_a_body_style_attribute_and_a_body_class_lose_margins(tmp_path):
+    src = package(
+        tmp_path, {"a": f"{LINK}<p class='calibre'>t</p>"}, {"css/s.css": ".calibre{margin:30pt}"}
+    )
+
+    def styled_body(name, data):
+        if name.endswith("a.xhtml"):
+            return data.replace(
+                b"<body>", b'<body class="calibre" style="margin:40px;padding:1em">'
+            )
+        return data
+
+    z, _ = run(tmp_path, rewrite_zip(src, tmp_path / "styled.epub", styled_body))
+    page = text_of(z, "OEBPS/text/a.xhtml")
+    assert "margin" not in page and "padding:1em" in page
+    assert "margin" not in text_of(z, "OEBPS/css/s.css")
