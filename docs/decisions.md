@@ -1296,3 +1296,8 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - Review stays required before Export. Backend changes are additive only: page numbers in page events, a book event with scanned and blank pages, event timestamps, scanned/blank lists from inspect, and a recorded EPUBCheck outcome per EPUB.
 - Inter is bundled with the app; the GUI loads no font from the network.
 - Built on branch `redesign-page-map` (2026-11-21). Changes from the spec made while building: strings stay ASCII, so the " · " separators are joined in code; inputs keep a 3 : 1 edge (`#8A8A93`) beside the `#D4D4D8` control border; the model download shows a status line and its log, not a progress bar, because the server sends no fraction; Delete moved from Review to Convert's failure actions; the size line on Export says "from", not "down from"; the Review strip groups pages to about two pixels a bar on narrow screens.
+
+## 2026-11-21: Page map redesign merged; version 0.2.0
+
+- The owner merged `redesign-page-map` into `main` and chose version 0.2.0 for the new GUI. The uncommitted Guided Workspace polish that sat on `main` was stashed, not committed, because the redesign replaces those three files.
+- No release tag was pushed: the owner deploys this version by running it locally for now.
