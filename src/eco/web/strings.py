@@ -428,8 +428,8 @@ STRINGS = {
         "{n} changes in the preview only: the EPUB follows the reader's settings"
     ),
     "panel_epub_note": (
-        "This job makes only an EPUB: these values change the preview, not the file. Focus Mode is "
-        "written into the EPUB."
+        "This job makes only an EPUB: File size and Focus Mode change the file; the other values "
+        "change only the preview."
     ),
     "hyphenate_label": "Hyphenate words",
     "style_lang_label": "Text language",

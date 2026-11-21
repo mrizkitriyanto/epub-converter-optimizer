@@ -56,7 +56,7 @@ def smoke(app: Path) -> None:
             text=True,
             timeout=180,
         )
-        epub = work / "out" / "book.x4.epub"
+        epub = work / "out" / "book.x4-pro.epub"  # the default device
         if result.returncode or not epub.is_file():
             raise RuntimeError(f"Bundled conversion failed: {result.stdout}\n{result.stderr}")
         checked = subprocess.run(

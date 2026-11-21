@@ -2227,3 +2227,35 @@ def test_the_default_device_is_the_x4_pro(tmp_path):
 
     assert Options().device == "x4-pro"
     assert '<option value="x4-pro" selected>' in local(tmp_path).get("/").text
+
+
+# ------------------------------------------------- final review of the Focus Mode weight
+
+
+def test_semibold_is_offered_only_above_a_lighter_text():
+    body = function_body(source("app.js"), "updateFocusAvailability")
+    assert "$('focus-weight').querySelector('option[value=\"600\"]')" in body
+    assert "semibold.disabled = Number($('font-weight').value) >= 600" in body
+    assert "review.live.style.focus_weight = 700" in body
+
+
+def test_the_focus_controls_on_select_are_44_px_targets():
+    css = source("app.css")
+    help_rule = re.search(r"\.help-button \{([^}]*)\}", css).group(1)
+    assert "min-height: 0" not in help_rule and "min-width: 44px" in help_rule
+    assert "min-height: 44px" in re.search(r"\.check-row \{([^}]*)\}", css).group(1)
+
+
+def test_the_epub_only_note_names_the_file_size():
+    assert "File size" in STRINGS["panel_epub_note"]
+
+
+def test_a_weight_with_focus_mode_off_is_no_change():
+    js = source("app.js")
+    for name in ("fileChangeCount", "changedCount"):
+        assert "name === 'focus_weight' && !live.style.focus_mode" in function_body(js, name), name
+
+
+def test_export_of_an_epub_only_job_names_only_what_reached_the_epub():
+    body = function_body(source("app.js"), "renderExport")
+    assert "makesXtc()" in body

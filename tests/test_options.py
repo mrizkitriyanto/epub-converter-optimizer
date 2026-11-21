@@ -120,3 +120,13 @@ def test_options_of_m2_keep_their_font_size(old, size):
 def test_options_that_have_a_style_are_not_changed_by_the_upgrade():
     options = asdict(Options(style=PageStyle(font_size=40)))
     assert upgrade_options(options) == options
+
+
+def test_an_old_job_style_gains_the_focus_weight():
+    # a job.json from before the weight: the browser reads these options as they are stored
+    from eco.options import upgrade_options
+
+    old = {"formats": ["epub"], "style": {"focus_mode": True, "focus_strength": "high"}}
+    style = upgrade_options(old)["style"]
+    assert style["focus_weight"] == 700 and "focus_strength" not in style
+    assert upgrade_options({"formats": ["epub"]}) == {"formats": ["epub"]}

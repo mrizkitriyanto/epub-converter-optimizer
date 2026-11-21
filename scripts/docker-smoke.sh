@@ -25,7 +25,7 @@ done
 
 [ "$(curl -sS -o /dev/null -w '%{http_code}' "$url/")" = 401 ]
 [ "$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$url/")" = 200 ]
-docker exec "$first" sh -c "printf '# A\\n\\nText.\\n' > /data/a.md && eco convert /data/a.md --data /data && test -f /data/a.x4.epub"
+docker exec "$first" sh -c "printf '# A\\n\\nText.\\n' > /data/a.md && eco convert /data/a.md --data /data && test -f /data/a.x4-pro.epub"
 
 second=$(docker run -d "$image")
 found=0

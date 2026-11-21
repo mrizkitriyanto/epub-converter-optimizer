@@ -56,14 +56,20 @@ class Options:
 
 
 def upgrade_options(options: dict) -> dict:
-    """The options of a job.json that M2 wrote, which holds `font_size` and no `style`, in the
-    form of today: the size is the style's, kept within its range."""
-    if "font_size" not in options:
-        return options
-    options = dict(options)
-    low, high = RANGES["font_size"]
-    size = min(high, max(low, options.pop("font_size")))
-    options.setdefault("style", PageStyle(font_size=size).to_json())
+    """The options of an older job.json in the form of today. M2 wrote `font_size` and no
+    `style`: the size becomes the style's, kept within its range. Before the Focus Mode weight a
+    style held `focus_strength`: it goes, and the weight takes its default. The browser reads
+    these options as they are, so they must hold every field of today."""
+    if "font_size" in options:
+        options = dict(options)
+        low, high = RANGES["font_size"]
+        size = min(high, max(low, options.pop("font_size")))
+        options.setdefault("style", PageStyle(font_size=size).to_json())
+    style = options.get("style")
+    if isinstance(style, dict) and ("focus_strength" in style or "focus_weight" not in style):
+        style = {key: value for key, value in style.items() if key != "focus_strength"}
+        style.setdefault("focus_weight", PageStyle().focus_weight)
+        options = {**options, "style": style}
     return options
 
 

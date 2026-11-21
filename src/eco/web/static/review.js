@@ -661,6 +661,14 @@ export function updateFocusAvailability() {
   $('focus-mode').disabled = !available;
   $('focus-unavailable').hidden = available;
   if (!available) $('focus-mode').checked = false;
+  // above a semibold text only Bold is heavier: Semibold is not offered, and a chosen one moves up
+  const review = state.review;
+  const semibold = $('focus-weight').querySelector('option[value="600"]');
+  semibold.disabled = Number($('font-weight').value) >= 600;
+  if (semibold.disabled && review.live.style.focus_weight === 600) {
+    review.live.style.focus_weight = 700;
+    $('focus-weight').value = '700';
+  }
 }
 
 export async function loadFonts() {
@@ -794,7 +802,10 @@ export function changedCount() {
   const options = state.job.options;
   const names = new Set([...Object.keys(live.style), ...Object.keys(options.style)]);
   let count = live.size !== options.size ? 1 : 0;
-  for (const name of names) if (JSON.stringify(live.style[name]) !== JSON.stringify(options.style[name])) count += 1;
+  for (const name of names) {
+    if (name === 'focus_weight' && !live.style.focus_mode) continue; // no bold to weigh
+    if (JSON.stringify(live.style[name]) !== JSON.stringify(options.style[name])) count += 1;
+  }
   return count;
 }
 
@@ -811,6 +822,7 @@ export function fileChangeCount() {
   let count = live.size !== options.size ? 1 : 0;
   for (const name of names) {
     if (!xtc && name !== 'focus_mode' && name !== 'focus_weight') continue;
+    if (name === 'focus_weight' && !live.style.focus_mode) continue; // no bold to weigh
     if (JSON.stringify(live.style[name]) !== JSON.stringify(options.style[name])) count += 1;
   }
   return count;
@@ -1027,10 +1039,12 @@ export function renderExport() {
   }
   setText($('export-summary'), summary.join(' · '));
   // the applied values, not a style name: the job does not keep one
+  // an EPUB-only job: only Focus Mode reached the file, the Xteink sets size and spacing
   const style = job.options.style;
-  const values = [t('style_value_size', { n: style.font_size }), t('style_value_spacing', { n: style.line_height }), t('style_value_margins', { n: style.margin_x })];
+  const values = makesXtc() ? [t('style_value_size', { n: style.font_size }), t('style_value_spacing', { n: style.line_height }), t('style_value_margins', { n: style.margin_x })] : [];
   if (style.focus_mode) values.push(t('style_value_focus', { weight: t(`focus_weight_${style.focus_weight}`).toLowerCase() }));
-  setText($('export-style'), t('style_applied', { values: values.join(', ') }));
+  $('export-style').hidden = values.length === 0;
+  setText($('export-style'), values.length ? t('style_applied', { values: values.join(', ') }) : '');
   const others = job.files.map((info, index) => ({ info, index })).filter(({ info }) => !isConverted(info));
   $('export-others').hidden = others.length === 0;
   $('export-others-list').replaceChildren(

@@ -1448,15 +1448,14 @@ li.finding.plain {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 44px;
   font-weight: 500;
 }
 
 .help-button {
-  width: 28px;
-  height: 28px;
-  min-height: 0;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
-  border-radius: 50%;
   font-weight: 600;
   line-height: 1;
 }
