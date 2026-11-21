@@ -1997,3 +1997,120 @@ def test_no_module_looks_up_the_page_while_it_loads():
     for name in ("start.js", "job.js", "review.js", "pagemap.js"):
         text = (SOURCES / "static" / name).read_text(encoding="utf-8")
         assert not re.search(r"^(?:export )?(?:const|let) \w+ = .*\$\(", text, re.MULTILINE), name
+
+
+# ------------------------------------------------- deferred minors of the page map redesign
+
+
+def test_the_page_map_caption_promises_a_click_only_when_it_works(tmp_path):
+    html = local(tmp_path).get("/").text
+    assert 'id="page-map-caption"' in stage_markup(html, "processing")
+    assert STRINGS["pagemap_caption"] == "Each square is one page."
+    assert "Review" in STRINGS["pagemap_caption_done"]
+    body = function_body(source("app.js"), "renderProcessing")
+    assert "$('page-map-caption')" in body and "pagemap_caption_done" in body
+
+
+def test_the_file_ready_to_review_is_a_link(tmp_path):
+    html = local(tmp_path).get("/").text
+    assert re.search(r'<a id="review-ready-link" href="#"[^>]*hidden', stage_markup(html, "review"))
+    js = source("app.js")
+    status = function_body(js, "renderReviewStatus")
+    assert "$('review-ready-link')" in status and "dataset.index" in status
+    assert "review-ready-link" in function_body(js, "bind")
+
+
+def test_queue_pills_are_rebuilt_only_when_they_change_and_keep_the_focus():
+    body = function_body(source("app.js"), "renderQueue")
+    assert "queue.dataset.key" in body and ".focus()" in body
+
+
+def test_the_review_status_speaks_only_when_its_words_change(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    status = re.search(r'<p id="review-status"[^>]*>', review).group(0)
+    assert "role=" not in status and "aria-live" not in status
+    assert re.search(r'<p id="review-status-live" class="visually-hidden" role="status"', review)
+    body = function_body(source("app.js"), "renderReviewStatus")
+    assert "$('review-status-live')" in body and "converting_status_live" in body
+    assert "{percent}" not in STRINGS["converting_status_live"]
+
+
+def test_the_elapsed_clock_ticks_between_events():
+    js = source("app.js")
+    assert "syncClock(file)" in function_body(js, "renderProcessing")
+    clock = function_body(js, "syncClock")
+    assert "setInterval(" in clock and "clearInterval(" in clock and "1000" in clock
+
+
+def test_apply_keeps_the_xtc_preview_when_the_color_mode_changes():
+    body = function_body(source("app.js"), "takeCarry")
+    assert "outputs.xtch ? 'xtch' : 'xtc'" in body
+
+
+def test_delete_reports_a_script_failure_with_the_shared_handler():
+    review = (SOURCES / "static" / "review.js").read_text(encoding="utf-8")
+    imported = re.search(r"^import \{([^}]*)\} from './core.js';", review, re.MULTILINE).group(1)
+    assert "pageFailed" in imported
+    assert "export function pageFailed(" in source("core.js")
+
+
+def test_the_focus_mode_toggle_says_when_it_changed(tmp_path):
+    html = local(tmp_path).get("/").text
+    assert 'id="focus-mode-changed"' in stage_markup(html, "review")
+    assert "$('focus-mode-changed').hidden" in function_body(source("app.js"), "syncReviewDock")
+
+
+def test_pending_changes_stay_in_sight_while_files_convert():
+    body = function_body(source("app.js"), "updateApply")
+    assert re.search(r"dirty && busy\).*changes_pending.*apply_wait", body)
+
+
+def test_the_model_download_shows_an_indeterminate_bar(tmp_path):
+    html = local(tmp_path).get("/").text
+    bar = re.search(r"<progress id=\"models-bar\"[^>]*>", html)
+    assert bar and "value=" not in bar.group(0) and "aria-label=" in bar.group(0)
+
+
+def test_start_waits_for_the_chosen_style():
+    js = source("app.js")
+    assert "styleLoad" in function_body(js, "chooseStyle")
+    assert "await styleLoad" in function_body(js, "startConversion")
+
+
+def test_the_convert_meta_line_names_the_pdf_kind():
+    assert "pdfKind(" in function_body(source("app.js"), "renderProcessing")
+
+
+def test_the_architecture_notes_are_current():
+    agents = (SOURCES.parents[2] / "AGENTS.md").read_text(encoding="utf-8")
+    events = next(line for line in agents.splitlines() if line.startswith("src/eco/events.py"))
+    assert "BookEvent" in events
+    assert "setup gate" not in source("core.js")
+
+
+def test_review_copy_and_values_follow_the_spec(tmp_path):
+    html = local(tmp_path).get("/").text
+    review = stage_markup(html, "review")
+    assert STRINGS["live_font_label"] == "Text size"
+    strength = re.search(r'<select id="focus-strength">(.*?)</select>', review, re.DOTALL)
+    assert strength and re.findall(r'value="(\w+)"', strength.group(1)) == ["low", "medium", "high"]
+    assert "focus-strength-value" not in html
+    assert STRINGS["notes_title_one"] == "Notes (1)"
+    assert STRINGS["notes_title_other"] == "Notes ({n})"
+    css = source("app.css")
+    assert re.search(
+        r"\.review-grid \{[^}]*minmax\(240px, 280px\) minmax\(0, 1fr\) minmax\(0, 1fr\);", css
+    )
+    assert "--pm-gap" in function_body(source("app.js"), "renderPageMap")
+
+
+def test_export_gives_the_page_count_of_an_xtc():
+    body = function_body(source("app.js"), "renderExport")
+    assert "URLS.pages(" in body and "device_pages" in body
+
+
+def test_the_focus_strength_select_is_heard():
+    # the strength is a select now: the dock listens to its selects as well as its inputs
+    assert "$('review-dock').querySelectorAll('input, select')" in function_body(
+        source("app.js"), "bind"
+    )

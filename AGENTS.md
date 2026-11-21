@@ -50,7 +50,7 @@ src/eco/__init__.py          version
 src/eco/__main__.py          python -m eco
 src/eco/cli.py               argparse: setup, convert, extract, web
 src/eco/options.py           Options, DEVICES, ImageProfile, image_profile(), resolve_data_dir()
-src/eco/events.py            Finding, StageEvent, PageEvent, FindingEvent, STAGES, Cancelled
+src/eco/events.py            Finding, StageEvent, PageEvent (with the page number), BookEvent (pages, scanned, blank), FindingEvent, STAGES, Cancelled
 src/eco/book.py              Block, Book
 src/eco/bookfolder.py        write_book(), load_source(), BookSource, write_report()
 src/eco/models.py            model setup/download/offline
@@ -77,9 +77,9 @@ src/eco/pdf/structure.py     assign_heading_levels()
 src/eco/render/md2typst.py   to_typst(), VIEWS (the whole PageStyle, the progress bar, the image boxes)
 src/eco/render/pages.py      render_book(), render_chapter(), read_map(), page_file(), Rendered (with image_boxes), ChapterNotFound
 src/eco/web/jobs.py          JobStore (create, reserve, adopt, rebuild, delete, purge), Runner, JobInfo, JobFile, safe_name(), input_path(), server_lock(), RETENTION_DAYS, _worker_main() and _work() (worker process)
-src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs, /api/inspect (pages of one PDF for Select files) and /api/setup routes, _Upload and _PdfUpload (streamed uploads), Server (uvicorn that tells the app to stop)
+src/eco/web/app.py           create_app(), _Guard (token, Host, Origin, security headers), CSP, the /api/jobs, /api/inspect (pages of one PDF for Select) and /api/setup routes, _Upload and _PdfUpload (streamed uploads), Server (uvicorn that tells the app to stop)
 src/eco/web/models_setup.py  ModelSetup (the one background model download, its event log and readers), used by the /api/setup routes
-src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError, describe_pdf() and SECONDS_PER_PAGE (the rows of Select files)
+src/eco/web/preview.py       Previews (source pages, device pages, live preview, book text; caches under <job>/preview/<n>/), PreviewError, describe_pdf() and SECONDS_PER_PAGE (the file rows on Select)
 src/eco/web/strings.py       STRINGS: every English text of the GUI
 src/eco/web/templates/index.html  src/eco/web/static/app.css  src/eco/web/static/app.js (the workspace: select, convert, review, export; modules core.js, start.js, job.js, review.js)
 src/eco/web/static/pagemap.js  the page map: squares per page (Select, Convert) and the Review strip

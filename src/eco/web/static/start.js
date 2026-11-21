@@ -167,6 +167,7 @@ export function builtinStyle() {
   return JSON.parse($('builtin-style').textContent);
 }
 let selectedStyle = null;
+let styleLoad = Promise.resolve(); // the request for the chosen style: Start waits for it
 
 async function loadStyles() {
   const select = $('select-style');
@@ -187,9 +188,13 @@ async function loadStyles() {
   }
 }
 
+// The last choice wins: an answer for an earlier choice that comes late is dropped.
 export async function chooseStyle() {
   const name = $('select-style').value;
-  selectedStyle = name ? await getJson(`/api/styles/${encodeURIComponent(name)}`) : null;
+  const load = name ? getJson(`/api/styles/${encodeURIComponent(name)}`) : Promise.resolve(null);
+  styleLoad = load;
+  const style = await load;
+  if (styleLoad === load) selectedStyle = style;
 }
 
 // Markdown and EPUB files need no model, and neither does a PDF read as page images. While the
@@ -432,6 +437,12 @@ export function readOptions() {
 
 export async function startConversion() {
   if (state.uploading || state.files.length === 0) return;
+  try {
+    await styleLoad; // a style chosen just before Start is the style of the job
+  } catch (error) {
+    // the style could not load: the job takes the one chosen before
+  }
+  if (state.uploading) return;
   const form = new FormData();
   form.append('options', JSON.stringify(readOptions())); // first: a bad option is refused before a file is written
   for (const choice of state.files) form.append('files[]', choice.file, choice.file.name);

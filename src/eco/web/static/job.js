@@ -1,6 +1,7 @@
 import { $, MIN_SAMPLE_MS, QUEUE_POLL_MS, REPLAY_GAP_MS, STAGES, STAGE_NAME, URLS, approximateLeft, focusStage, formatDuration, getJson, h, renderStepper, setStage, setText, showBanner, state, t, tn } from './core.js';
 import { mapCells, pagesPerSquare, renderPageMap, squareSize } from './pagemap.js';
 import { openReviewAt, rebuild, renderReview, showFile, showReview } from './review.js';
+import { pdfKind } from './start.js';
 
 // ------------------------------------------------ a job and its events
 
@@ -310,7 +311,10 @@ export function renderProcessing() {
   renderQueue(job, run, index);
   setText($('file-title'), info.name);
   const meta = [];
-  if (file.book) meta.push(tn('pages', file.book.pages));
+  if (file.book) {
+    const scanned = { pages: file.book.pages, scanned_pages: file.book.scanned.length };
+    meta.push(tn('pages', file.book.pages), pdfKind(scanned, job.options));
+  }
   meta.push(t(`device_${job.options.device.replace('-', '_')}`), outputsText(job.options));
   setText($('file-meta'), meta.join(' · '));
   const percent = Math.round(shownFraction(file, names) * 100);
@@ -319,6 +323,7 @@ export function renderProcessing() {
   // a queued job says why it waits: the jobs ahead of it, or that it starts soon
   if (job.status === 'queued') line = job.position > 0 ? tn('queue_waiting', job.position) : t('queue_starting');
   setText($('time-line'), line);
+  syncClock(file);
   renderStageBar(names, file);
   renderMap(file);
   // a square of a converted file opens that page in Review: a mouse shortcut, the keyboard has the
@@ -332,6 +337,7 @@ export function renderProcessing() {
     }
     : null;
   $('page-map').classList.toggle('clickable', file.status === 'done');
+  setText($('page-map-caption'), t(file.status === 'done' ? 'pagemap_caption_done' : 'pagemap_caption'));
   renderFeed(file, index);
   // what a screen reader hears, at most every 2 seconds
   const now = performance.now();
@@ -354,28 +360,53 @@ export function renderProcessing() {
   $('cancel').disabled = state.cancelling || state.lost;
 }
 
+// While a file runs, the elapsed time moves each second, not only when an event comes. The timer
+// stops by itself when the file or the screen changes.
+export function syncClock(file) {
+  if (file.status !== 'running' || state.clock) return;
+  state.clock = setInterval(() => {
+    const index = state.run && state.run.current !== null ? state.run.current : 0;
+    const current = state.run && state.run.files[index];
+    if (state.stage !== 'processing' || !current || current.status !== 'running' || state.job.status === 'queued') {
+      clearInterval(state.clock);
+      state.clock = null;
+      return;
+    }
+    setText($('time-line'), timeLine(current));
+  }, 1000);
+}
+
 // One pill per file when the job has several: a word for its state, and a link to Review once
-// it has converted.
+// it has converted. The pills are made again only when one of them changes, and a link that had
+// the keyboard focus gets it back.
 export function renderQueue(job, run, index) {
   const queue = $('file-queue');
   queue.hidden = job.files.length < 2;
   if (queue.hidden) return;
+  const pills = job.files.map((info, i) => {
+    const status = run.files[i].status;
+    let word = t('queue_waiting_short');
+    if (status === 'running') word = t('queue_converting');
+    else if (status === 'done') word = t('queue_done');
+    else if (status === 'failed') word = t('queue_failed');
+    else if (job.status === 'cancelled') word = t('queue_cancelled');
+    else if (i === index + 1) word = t('queue_next_short');
+    return { status, text: `${info.name} · ${word}`, link: isConverted(info) };
+  });
+  const key = JSON.stringify(pills);
+  if (queue.dataset.key === key) return;
+  queue.dataset.key = key;
+  const focusedPill = [...queue.children].findIndex((pill) => pill.contains(document.activeElement));
   queue.replaceChildren(
-    ...job.files.map((info, i) => {
-      const status = run.files[i].status;
-      let word = t('queue_waiting_short');
-      if (status === 'running') word = t('queue_converting');
-      else if (status === 'done') word = t('queue_done');
-      else if (status === 'failed') word = t('queue_failed');
-      else if (job.status === 'cancelled') word = t('queue_cancelled');
-      else if (i === index + 1) word = t('queue_next_short');
-      const text = `${info.name} · ${word}`;
-      const content = isConverted(info)
-        ? h('a', { href: '#', onclick: (event) => { event.preventDefault(); showFile(i); } }, text)
-        : text;
-      return h('li', { class: `queue-pill queue-${status}` }, content);
+    ...pills.map((pill, i) => {
+      const content = pill.link
+        ? h('a', { href: '#', onclick: (event) => { event.preventDefault(); showFile(i); } }, pill.text)
+        : pill.text;
+      return h('li', { class: `queue-pill queue-${pill.status}` }, content);
     }),
   );
+  const link = focusedPill >= 0 ? queue.children[focusedPill].querySelector('a') : null;
+  if (link) link.focus();
 }
 
 // The segments are made once for a set of stages and then only change their state, so a screen

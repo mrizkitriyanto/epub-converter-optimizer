@@ -1,9 +1,9 @@
 'use strict';
 
-import { $, URLS, dropTokenFromAddress, getJson, route, setText, showBanner, state, t } from './core.js';
+import { $, URLS, dropTokenFromAddress, getJson, pageFailed, route, setText, showBanner, state } from './core.js';
 import { addFiles, chooseStyle, renderDetails, setSetupButtons, showDropErrors, startConversion, startDownload, syncSettingHints, uploadLibraryFonts } from './start.js';
 import { cancelJob, retryJob, showProcessing } from './job.js';
-import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, discardChanges, explainImage, makeSavedDefault, onFileSwitch, onStripClick, onStripKey, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, sizeFrameToImage, step, tryAgain } from './review.js';
+import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, discardChanges, explainImage, makeSavedDefault, onFileSwitch, onStripClick, onStripKey, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, showFile, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
 
@@ -61,6 +61,10 @@ function bind() {
   $('page-strip').addEventListener('click', onStripClick);
   $('page-strip').addEventListener('keydown', onStripKey);
   $('review-progress-link').addEventListener('click', showProcessing);
+  $('review-ready-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    showFile(Number(event.currentTarget.dataset.index));
+  });
   $('back-to-review').addEventListener('click', backToReview);
   $('convert-another').addEventListener('click', () => { location.hash = ''; });
   $('change-settings').addEventListener('click', () => {
@@ -72,7 +76,7 @@ function bind() {
   for (const format of document.querySelectorAll('input[name="preview-format"]')) {
     format.addEventListener('change', onFormatChange);
   }
-  for (const input of $('review-dock').querySelectorAll('input')) {
+  for (const input of $('review-dock').querySelectorAll('input, select')) {
     input.addEventListener('input', onReviewDockChange);
   }
   $('approve-review').addEventListener('click', approveCurrentFile);
@@ -106,12 +110,6 @@ function bind() {
     setText($('source-status'), '');
   });
   $('source-img').addEventListener('error', () => explainImage($('source-img'), $('source-status')));
-}
-
-// A mistake in this script must not leave a blank page: say so, and leave the details in the console.
-function pageFailed(error) {
-  showBanner(t('error_script'));
-  console.error(error);
 }
 
 async function init() {

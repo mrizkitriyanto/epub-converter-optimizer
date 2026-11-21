@@ -203,7 +203,7 @@ a:hover {
   --pm-size: 12px;
   display: grid;
   grid-template-columns: repeat(auto-fill, var(--pm-size));
-  gap: 4px;
+  gap: var(--pm-gap, 4px);
 }
 
 .pm-cell {
@@ -1153,7 +1153,7 @@ summary {
 
 .review-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
   margin-top: 24px;
@@ -1411,7 +1411,9 @@ li.finding.plain {
   color: var(--text);
 }
 
-.review-control output.changed {
+.review-control output.changed,
+.review-control label.changed,
+.review-focus-toggle .changed {
   color: var(--accent);
   font-weight: 500;
 }
@@ -1853,11 +1855,24 @@ output {
   }
 }
 
+.models-bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin-top: 8px;
+  accent-color: var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     transition: none !important;
     animation: none !important;
+  }
+
+  /* a moving bar is all an indeterminate bar does: the words say it instead */
+  .models-bar {
+    display: none;
   }
 }

@@ -1301,3 +1301,14 @@ Record the large chapter's load time in its column. If light and dark gray are r
 
 - The owner merged `redesign-page-map` into `main` and chose version 0.2.0 for the new GUI. The uncommitted Guided Workspace polish that sat on `main` was stashed, not committed, because the redesign replaces those three files.
 - No release tag was pushed: the owner deploys this version by running it locally for now.
+
+## 2026-11-21: Page map polish (the deferred minors of the redesign review)
+
+- The page map caption on Convert promises a click only when a click works: "Each square is one page." while the file converts, and the click hint once it is done.
+- Review's top bar names the file that is ready to review as a link to it. The visible line is no live region any more; a hidden one speaks the words when they change, never each new percent.
+- The Convert queue pills are rebuilt only when one changes, and a focused link gets the focus back. The elapsed time moves every second while a file runs, not only on events. The meta line names the kind of PDF (digital, scanned, partly scanned).
+- Focus Mode says "changed" like the other controls; its strength is a select (Low, Medium, High), as the spec asks. "Text size" replaces "Font size" in the dock, notes read "Notes (N)", the findings column is 240 to 280 px, and the page map gap is a third of the square (4 px at 12 px, 2 px at 8 px).
+- While files still convert, Apply's status keeps the count of pending changes beside "Available when every file has converted".
+- The model download shows an indeterminate progress bar, hidden under reduced motion, because the server sends no fraction.
+- Start waits for the reading style that was just chosen. An XTC carried through Apply stays an XTC when its color mode changed. Export gives an XTC's page count, from its preview, once it has loaded.
+- README and README.id.md describe the four steps of the new GUI.

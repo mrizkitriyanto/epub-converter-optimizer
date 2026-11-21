@@ -1,4 +1,4 @@
-import { $, JSON_HEADERS, LIVE_DELAY_MS, URLS, VIEW_FOR_FIRMWARE, errorText, focusStage, formatDuration, formatSize, getJson, h, readAsDataUrl, request, route, setStage, setText, state, t, tn } from './core.js';
+import { $, JSON_HEADERS, LIVE_DELAY_MS, URLS, VIEW_FOR_FIRMWARE, errorText, focusStage, formatDuration, formatSize, getJson, h, pageFailed, readAsDataUrl, request, route, setStage, setText, state, t, tn } from './core.js';
 import { findingParts, isActive, isConverted, shownFraction, stagesFor } from './job.js';
 import { renderStrip, stripBars } from './pagemap.js';
 
@@ -25,7 +25,6 @@ const STYLE_NUMBERS = new Set([
   'bar_edge_margin', 'bar_side_margin', 'orientation',
 ]);
 const STYLE_NAMES = new Map(Object.entries(STYLE_IDS).map(([name, id]) => [id, name]));
-const FOCUS_STRENGTHS = ['low', 'medium', 'high'];
 
 // ---------------------------------------------------------------- review
 
@@ -109,7 +108,9 @@ export function takeCarry(review) {
   state.carry = null;
   review.fileIndex = carry.fileIndex;
   const outputs = state.job.files[review.fileIndex].outputs || {};
-  if (outputs[carry.format] || (carry.format !== 'epub' && (outputs.xtch || outputs.xtc))) review.format = carry.format;
+  // an XTC stays an XTC when Apply changed its color mode: xtc and xtch name the same preview
+  if (carry.format === 'epub' && outputs.epub) review.format = 'epub';
+  else if (carry.format !== 'epub' && (outputs.xtch || outputs.xtc)) review.format = outputs.xtch ? 'xtch' : 'xtc';
   review.view = carry.view;
   review.pendingAnchor = carry.anchor;
   if (carry.selected) {
@@ -171,10 +172,12 @@ export function renderReview() {
 }
 
 // While the job runs on, the top bar says what the other files do: converting, ready, failed, or
-// cancelled, and leads back to Convert.
+// cancelled, and leads back to Convert. A file ready to review is a link to it. A screen reader
+// hears the words when they change, not each new percent.
 export function renderReviewStatus(job) {
   const run = state.run;
   const parts = [];
+  const spoken = [];
   const active = isActive(job);
   const ready = job.files.findIndex((info, i) => i !== state.review.fileIndex && isConverted(info) && !state.review.reviewed.has(i));
   if (active && run.current !== null && run.files[run.current].status === 'running') {
@@ -182,13 +185,26 @@ export function renderReviewStatus(job) {
     const info = job.files[run.current];
     const percent = Math.round(shownFraction(file, stagesFor(info, job.options, file.stages)) * 100);
     parts.push(t('converting_status', { name: info.name, percent }));
+    spoken.push(t('converting_status_live', { name: info.name }));
   }
+  const words = [];
   run.files.forEach((file, i) => {
-    if (file.status === 'failed') parts.push(t('file_failed_status', { name: job.files[i].name }));
+    if (file.status === 'failed') words.push(t('file_failed_status', { name: job.files[i].name }));
   });
-  if (job.status === 'cancelled') parts.push(t('job_cancelled_status'));
-  if (ready >= 0) parts.push(t('ready_to_review', { name: job.files[ready].name }));
-  setText($('review-status'), parts.join(' · '));
+  if (job.status === 'cancelled') words.push(t('job_cancelled_status'));
+  parts.push(...words);
+  spoken.push(...words);
+  const link = $('review-ready-link');
+  link.hidden = ready < 0;
+  if (ready >= 0) {
+    const text = t('ready_to_review', { name: job.files[ready].name });
+    link.dataset.index = String(ready);
+    setText(link, text);
+    spoken.push(text);
+  }
+  setText($('review-status-text'), parts.join(' · ') + (parts.length && ready >= 0 ? ' · ' : ''));
+  setText($('review-status-live'), spoken.join(' · '));
+  $('review-status').hidden = parts.length === 0 && ready < 0;
   $('review-progress-link').hidden = !active;
 }
 
@@ -608,7 +624,6 @@ export function writeStyle(style) {
   for (const [name, id] of Object.entries(STYLE_IDS)) {
     const input = $(id);
     if (STYLE_FLAGS.has(name)) input.checked = style[name];
-    else if (name === 'focus_strength') input.value = String(FOCUS_STRENGTHS.indexOf(style[name]));
     else input.value = String(style[name]);
   }
 }
@@ -618,7 +633,6 @@ export function readStyle() {
   for (const [name, id] of Object.entries(STYLE_IDS)) {
     const input = $(id);
     if (STYLE_FLAGS.has(name)) style[name] = input.checked;
-    else if (name === 'focus_strength') style[name] = FOCUS_STRENGTHS[Number(input.value)];
     else if (STYLE_NUMBERS.has(name)) style[name] = Number(input.value);
     else style[name] = input.value;
   }
@@ -794,7 +808,7 @@ export function updateApply() {
   $('discard').hidden = !dirty || review.applying;
   let status = '';
   if (review.applying) status = t('applying_rebuild');
-  else if (dirty && busy) status = t('apply_wait');
+  else if (dirty && busy) status = `${tn('changes_pending', changedCount())} · ${t('apply_wait')}`;
   else if (dirty) status = tn('changes_pending', changedCount());
   setText($('apply-status'), status);
   const next = nextUnreviewed();
@@ -846,21 +860,26 @@ export function syncReviewDock() {
   $('margin-x').value = String(style.margin_x);
   $('first-line-indent').value = String(style.first_line_indent);
   $('focus-mode').checked = focus;
-  $('focus-strength').value = String(FOCUS_STRENGTHS.indexOf(style.focus_strength));
+  $('focus-strength').value = style.focus_strength;
   setText($('style-font-size-value'), String(style.font_size));
   setText($('line-height-value'), `${style.line_height}%`);
   setText($('margin-x-value'), String(style.margin_x));
   setText($('first-line-indent-value'), `${style.first_line_indent}%`);
-  setText($('focus-strength-value'), t(`focus_${style.focus_strength}`));
   // a value that differs from the files says so, in words beside the number
   const applied = state.job.options.style;
-  const dock = [['font_size', 'style-font-size'], ['line_height', 'line-height'], ['margin_x', 'margin-x'], ['first_line_indent', 'first-line-indent'], ['focus_strength', 'focus-strength']];
+  const dock = [['font_size', 'style-font-size'], ['line_height', 'line-height'], ['margin_x', 'margin-x'], ['first_line_indent', 'first-line-indent']];
   for (const [name, id] of dock) {
     const output = $(`${id}-value`);
     const changed = style[name] !== applied[name];
     output.classList.toggle('changed', changed);
     if (changed) output.append(` · ${t('changed')}`);
   }
+  $('focus-mode-changed').hidden = focus === Boolean(applied.focus_mode);
+  // the strength select has no number beside it: its label says that it changed
+  const strength = $('focus-strength-field').querySelector('label');
+  const strengthChanged = focus && style.focus_strength !== applied.focus_strength;
+  strength.classList.toggle('changed', strengthChanged);
+  setText(strength, strengthChanged ? `${t('focus_strength_label')} · ${t('changed')}` : t('focus_strength_label'));
   $('focus-strength').disabled = !focus;
   $('focus-strength-field').hidden = !focus;
 }
@@ -872,7 +891,6 @@ export function onReviewDockChange(event) {
   if (!name) return;
   let value = input.value;
   if (STYLE_FLAGS.has(name)) value = input.checked;
-  else if (name === 'focus_strength') value = FOCUS_STRENGTHS[Number(input.value)];
   else if (STYLE_NUMBERS.has(name)) value = Number(input.value);
   review.live.style[name] = value;
   syncReviewDock();
@@ -941,13 +959,23 @@ export function renderExport() {
       const parts = [t(format === 'epub' ? 'output_epub' : 'output_xtc')];
       if (format === 'epub') parts.push(t('reflowable'));
       else parts.push(t(format === 'xtch' ? 'xtc_kind_gray' : 'xtc_kind_bw', { device }));
+      const description = h('span', null);
       if (size !== null && size !== undefined) {
         parts.push(format === 'epub' && info.size ? `${formatSize(size)}, ${t('down_from', { before: formatSize(info.size) })}` : formatSize(size));
       }
       const label = t('download_file', { format: t(format === 'epub' ? 'output_epub' : 'output_xtc') });
       const link = h('a', { class: `button ${primary ? 'primary' : 'secondary'}`, href: URLS.fileDownload(job.id, index, format), download: true }, label);
       primary = false;
-      rows.push(h('li', { class: 'export-file' }, h('span', { class: 'export-file-copy' }, h('strong', null, name), h('span', null, parts.join(' · '))), link));
+      setText(description, parts.join(' · '));
+      rows.push(h('li', { class: 'export-file' }, h('span', { class: 'export-file-copy' }, h('strong', null, name), description), link));
+      // an XTC's page count comes from its preview: it is added when it is here
+      if (format !== 'epub') {
+        getJson(URLS.pages(job.id, index, format, review.view)).then((pages) => {
+          if (state.stage === 'export' && state.job === job && pages.device_pages > 0) {
+            setText(description, [parts[0], parts[1], tn('pages', pages.device_pages), ...parts.slice(2)].join(' · '));
+          }
+        }).catch(() => {});
+      }
     }
     if (!info.outputs.epub || !info.epubcheck) continue; // an XTC only, or a job from before the check was recorded
     const lead = reviewed.length > 1 ? `${info.name}: ` : '';

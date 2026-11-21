@@ -5,8 +5,8 @@ import { abortReview, backToReview, rebuild, showReview, step } from './review.j
 'use strict';
 
 /*
- * The eco workspace. One page with four stages: the setup gate (models missing), Select files and
- * settings, Convert, Review, and Export. The open job is in the address (#job=<id>), so a reload
+ * The eco workspace. One page with four stages: Select (files and settings, and the model download
+ * when the models are missing), Convert, Review, and Export. The open job is in the address (#job=<id>), so a reload
  * or a link goes back to it: a queued or running job opens Convert, any other job opens Review.
  *
  * The tests read this file, so it keeps four habits:
@@ -40,6 +40,12 @@ export function h(tag, props, ...children) {
   }
   element.append(...children.filter((child) => child !== null && child !== undefined));
   return element;
+}
+
+// A mistake in this script must not leave a blank page: say so, and leave the details in the console.
+export function pageFailed(error) {
+  showBanner(t('error_script'));
+  console.error(error);
 }
 
 export function setText(element, text) {
@@ -208,6 +214,7 @@ export const state = {
   run: null, // what the events of the job say, per file
   stream: null, // the open event stream of the job
   poller: null, // the timer that polls a queued job
+  clock: null, // the timer that moves the elapsed time of a running file between its events
   cancelling: false,
   cancelError: '', // why Cancel did not work
   lost: false, // the stream ended without an end event

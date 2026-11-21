@@ -68,6 +68,7 @@ export function mapCells(book, progress, findings, mode) {
 // thousand pages is not rebuilt on every page event.
 export function renderPageMap(container, cells, size) {
   container.style.setProperty('--pm-size', `${size}px`);
+  container.style.setProperty('--pm-gap', `${Math.floor(size / 3)}px`); // 4 px at 12, 2 px at 8
   if (container.children.length !== cells.length) {
     container.replaceChildren(...cells.map(() => h('span', { class: 'pm-cell' })));
   }

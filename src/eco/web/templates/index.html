@@ -59,7 +59,10 @@
               <button id="models-download" type="button" class="secondary">{{ strings.models_download }}</button>
               <button id="models-ipv4" type="button" class="secondary" hidden>{{ strings.setup_retry_ipv4 }}</button>
             </div>
-            <p id="models-progress" class="hint" role="status" hidden>{{ strings.setup_working }}</p>
+            <div id="models-progress" hidden>
+              <p class="hint" role="status">{{ strings.setup_working }}</p>
+              <progress id="models-bar" class="models-bar" aria-label="{{ strings.setup_bar_label }}"></progress>
+            </div>
             <p id="models-error" class="error-text" role="alert" hidden></p>
             <details class="models-details">
               <summary>{{ strings.setup_log_label }}</summary>
@@ -199,7 +202,7 @@
             </p>
           </div>
           <div id="page-map" class="pm-grid" role="img"></div>
-          <p class="caption">{{ strings.pagemap_caption }}</p>
+          <p id="page-map-caption" class="caption">{{ strings.pagemap_caption }}</p>
         </section>
         <section class="findings-col" aria-labelledby="feed-title">
           <h3 id="feed-title">{{ strings.feed_title }} <span id="feed-count" class="muted"></span></h3>
@@ -223,7 +226,8 @@
         <ul id="chips" class="chips"></ul>
       </div>
       <div class="review-actions">
-        <p id="review-status" class="review-status" role="status"></p>
+        <p id="review-status" class="review-status"><span id="review-status-text"></span><a id="review-ready-link" href="#" hidden></a></p>
+        <p id="review-status-live" class="visually-hidden" role="status"></p>
         <button id="review-progress-link" type="button" class="link-button" hidden>{{ strings.show_progress }}</button>
         <p id="approve-hint" class="hint"></p>
         <button id="try-again" type="button" class="primary" hidden>{{ strings.try_again }}</button>
@@ -371,10 +375,14 @@
         <label for="first-line-indent">{{ strings.first_line_indent_label }} <output id="first-line-indent-value" for="first-line-indent"></output></label>
         <input id="first-line-indent" type="range" min="0" max="400" step="1">
       </div>
-      <label class="review-focus-toggle"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }}</label>
+      <label class="review-focus-toggle"><input id="focus-mode" type="checkbox"> {{ strings.focus_mode_label }} <span id="focus-mode-changed" class="changed" hidden>· {{ strings.changed }}</span></label>
       <div id="focus-strength-field" class="review-control">
-        <label for="focus-strength">{{ strings.focus_strength_label }} <output id="focus-strength-value" for="focus-strength"></output></label>
-        <input id="focus-strength" type="range" min="0" max="2" step="1">
+        <label for="focus-strength">{{ strings.focus_strength_label }}</label>
+        <select id="focus-strength">
+          <option value="low">{{ strings.focus_low }}</option>
+          <option value="medium">{{ strings.focus_medium }}</option>
+          <option value="high">{{ strings.focus_high }}</option>
+        </select>
       </div>
       <p id="focus-unavailable" class="hint" hidden>{{ strings.focus_unavailable }}</p>
       <div class="dock-footer">
