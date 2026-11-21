@@ -18,6 +18,7 @@ from fontTools import subset
 from fontTools.ttLib import TTFont
 from PIL import Image
 
+from eco.epub.cleanup import drop_empty_blocks, is_empty_document
 from eco.epub.css import rewrite_css
 from eco.epub.focus import focus_body
 from eco.epub.images import ImageResult, transform_image
@@ -362,6 +363,8 @@ class _Package:
         self._drop_unreferenced()
         self._images()
         self._fonts()
+        if self.xteink:
+            self._drop_empty()
         self._references()
         if self.xteink:  # a file only a removed background used is unused now
             self._drop_unreferenced()
@@ -675,6 +678,13 @@ class _Package:
                         dead.add(el)
             if dead:
                 _prune(doc.root, dead.__contains__)
+        for path, item in self.items.items():  # the NCX follows renames, as the pages do
+            if item.get("media-type") == NCX_TYPE and path in self.docs:
+                for el in self.docs[path].root.iter():
+                    ref = el.get("src") if _local(el) == "content" else None
+                    new = None if ref is None else self._retarget(path, ref)
+                    if new is not None and new != ref:
+                        el.set("src", new)
         if not self.xteink:
             return
         sheet = next((p for p in self.items if posixpath.basename(p) == "eco-eink.css"), None)
@@ -693,6 +703,42 @@ class _Package:
                     f"{{{XHTML}}}link",
                     {"rel": "stylesheet", "type": "text/css", "href": href},
                 )
+
+    def _drop_empty(self) -> None:
+        """Xteink: empty paragraphs and empty pages go. A page with nothing to read is renamed to
+        the next page that remains, so every link to it moves there."""
+        blocks = 0
+        for _, doc in self._pages():
+            if (body := doc.root.find("{*}body")) is not None:
+                blocks += drop_empty_blocks(body)
+        by_id = {item.get("id"): path for path, item in self.items.items()}
+        order = [by_id.get(ref.get("idref")) for ref in self.spine.findall("{*}itemref")]
+        order = [
+            p for p in order if p in self.docs and self.items[p].get("media-type") == XHTML_TYPE
+        ]
+        empty = []
+        for path in order:
+            body = self.docs[path].root.find("{*}body")
+            nav = "nav" in self.items[path].get("properties", "").split()
+            if body is not None and not nav and is_empty_document(body):
+                empty.append(path)
+        left = [p for p in order if p not in empty]
+        if not left:
+            empty = []  # a book of nothing keeps its pages
+        for path in empty:
+            index = order.index(path)
+            after = [p for p in order[index + 1 :] if p in left]
+            self.renamed[path] = after[0] if after else [p for p in order[:index] if p in left][-1]
+            self.files.pop(path, None)
+            self.docs.pop(path, None)
+            self.manifest.remove(self.items.pop(path))
+        parts = []
+        if blocks:
+            parts.append(_count(blocks, "empty paragraph"))
+        if empty:
+            parts.append(_count(len(empty), "empty page"))
+        if parts:
+            self._note("empty_removed", "info", f"{' and '.join(parts)} removed")
 
     def _split_chapters(self) -> None:
         by_id = {item.get("id"): path for path, item in self.items.items()}

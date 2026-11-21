@@ -1182,3 +1182,27 @@ def test_an_image_only_in_a_removed_background_goes_on_x4(tmp_path):
     assert "OEBPS/img/bg.jpg" not in z.namelist()
     z, _ = run(tmp_path, src, GENERAL)
     assert "OEBPS/img/bg.jpg" in z.namelist()
+
+
+def empty_page_book(tmp_path):
+    pages = {
+        "a": '<p><a href="blank.xhtml">go</a></p><p>&#160;</p>',
+        "blank": "<p>&#160;</p>",
+        "c": "<p>c</p>",
+    }
+    return package(tmp_path, pages)
+
+
+def test_links_to_an_empty_document_move_to_the_next(tmp_path):
+    z, report = run(tmp_path, empty_page_book(tmp_path))
+    check_package(z)
+    assert "OEBPS/text/blank.xhtml" not in z.namelist()
+    assert "OEBPS/text/blank.xhtml" not in manifest(z)
+    assert "OEBPS/text/blank.xhtml" not in spine(z)
+    assert 'href="c.xhtml"' in text_of(z, "OEBPS/text/a.xhtml")
+    assert "empty_removed" in kinds(report)
+
+
+def test_general_keeps_empty_pages(tmp_path):
+    z, report = run(tmp_path, empty_page_book(tmp_path), GENERAL)
+    assert "OEBPS/text/blank.xhtml" in z.namelist() and "empty_removed" not in kinds(report)
