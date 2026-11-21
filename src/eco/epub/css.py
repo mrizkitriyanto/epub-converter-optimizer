@@ -25,7 +25,10 @@ _FLEX_OR_GRID = re.compile(r"(?:-\w+-)?(?:inline-)?(?:flex|grid)", re.IGNORECASE
 
 # On Xteink the reader's own text size, spacing and margins rule: absolute sizes become relative
 # to 16 px, colors go (text black on white), and the page box of html and body loses its margins.
-_ABSOLUTE = re.compile(r"(?<![\w.-])(-?\d*\.?\d+)(px|pt|pc|in|cm|mm)\b", re.IGNORECASE)
+# one way to read each number, so a long run of digits is scanned once
+_ABSOLUTE = re.compile(
+    r"(?<![\w.-])(-?(?:\d+(?:\.\d*)?|\.\d+))(px|pt|pc|in|cm|mm)\b", re.IGNORECASE
+)
 _PX = {"px": 1, "pt": 4 / 3, "pc": 16, "in": 96, "cm": 96 / 2.54, "mm": 96 / 25.4}
 _KEYWORD_EM = {
     "xx-small": 0.6,
@@ -39,11 +42,13 @@ _KEYWORD_EM = {
 }
 _COLORS = {"color", "background", "background-color", "background-image"}
 _SPACING = re.compile(r"(?:margin|padding)(?:-(?:top|right|bottom|left))?", re.IGNORECASE)
-_IMPORTANT = re.compile(r"\s*!\s*important\s*$", re.IGNORECASE)
+_IMPORTANT = re.compile(r"!\s*important\s*$", re.IGNORECASE)  # no leading \s*: linear
 # starts only at the start or after "{", "}" or ";", so a run without them is scanned once
 _BLOCK = re.compile(r"(?:\A|(?<=[{};]))(?P<sel>[^{};]*)\{(?P<body>[^{}]*)\}")
+# starts only at the start of a rule body or after ";", like _DECLARATION, so a run of white
+# space is scanned once and a longer name (-webkit-padding-start) is never matched inside
 _BOX_DECLARATION = re.compile(
-    r"(?P<lead>\s*)(?P<name>(?:margin|padding)(?:-[a-z]+)?)\s*:\s*(?P<value>[^;]*)(?:;|$)",
+    r"(?:\A|(?<=;))(?P<lead>\s*)(?P<name>(?:margin|padding)(?:-[a-z]+)?)\s*:\s*(?P<value>[^;]*)(?:;|$)",
     re.IGNORECASE,
 )
 _MAX_SPACING_PX = 32  # 2em

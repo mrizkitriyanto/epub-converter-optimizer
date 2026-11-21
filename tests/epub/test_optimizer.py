@@ -1242,3 +1242,90 @@ def test_general_never_rebuilds_the_toc(tmp_path):
     src = package(tmp_path, {"a": "<h1>One</h1><p>x</p>"})
     z, report = run(tmp_path, src, GENERAL)
     assert ncx_labels(z, "OEBPS/toc.ncx") == [] and "toc_rebuilt" not in kinds(report)
+
+
+def rewrite_zip(src, dst, change):
+    """A copy of an EPUB with `change(name, data) -> data | None` applied (None drops the entry)."""
+    with zipfile.ZipFile(src) as z, zipfile.ZipFile(dst, "w") as out:
+        for info in z.infolist():
+            data = change(info.filename, z.read(info))
+            if data is not None:
+                kind = zipfile.ZIP_STORED if info.filename == "mimetype" else zipfile.ZIP_DEFLATED
+                out.writestr(info, data, compress_type=kind)
+    return dst
+
+
+def test_a_fragment_into_an_empty_page_moves_to_the_next_page_and_the_guide_follows(tmp_path):
+    pages = {
+        "a": '<p><a href="blank.xhtml#p2">go</a></p>',
+        "blank": '<p><span id="p2"/></p>',
+        "c": "<h1>c</h1>",
+    }
+    src = package(tmp_path, pages)
+
+    def guide(name, data):
+        if name.endswith("content.opf"):
+            ref = '<guide><reference type="text" title="t" href="text/blank.xhtml"/></guide>'
+            return data.replace(b"</package>", ref.encode() + b"</package>")
+        return data
+
+    src = rewrite_zip(src, tmp_path / "guide.epub", guide)
+    z, _ = run(tmp_path, src)
+    check_package(z)  # every link and its fragment resolve
+    assert 'href="c.xhtml"' in text_of(z, "OEBPS/text/a.xhtml")
+    _, opf = opf_of(z)
+    [ref] = opf.iterfind(".//opf:guide/opf:reference", NS)
+    assert ref.get("href") == "text/c.xhtml"
+
+
+def test_a_new_ncx_has_the_required_head(tmp_path):
+    src = package(tmp_path, {"a": "<h1>One</h1><p>x</p>"})
+
+    def no_ncx(name, data):
+        if name.endswith(".ncx"):
+            return None
+        if name.endswith("content.opf"):
+            data = re.sub(rb'<item id="ncx"[^>]*/>', b"", data)
+            return data.replace(b'<spine toc="ncx">', b"<spine>")
+        return data
+
+    z, _ = run(tmp_path, rewrite_zip(src, tmp_path / "no-ncx.epub", no_ncx))
+    check_package(z)
+    [ncx] = [n for n in z.namelist() if n.endswith(".ncx")]
+    metas = {
+        m.get("name"): m.get("content")
+        for m in ET.fromstring(z.read(ncx)).iterfind(".//ncx:head/ncx:meta", NS)
+    }
+    assert metas["dtb:uid"] == "x" and {
+        "dtb:depth",
+        "dtb:totalPageCount",
+        "dtb:maxPageNumber",
+    } <= set(metas)
+
+
+def test_x4_reports_the_photos_it_tuned(tmp_path):
+    files = {"img/p.jpg": image_bytes((200, 200), "JPEG", seed=7)}
+    src = package(tmp_path, {"c": '<p><img src="../img/p.jpg" alt=""/></p>'}, files)
+    assert "photos_tuned" in kinds(run(tmp_path, src)[1])
+    assert "photos_tuned" not in kinds(run(tmp_path, src, GENERAL)[1])
+
+
+def test_a_page_that_only_showed_a_removed_svg_goes(tmp_path):
+    drawing = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>'
+    pages = {"a": "<p>a</p>", "art": '<div><img src="../img/d.svg" alt=""/></div>', "c": "<p>c</p>"}
+    z, _ = run(tmp_path, package(tmp_path, pages, {"img/d.svg": drawing}))
+    check_package(z)
+    assert "OEBPS/text/art.xhtml" not in z.namelist()
+
+
+def test_a_page_list_is_not_a_table_of_contents_and_stays_after_the_nav_map(tmp_path):
+    pages = {"a": '<h1>One</h1><p><span id="p1"/>x</p>', "b": "<h1>Two</h1>"}
+    ncx = (
+        '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap/>'
+        '<pageList><pageTarget id="p1" type="normal" value="1" playOrder="1"><navLabel><text>1</text></navLabel>'
+        '<content src="text/a.xhtml#p1"/></pageTarget></pageList></ncx>'
+    )
+    z, report = run(tmp_path, package(tmp_path, pages, raw={"OEBPS/toc.ncx": ncx}))
+    assert "toc_rebuilt" in kinds(report)
+    root = ET.fromstring(z.read("OEBPS/toc.ncx"))
+    assert [c.tag.rpartition("}")[2] for c in root][-2:] == ["navMap", "pageList"]

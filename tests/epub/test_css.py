@@ -108,6 +108,11 @@ def test_a_declaration_after_a_nested_block_or_behind_a_star_hack_is_rewritten()
         '{a:"' * 8000,
         "{/*" * 10000,
         "{" + "a:b*/" * 6400,
+        "body{margin:" + "1" * 16000 + "}",
+        "p{margin:" + "1" * 16000 + "}",
+        "p{font-size:" + "1" * 16000 + "}",
+        "body{" + " " * 16000 + "}",
+        "p{a:b" + " " * 16000 + "c}",
     ],
 )
 def test_crafted_css_takes_linear_time(css):
@@ -180,3 +185,8 @@ def test_text_and_background_colors_go_together():
 def test_general_keeps_sizes_and_colors():
     css = "p { font-size: 9pt; color: #777; background: #eee }"
     assert rewrite_css(css, keep, xteink=False) == css
+
+
+def test_a_longer_property_name_is_not_a_page_box_margin():
+    out = rewrite_css("html, body { -webkit-padding-start: 40px; font-size: 12pt }", keep, True)
+    assert "-webkit-padding-start: 40px" in out and "font-size: 1em" in out

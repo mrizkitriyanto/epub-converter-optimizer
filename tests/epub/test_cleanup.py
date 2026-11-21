@@ -1,3 +1,4 @@
+import time
 import xml.etree.ElementTree as ET
 
 from eco.epub.cleanup import drop_empty_blocks, is_empty_document
@@ -43,3 +44,25 @@ def test_empty_document_detection():
     assert is_empty_document(xhtml("<p>&#160;</p><div></div>"))
     assert not is_empty_document(xhtml("<p><img src='a.jpg' alt=''/></p>"))
     assert not is_empty_document(xhtml("<p>word</p>"))
+
+
+def test_a_break_with_an_id_is_kept():
+    body = xhtml("<p><br id='x'/></p><p>t</p>")
+    assert drop_empty_blocks(body) == 0
+
+
+def test_media_that_is_gone_does_not_count():
+    def gone(el):
+        return el.get("src") == "gone.svg"
+
+    body = xhtml("<div><img src='gone.svg' alt=''/></div>")
+    assert drop_empty_blocks(body, gone) == 1
+    assert is_empty_document(xhtml("<p><img src='gone.svg' alt=''/></p>"), gone)
+    assert not is_empty_document(xhtml("<p><img src='kept.jpg' alt=''/></p>"), gone)
+
+
+def test_many_empty_paragraphs_take_linear_time():
+    body = xhtml("<p></p>" * 20000 + "<p>t</p>")
+    start = time.perf_counter()
+    assert drop_empty_blocks(body) == 20000
+    assert time.perf_counter() - start < 1

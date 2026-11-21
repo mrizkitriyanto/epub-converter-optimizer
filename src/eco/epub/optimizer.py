@@ -278,6 +278,7 @@ class _Package:
         self.items: dict[str, ET.Element] = {}  # manifest items by zip path
         self.removed: set[str] = set()
         self.renamed: dict[str, str] = {}
+        self.emptied: dict[str, str] = {}  # an empty page that went -> the page links move to
         self.data_uris: dict[str, str] = {}  # data: URI -> the file that holds it
         self.obfuscated: set[str] = set()
         self.dropped = 0
@@ -395,7 +396,7 @@ class _Package:
     def _free(self, path: str) -> str:
         """`path`, or `stem-1.ext`, `stem-2.ext` and so on when the name is taken."""
         stem, ext = posixpath.splitext(path)
-        taken = (self.files, self.docs, self.removed, self.renamed)
+        taken = (self.files, self.docs, self.removed, self.renamed, self.emptied)
         name, n = path, 0
         while any(name in names for names in taken):
             n += 1
@@ -430,8 +431,12 @@ class _Package:
         self.removed.add(path)
 
     def _retarget(self, owner: str, ref: str) -> str | None:
-        """`ref` after the renames, or None when the file it points at is gone."""
+        """`ref` after the renames, or None when the file it points at is gone. A link to an empty
+        page that went points at the page that took its place, without its fragment: the ids
+        of the empty page are gone with it."""
         target = _resolve(owner, ref)
+        if target in self.emptied:
+            return _rel(owner, self.emptied[target])
         if target in self.removed:
             return None
         new = self.renamed.get(target)
@@ -572,6 +577,7 @@ class _Package:
 
     def _images(self) -> None:
         cover = self._cover()
+        tuned = 0  # photos enhanced for e-ink
         for path, item in list(self.items.items()):
             if path not in self.files or not _is_raster(path, item.get("media-type", "")):
                 continue
@@ -601,6 +607,9 @@ class _Package:
                 self._remove(path)
             else:
                 self._store(path, item, result)
+                tuned += self.profile.enhance and result.media_type == "image/jpeg"
+        if tuned:
+            self._note("photos_tuned", "info", f"{_count(tuned, 'photo')} tuned for e-ink")
         if self.small:
             message = (
                 f"{_count(len(self.small), 'image')} under {self.profile.min_px} px removed, too "
@@ -710,9 +719,9 @@ class _Package:
         """Xteink: empty paragraphs and empty pages go. A page with nothing to read is renamed to
         the next page that remains, so every link to it moves there."""
         blocks = 0
-        for _, doc in self._pages():
+        for path, doc in self._pages():
             if (body := doc.root.find("{*}body")) is not None:
-                blocks += drop_empty_blocks(body)
+                blocks += drop_empty_blocks(body, self._gone_in(path))
         by_id = {item.get("id"): path for path, item in self.items.items()}
         order = [by_id.get(ref.get("idref")) for ref in self.spine.findall("{*}itemref")]
         order = [
@@ -722,7 +731,7 @@ class _Package:
         for path in order:
             body = self.docs[path].root.find("{*}body")
             nav = "nav" in self.items[path].get("properties", "").split()
-            if body is not None and not nav and is_empty_document(body):
+            if body is not None and not nav and is_empty_document(body, self._gone_in(path)):
                 empty.append(path)
         left = [p for p in order if p not in empty]
         if not left:
@@ -730,7 +739,7 @@ class _Package:
         for path in empty:
             index = order.index(path)
             after = [p for p in order[index + 1 :] if p in left]
-            self.renamed[path] = after[0] if after else [p for p in order[:index] if p in left][-1]
+            self.emptied[path] = after[0] if after else [p for p in order[:index] if p in left][-1]
             self.files.pop(path, None)
             self.docs.pop(path, None)
             self.manifest.remove(self.items.pop(path))
@@ -741,6 +750,23 @@ class _Package:
             parts.append(_count(len(empty), "empty page"))
         if parts:
             self._note("empty_removed", "info", f"{' and '.join(parts)} removed")
+
+    def _gone_in(self, path: str) -> Callable[[ET.Element], bool]:
+        """Whether a picture in the page `path` points at a file that was removed (an SVG, a
+        dropped or broken image). A too-small image with alt text leaves that text, so it counts."""
+
+        def gone(el: ET.Element) -> bool:
+            ref = (
+                el.get("src")
+                or el.get(XLINK_HREF)
+                or (el.get("data") if _local(el) == "object" else None)
+            )
+            target = _resolve(path, ref) if ref else None
+            if target is None or target not in self.removed:
+                return False
+            return not (target in self.small and el.get("alt", "").strip())
+
+        return gone
 
     def _toc_files(self) -> tuple[str | None, str | None]:
         """The nav document and the NCX of the package, when it has them and they parse."""
@@ -775,7 +801,9 @@ class _Package:
                         (nav, a.get("href")) for a in el.iter(f"{{{XHTML}}}a") if a.get("href")
                     ]
         if ncx:
-            refs += [(ncx, c.get("src")) for c in self.docs[ncx].root.iter(f"{{{NCX}}}content")]
+            nav_map = self.docs[ncx].root.find(f"{{{NCX}}}navMap")  # not the pageList
+            if nav_map is not None:
+                refs += [(ncx, c.get("src")) for c in nav_map.iter(f"{{{NCX}}}content")]
         targets = []
         for owner, ref in refs:
             parts = _split_url(ref)
@@ -813,16 +841,32 @@ class _Package:
             title = self.opf.root.find(".//{http://purl.org/dc/elements/1.1/}title")
             name = "".join(title.itertext()) if title is not None else ""
             root = ET.Element(f"{{{NCX}}}ncx", {"version": "2005-1"})
-            ET.SubElement(root, f"{{{NCX}}}head")
+            head = ET.SubElement(root, f"{{{NCX}}}head")
+            identifiers = list(self.opf.root.iter("{http://purl.org/dc/elements/1.1/}identifier"))
+            unique = self.opf.root.get("unique-identifier")
+            chosen = [el for el in identifiers if el.get("id") == unique] or identifiers
+            uid = "".join(chosen[0].itertext()).strip() if chosen else ""
+            for meta, content in (
+                ("dtb:uid", uid),
+                ("dtb:depth", str(max(entry.level for entry in entries))),
+                ("dtb:totalPageCount", "0"),
+                ("dtb:maxPageNumber", "0"),
+            ):
+                ET.SubElement(head, f"{{{NCX}}}meta", {"name": meta, "content": content})
             ET.SubElement(ET.SubElement(root, f"{{{NCX}}}docTitle"), f"{{{NCX}}}text").text = name
             self.docs[ncx] = _Doc(root)
             self.files[ncx] = b""
             self.spine.set("toc", self._add_item(ncx, NCX_TYPE, stem="ncx").get("id"))
         ncx_root = self.docs[ncx].root
+        children = list(ncx_root)
         old_map = ncx_root.find(f"{{{NCX}}}navMap")
         if old_map is not None:
+            index = children.index(old_map)
             ncx_root.remove(old_map)
-        ncx_root.append(ncx_map(entries, ncx))
+        else:  # the navMap comes before a pageList or navList
+            lists = [i for i, c in enumerate(children) if _local(c) in ("pageList", "navList")]
+            index = lists[0] if lists else len(children)
+        ncx_root.insert(index, ncx_map(entries, ncx))
         if self.opf.root.get("version", "").startswith("3"):
             if nav is None:
                 nav = self._free(posixpath.join(base, "nav.xhtml"))
@@ -925,8 +969,14 @@ class _Package:
                 guide = _local(child) == "reference" and _resolve(
                     self.opf_path, child.get("href", "")
                 )
+                if guide in self.emptied:
+                    guide = self.emptied[guide]
+                    child.set("href", _rel(self.opf_path, guide))
                 if cover and child.get("content") not in ids or guide and guide not in self.files:
                     parent.remove(child)
+        for parent in list(self.opf.root):
+            if _local(parent) == "guide" and not len(parent):
+                self.opf.root.remove(parent)  # an empty guide is not valid
         for path, doc in self._pages():
             item = self.items[path]
             properties = item.get("properties", "").split()
