@@ -70,8 +70,9 @@ def test_stored_style_survives_removed_font(tmp_path):
     )
     findings = []
     style = load_style(tmp_path, "Old", findings=findings)
-    assert style == PageStyle(font="Literata", font_weight=700)
-    assert [finding.kind for finding in findings] == ["font_missing", "focus_unavailable"]
+    # Literata has an 800 above the 700 text: Focus Mode stays on and moves up to it
+    assert style == PageStyle(font="Literata", font_weight=700, focus_mode=True, focus_weight=800)
+    assert [finding.kind for finding in findings] == ["font_missing", "focus_weight_raised"]
     from eco.web.app import create_app
 
     client = TestClient(create_app(tmp_path, token=None), base_url="http://127.0.0.1:8000")

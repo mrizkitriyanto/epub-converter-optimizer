@@ -104,12 +104,12 @@ def test_focus_excludes_non_body_text(tmp_path, markdown):
 
 def test_focus_rejects_a_font_without_heavier_weight():
     with pytest.raises(ValueError, match="no heavier weight"):
-        PageStyle.from_json({"font": "Literata", "font_weight": 700, "focus_mode": True})
+        PageStyle.from_json({"font": "Literata", "font_weight": 800, "focus_mode": True})
 
 
 def test_focus_weight_replaces_strength():
     assert PageStyle().focus_weight == 700
-    assert CHOICES["focus_weight"] == (600, 700)
+    assert CHOICES["focus_weight"] == (600, 700, 800)
     assert "focus_strength" not in PageStyle().to_json()
     with pytest.raises(ValueError, match="focus_weight"):
         PageStyle(focus_weight=500)
@@ -128,3 +128,19 @@ def test_focus_weight_must_be_heavier_than_the_text():
     style = PageStyle.from_json(data, lenient=True, findings=findings)
     assert style.focus_weight == 700 and style.focus_mode
     assert [f.kind for f in findings] == ["focus_weight_raised"]
+
+
+def test_extra_bold_needs_a_font_that_has_it():
+    data = {"font": "Libertinus Serif", "focus_mode": True, "focus_weight": 800}
+    with pytest.raises(ValueError, match="focus_weight 800"):
+        PageStyle.from_json(data)
+    findings = []
+    style = PageStyle.from_json(data, lenient=True, findings=findings)
+    assert style.focus_weight == 700 and [f.kind for f in findings] == ["focus_weight_missing"]
+    assert PageStyle.from_json({**data, "font": "Literata"}).focus_weight == 800
+
+
+def test_a_focus_weight_raised_goes_to_one_the_font_has():
+    data = {"font": "Literata", "font_weight": 700, "focus_mode": True, "focus_weight": 700}
+    style = PageStyle.from_json(data, lenient=True, findings=[])
+    assert style.focus_weight == 800 and style.focus_mode

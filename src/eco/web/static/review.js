@@ -661,13 +661,21 @@ export function updateFocusAvailability() {
   $('focus-mode').disabled = !available;
   $('focus-unavailable').hidden = available;
   if (!available) $('focus-mode').checked = false;
-  // above a semibold text only Bold is heavier: Semibold is not offered, and a chosen one moves up
+  // a weight is offered when the font has it and it is heavier than the text; a chosen one that
+  // is not moves to the next the font has, as the server does
   const review = state.review;
-  const semibold = $('focus-weight').querySelector('option[value="600"]');
-  semibold.disabled = Number($('font-weight').value) >= 600;
-  if (semibold.disabled && review.live.style.focus_weight === 600) {
-    review.live.style.focus_weight = 700;
-    $('focus-weight').value = '700';
+  const weights = found ? found.weights : [];
+  const text = Number($('font-weight').value);
+  for (const option of $('focus-weight').options) {
+    const weight = Number(option.value);
+    option.disabled = !(weights.includes(weight) && weight > text);
+  }
+  const offered = [...$('focus-weight').options].filter((option) => !option.disabled).map((option) => Number(option.value));
+  const chosen = review.live.style.focus_weight;
+  if (offered.length && !offered.includes(chosen)) {
+    const next = offered.find((weight) => weight >= chosen) ?? offered[offered.length - 1];
+    review.live.style.focus_weight = next;
+    $('focus-weight').value = String(next);
   }
 }
 

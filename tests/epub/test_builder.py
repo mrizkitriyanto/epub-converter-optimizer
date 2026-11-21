@@ -109,7 +109,7 @@ def tag(name):
     return f"{{{NS['h']}}}{name}"
 
 
-@pytest.mark.parametrize("weight", [600, 700])
+@pytest.mark.parametrize("weight", [600, 700, 800])
 def test_focus_mode_is_embedded_in_epub_text(tmp_path, weight):
     md = tmp_path / "focus.md"
     md.write_text(

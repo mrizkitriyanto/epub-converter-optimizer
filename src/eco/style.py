@@ -18,7 +18,7 @@ from eco.events import Finding
 FONTS_DIR = Path(__file__).parent / "fonts"
 TYPST_FAMILY = "Libertinus Serif"  # the one Typst embeds
 
-_WEIGHT_NAMES = {400: "Regular", 500: "Medium", 600: "SemiBold", 700: "Bold"}
+_WEIGHT_NAMES = {400: "Regular", 500: "Medium", 600: "SemiBold", 700: "Bold", 800: "ExtraBold"}
 # family -> weight -> file: the upright static instances. Literata's italic sits next to them and
 # Typst picks it from the folder.
 BUNDLED_FONTS: dict[str, dict[int, Path]] = {
@@ -44,7 +44,7 @@ RANGES: dict[str, tuple[int, int]] = {
 }
 CHOICES: dict[str, tuple] = {
     "align": ("justify", "left", "center"),
-    "focus_weight": (600, 700),
+    "focus_weight": (600, 700, 800),
     "mode": ("xth", "xtg"),
     "bar_position": ("bottom", "top", "off"),
     "orientation": (0, 90, 180, 270),
@@ -68,7 +68,7 @@ class PageStyle:
     paragraph_spacing: int = 120
     first_line_indent: int = 0
     focus_mode: bool = False
-    focus_weight: int = 700  # the bold of Focus Mode: semibold or bold
+    focus_weight: int = 700  # the bold of Focus Mode: semibold, bold or extra bold
     align: str = "justify"
     hyphenate: bool = True
     lang: str = "auto"
@@ -186,16 +186,36 @@ class PageStyle:
         if style.focus_mode and style.focus_weight <= style.font_weight:
             if not lenient:
                 raise ValueError("focus_weight must be heavier than font_weight")
+            heavier = min(weight for weight in weights if weight > style.font_weight)
             if findings is not None:
                 findings.append(
                     Finding(
                         0,
                         "focus_weight_raised",
                         "warning",
-                        f"Focus weight {style.focus_weight} is not heavier than the text; using 700.",
+                        f"Focus weight {style.focus_weight} is not heavier than the text; "
+                        f"using {heavier}.",
                     )
                 )
-            style = replace(style, focus_weight=700)
+            style = replace(style, focus_weight=heavier)
+        if style.focus_mode and style.focus_weight not in weights:
+            # the font would draw another weight: the one asked for is refused, not faked
+            if not lenient:
+                raise ValueError(
+                    f"focus_weight {style.focus_weight} is not a weight of {style.font}"
+                )
+            heavier = sorted(weight for weight in weights if weight > style.font_weight)
+            nearest = next((w for w in heavier if w >= style.focus_weight), heavier[-1])
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0,
+                        "focus_weight_missing",
+                        "warning",
+                        f"{style.font} has no weight {style.focus_weight}; Focus Mode uses {nearest}.",
+                    )
+                )
+            style = replace(style, focus_weight=nearest)
         return style
 
     def to_json(self) -> dict:

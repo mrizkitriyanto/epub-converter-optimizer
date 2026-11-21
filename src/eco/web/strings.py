@@ -442,7 +442,10 @@ STRINGS = {
     "focus_weight_label": "Bold weight",
     "focus_weight_600": "Semibold",
     "focus_weight_700": "Bold",
-    "focus_weight_note": "On a reader font without semibold, both weights look bold.",
+    "focus_weight_800": "ExtraBold",
+    "focus_weight_note": (
+        "The EPUB uses the reader's own font: without a semibold or an extra bold, these look bold."
+    ),
     "dock_epub_note": (
         "Text size, spacing and margins change the XTC and this preview. On the Xteink, the EPUB "
         "follows the reader's own settings."

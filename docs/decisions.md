@@ -1347,3 +1347,9 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - The EPUB tile and the Review line say "Page images" for a PDF converted as page images. The XTC tile names the chosen device. An "Other e-reader" cannot open XTC: the page turns the tile off, and the API and the CLI refuse XTC with `general`.
 - File size says it changes only the EPUB's images; the firmware hint says that Stock with Smallest leaves the EPUB's images out. OCR has a hint per choice and is off for Page images.
 - `--landscape` (and `landscape` in the API) needs mode `pages`: it only turns page images.
+
+## 2026-11-22: Focus Mode ExtraBold 800
+
+- The owner asked for ExtraBold 800 beside Semibold 600 and Bold 700. The bundled Literata, Bitter and Lexend Deca gained their 800 face (same sources and commits, `src/eco/fonts/SOURCES.md`); Libertinus Serif has none.
+- A Focus Mode weight must be a weight of the font and heavier than the text. A new style with another one is refused; an older one moves to the next weight the font has, with a `focus_weight_missing` finding, instead of Typst drawing another weight under the chosen name. The dock offers only the weights the font has.
+- In the EPUB on an Xteink the reader's font decides; with only regular and bold faces 600, 700 and 800 all show bold. The dock note says so. Not checked on a device.

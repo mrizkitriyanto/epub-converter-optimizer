@@ -79,9 +79,9 @@ def test_a_partial_object_takes_the_defaults_for_the_rest():
 
 
 def test_weights():
-    assert available_weights("Lexend Deca") == [400, 500, 600, 700]
-    assert available_weights("Literata") == [400, 500, 600, 700]
-    assert available_weights("Bitter") == [400, 500, 600, 700]
+    assert available_weights("Lexend Deca") == [400, 500, 600, 700, 800]
+    assert available_weights("Literata") == [400, 500, 600, 700, 800]
+    assert available_weights("Bitter") == [400, 500, 600, 700, 800]
     assert available_weights("Libertinus Serif") == [400, 600, 700]  # what Typst embeds
     assert available_weights("No Such Font") == []
 
@@ -265,5 +265,5 @@ def test_the_fonts_are_small_open_and_say_where_they_came_from():
     for family in BUNDLED_FONTS:
         assert re.search(rf"^## {family}$", sources, re.MULTILINE)
     assert sorted(p.suffix for p in FONTS_DIR.rglob("*") if p.is_file()) == sorted(
-        [".ttf"] * 13 + [".txt"] * 3 + [".md"]
+        [".ttf"] * 16 + [".txt"] * 3 + [".md"]
     )

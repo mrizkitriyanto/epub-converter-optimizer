@@ -2174,9 +2174,10 @@ def test_the_dock_uses_the_spec_words_and_the_panel_column_fits_the_findings():
 def test_the_dock_offers_the_focus_weight(tmp_path):
     review = stage_markup(local(tmp_path).get("/").text, "review")
     weight = re.search(r'<select id="focus-weight">(.*?)</select>', review, re.DOTALL)
-    assert re.findall(r'value="(\d+)"', weight.group(1)) == ["600", "700"]
+    assert re.findall(r'value="(\d+)"', weight.group(1)) == ["600", "700", "800"]
     assert 'id="focus-weight-changed"' in review and "focus-strength" not in review
     assert (STRINGS["focus_weight_600"], STRINGS["focus_weight_700"]) == ("Semibold", "Bold")
+    assert STRINGS["focus_weight_800"] == "ExtraBold"
 
 
 def test_the_epub_preview_says_what_changes_the_epub(tmp_path):
@@ -2232,13 +2233,6 @@ def test_the_default_device_is_the_x4_pro(tmp_path):
 
 
 # ------------------------------------------------- final review of the Focus Mode weight
-
-
-def test_semibold_is_offered_only_above_a_lighter_text():
-    body = function_body(source("app.js"), "updateFocusAvailability")
-    assert "$('focus-weight').querySelector('option[value=\"600\"]')" in body
-    assert "semibold.disabled = Number($('font-weight').value) >= 600" in body
-    assert "review.live.style.focus_weight = 700" in body
 
 
 def test_the_focus_controls_on_select_are_44_px_targets():
@@ -2329,3 +2323,9 @@ def test_review_names_an_epub_of_page_images():
     body = function_body(source("app.js"), "renderExport")
     assert "job.options.mode === 'pages'" in body and "'page_images'" in body
     assert STRINGS["page_images"] == "page images"
+
+
+def test_the_dock_offers_only_the_focus_weights_the_font_has():
+    body = function_body(source("app.js"), "updateFocusAvailability")
+    assert "option.disabled = !(weights.includes(weight) && weight > text)" in body
+    assert "extra bold" in STRINGS["focus_weight_note"].lower()

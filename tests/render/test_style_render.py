@@ -106,9 +106,9 @@ def test_a_heavier_weight_is_darker(tmp_path):
     src = book(tmp_path, SHORT)
     mean = {
         weight: ImageStat.Stat(page(render(src, PageStyle(font_weight=weight)))).mean[0]
-        for weight in (400, 500, 600, 700)
+        for weight in (400, 500, 600, 700, 800)
     }
-    assert mean[700] < mean[600] < mean[500] < mean[400]
+    assert mean[800] < mean[700] < mean[600] < mean[500] < mean[400]
 
 
 def test_the_size_of_the_text_follows_the_style(tmp_path):

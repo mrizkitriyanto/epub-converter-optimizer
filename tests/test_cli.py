@@ -426,3 +426,8 @@ def test_xtc_needs_an_xteink_device(tmp_path, capsys):
     assert convert(tmp_path, md, "--device", "general", "--format", "epub,xtch") == 2
     assert "Xteink" in capsys.readouterr().err
     assert not list(tmp_path.glob("*.epub"))
+
+
+def test_the_cli_takes_extra_bold(capsys):
+    assert main(["convert", "--help"]) == 0
+    assert "800" in capsys.readouterr().out

@@ -26,7 +26,7 @@ from eco.options import (
     resolve_data_dir,
 )
 from eco.saved_styles import get_default, list_styles, load_style
-from eco.style import BUNDLED_FONTS, TYPST_FAMILY, PageStyle
+from eco.style import BUNDLED_FONTS, CHOICES, TYPST_FAMILY, PageStyle
 
 _INPUT_SUFFIXES = (".pdf", ".md", ".epub")
 _OUTPUT_SUFFIXES = tuple(f".{device}.epub" for device in DEVICES)
@@ -446,8 +446,9 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument(
         "--focus-weight",
         type=int,
-        choices=(600, 700),
-        help="Focus Mode bold weight (default: 700, or the selected style's value)",
+        choices=CHOICES["focus_weight"],
+        help="Focus Mode bold weight, one the font has: 600, 700 or 800 (default: 700, or the "
+        "selected style's value)",
     )
     convert.add_argument("--font", metavar="NAME|PATH", help="font family or .ttf/.otf file")
     convert.add_argument("--font-size", type=int, metavar="N", help="override the style font size")
