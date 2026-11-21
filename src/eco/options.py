@@ -97,6 +97,7 @@ class ImageProfile:
     png_line_art: bool
     drop_images: bool
     min_px: int
+    enhance: bool = False  # photos get more contrast and a light sharpening for e-ink
 
 
 def image_profile(o: Options) -> ImageProfile:
@@ -105,7 +106,7 @@ def image_profile(o: Options) -> ImageProfile:
         px = _GENERAL_PX[o.size]
         return ImageProfile(px, px, False, _GENERAL_QUALITY[o.size], False, False, 0)
     drop = o.size == "small" and o.firmware == "stock"
-    return ImageProfile(*screen, True, _XTEINK_QUALITY[o.size], True, drop, 20)
+    return ImageProfile(*screen, True, _XTEINK_QUALITY[o.size], True, drop, 20, enhance=True)
 
 
 def resolve_data_dir(cli_value: str | None) -> Path:

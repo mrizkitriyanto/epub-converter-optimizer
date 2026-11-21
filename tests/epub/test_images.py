@@ -203,3 +203,26 @@ def test_truncated_jpeg_raises_oserror():
 def test_unreadable_data_raises():
     with pytest.raises(UnidentifiedImageError):
         transform_image(b"not an image", X4)
+
+
+# ------------------------------------------------- photos tuned for e-ink on Xteink
+
+
+def test_xteink_photos_get_more_contrast():
+    rng = random.Random(3)  # a flat photo: noise between 110 and 150, many shades, not line art
+    flat = Image.frombytes("L", (300, 300), bytes(rng.randrange(110, 151) for _ in range(90000)))
+    data = _encode(flat.convert("RGB"), "JPEG", quality=95)
+    with Image.open(BytesIO(transform_image(data, X4).data)) as out:
+        low, high = out.getextrema()
+    assert low < 60 and high > 200  # stretched from 110 to 150
+
+
+def test_general_photos_are_not_enhanced():
+    assert X4.enhance and not GENERAL.enhance
+
+
+def test_line_art_is_not_enhanced():
+    from dataclasses import replace
+
+    data = _encode(_line_art(), "PNG")
+    assert transform_image(data, X4).data == transform_image(data, replace(X4, enhance=False)).data

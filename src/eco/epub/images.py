@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from io import BytesIO
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 from eco.options import ImageProfile
 
@@ -74,9 +74,14 @@ def transform_image(data: bytes, profile: ImageProfile) -> ImageResult | None:
         im.save(out, "PNG", optimize=True)
         result = ImageResult(out.getvalue(), "image/png", "png")
     else:
+        if profile.enhance:  # a flat, muddy photo on e-ink: stretch its levels, sharpen a little
+            im = ImageOps.autocontrast(im, cutoff=1)
+            im = im.filter(ImageFilter.UnsharpMask(radius=1, percent=50, threshold=2))
         im.save(out, "JPEG", progressive=False, optimize=True, quality=profile.jpeg_quality)
         result = ImageResult(out.getvalue(), "image/jpeg", "jpg")
-    if final_form and im.size == size and len(data) <= len(result.data):
+    # an enhanced photo is never swapped back for its source
+    enhanced = profile.enhance and not png
+    if final_form and not enhanced and im.size == size and len(data) <= len(result.data):
         media_type, ext = ("image/png", "png") if source_format == "PNG" else ("image/jpeg", "jpg")
         return ImageResult(data, media_type, ext)
     return result
