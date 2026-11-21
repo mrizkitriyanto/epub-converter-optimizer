@@ -565,9 +565,10 @@ def test_the_page_keeps_the_font_size_in_the_style_of_the_options(tmp_path):
     assert "style: review.live.style" in js  # a rebuild keeps every page-style field
 
 
-def test_focus_mode_comes_from_the_reading_style_before_and_is_set_in_review(tmp_path):
+def test_focus_mode_starts_from_the_reading_style_and_is_set_in_review(tmp_path):
     html, js = local(tmp_path).get("/").text, source("app.js")
     assert 'id="embed-focus"' not in html and 'id="select-style"' in html
+    assert 'id="select-focus"' in stage_markup(html, "select")
     assert 'id="focus-mode"' in stage_markup(html, "review")
     assert "$('focus-controls').hidden = review.format === 'epub'" not in js
 
@@ -2090,7 +2091,7 @@ def test_the_architecture_notes_are_current():
 
 def test_review_copy_and_values_follow_the_spec(tmp_path):
     html = local(tmp_path).get("/").text
-    review = stage_markup(html, "review")
+    assert '<select id="focus-weight">' in stage_markup(html, "review")
     assert STRINGS["live_font_label"] == "Text size"
     assert STRINGS["notes_title_one"] == "Notes (1)"
     assert STRINGS["notes_title_other"] == "Notes ({n})"
@@ -2200,3 +2201,29 @@ def test_export_names_the_focus_weight():
     body = function_body(source("app.js"), "renderExport")
     assert "focus_weight_${style.focus_weight}" in body
     assert "{weight}" in STRINGS["style_value_focus"]
+
+
+def test_select_offers_focus_mode_with_an_explanation(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    assert re.search(r'<input id="select-focus" type="checkbox"', select)
+    assert re.search(
+        r'<button id="select-focus-help" type="button"[^>]*aria-expanded="false"'
+        r'[^>]*aria-controls="select-focus-about"',
+        select,
+    )
+    assert re.search(r'<p id="select-focus-about"[^>]*hidden', select)
+    assert "40%" in STRINGS["focus_about"] and "Review" in STRINGS["focus_about"]
+    assert "focus_mode: $('select-focus').checked" in function_body(source("app.js"), "readOptions")
+    assert "select-focus-help" in function_body(source("app.js"), "bind")
+
+
+def test_select_focus_follows_the_reading_style():
+    body = function_body(source("app.js"), "chooseStyle")
+    assert "$('select-focus').checked =" in body
+
+
+def test_the_default_device_is_the_x4_pro(tmp_path):
+    from eco.options import Options
+
+    assert Options().device == "x4-pro"
+    assert '<option value="x4-pro" selected>' in local(tmp_path).get("/").text

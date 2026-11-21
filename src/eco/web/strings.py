@@ -408,6 +408,13 @@ STRINGS = {
     "align_left": "Left",
     "align_center": "Center",
     "focus_mode_label": "Focus Mode",
+    "select_focus_label": "Focus Mode",
+    "focus_help_label": "What is Focus Mode?",
+    "focus_about": (
+        "Bolds the first letters of each word so your eye finds words faster. Short words get one "
+        "bold letter, longer words about 40%. It is written into the EPUB and drawn into the XTC. "
+        "You can change the bold weight in Review."
+    ),
     "focus_weight_label": "Bold weight",
     "focus_weight_600": "Semibold",
     "focus_weight_700": "Bold",

@@ -224,7 +224,7 @@ def test_deep_nesting_does_not_stop_a_batch(tmp_path, capsys):
     errors = [line for line in captured.err.splitlines() if line.startswith("error:")]
     assert errors == ["error: Not a readable EPUB: deep.epub"]
     assert "1 converted, 1 failed: deep.epub" in captured.out
-    assert (tmp_path / "good.x4.epub").exists()
+    assert (tmp_path / "good.x4-pro.epub").exists()
 
 
 @pytest.mark.parametrize("name", ["NUL", "nul.png", "Con.JPG", "aux.x", "COM1", "lpt9.png"])

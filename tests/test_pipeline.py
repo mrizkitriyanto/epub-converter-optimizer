@@ -133,13 +133,13 @@ def test_epub_is_checked_before_publishing(monkeypatch, tmp_path):
         checked.append(epub)
         assert epub.is_file()
         assert epub.parent.parent == out_dir
-        assert not (out_dir / "book.x4.epub").exists()
+        assert not (out_dir / "book.x4-pro.epub").exists()
         return []
 
     monkeypatch.setattr(pipeline, "validate_epub", check, raising=False)
     result = convert_file(md, Options(), out_dir, data_dir=tmp_path / "data")
     assert len(checked) == 1
-    assert result.outputs["epub"] == out_dir / "book.x4.epub"
+    assert result.outputs["epub"] == out_dir / "book.x4-pro.epub"
     assert result.outputs["epub"].exists()
 
 
@@ -477,7 +477,7 @@ def test_epub_input_is_only_optimised(tmp_path, messy_epub):
     seen = []
     r = convert(messy_epub, tmp_path, on_event=seen.append)
     assert stages(seen) == both("optimize")
-    assert r.outputs["epub"] == tmp_path / "out" / "messy.x4.epub"
+    assert r.outputs["epub"] == tmp_path / "out" / "messy.x4-pro.epub"
     assert r.book_dir is None
     assert r.findings
     assert [e.finding for e in seen if isinstance(e, FindingEvent)] == r.findings
@@ -496,7 +496,7 @@ def test_book_folder_goes_to_epub_and_optimize(tmp_path, small_book):
     seen = []
     r = convert(small_book, tmp_path, on_event=seen.append)
     assert stages(seen) == both("epub", "optimize")
-    assert (r.book_dir, r.outputs["epub"].name) == (small_book, "small.x4.epub")
+    assert (r.book_dir, r.outputs["epub"].name) == (small_book, "small.x4-pro.epub")
 
 
 def test_unreadable_pdf_fails_first(tmp_path, fake_blocks):

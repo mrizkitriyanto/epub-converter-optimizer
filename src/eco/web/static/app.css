@@ -1438,6 +1438,33 @@ li.finding.plain {
   margin: 0;
 }
 
+.focus-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.help-button {
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.focus-field .hint {
+  margin-top: 6px;
+}
+
 .dock-note {
   flex: 1 1 100%;
   margin: 0;

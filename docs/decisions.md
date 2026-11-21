@@ -1315,3 +1315,12 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - After the branch review: the elapsed clock runs only while the job is queued or running and the server is reachable. A job that ends failed marks the file that was still running as failed, so a worker that died is no longer shown as running; Convert shows the job's error for it.
 - Export reads an XTC's page count from the file's header (`GET /api/jobs/{id}/files/{n}/xtc-pages`), never from the preview, which would render the whole book first.
 - Start stops with the error when the chosen reading style cannot load, and waits for a style chosen while it waits. The dock uses the spec's words (Line spacing, Side margins, First-line indent), and the findings column stays 240 to 280 px with Advanced typography open.
+
+## 2026-11-21: Focus Mode weight, Focus Mode on Select, honest style UI, X4 Pro default
+
+- eco's targets are EPUB and XTC with EPUB first, and the EPUB is read on Xteink only (owner). Spec: `docs/superpowers/specs/2026-11-21-focus-weight-honest-ui-design.md`.
+- Focus Mode bolds a fixed share of each word in EPUB and XTC alike: 1 letter of words up to 3 letters, 2 of 4, and the nearest 40% of longer words. The strength setting is gone; one Python function and one Typst `#let` carry the rule, tested against one table.
+- The user chooses the bold weight: Semibold 600 or Bold 700 (default 700). Medium 500 is not offered: on a reader font with only regular and bold, CSS shows 500 as regular and Focus Mode would vanish from the EPUB. In XTC, an uploaded font without the chosen weight uses the nearest heavier weight it has. Old styles with `focus_strength` still load; the CLI takes `--focus-weight`.
+- Review says what reaches the EPUB: in the EPUB preview, text size, spacing and margins change only the XTC and the preview. A job that makes only an EPUB counts only Focus Mode changes for Apply and Continue; other changes are labelled as preview only.
+- Select has a Focus Mode checkbox with a "?" button that opens a short explanation (a click, not a hover tooltip). It starts as the chosen reading style has it.
+- The default device is the Xteink X4 Pro in the GUI and the CLI. A CLI run without `--device` now names its outputs `book.x4-pro.epub`.

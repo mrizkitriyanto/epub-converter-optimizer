@@ -1210,7 +1210,7 @@ def test_rebuild_without_options_uses_the_defaults(tmp_path):
     c = client(tmp_path)
     old = post(c, ("a.md", b"# A"), options={"device": "x3"}).json()
     r = c.post(f"/api/jobs/{old['id']}/rebuild")
-    assert (r.status_code, r.json()["options"]["device"]) == (201, "x4")
+    assert (r.status_code, r.json()["options"]["device"]) == (201, "x4-pro")
 
 
 @pytest.mark.parametrize(
@@ -1482,7 +1482,7 @@ def test_a_markdown_book_converts_through_the_real_worker_and_downloads(tmp_path
         assert events[-1] == {"type": "end", "status": "done"}
         assert {"file", "stage"} <= {e["type"] for e in events}
         [done] = [e for e in events if e["type"] == "file" and e["status"] == "done"]
-        assert done["outputs"] == {"epub": "Bab Ü.x4.epub"}
+        assert done["outputs"] == {"epub": "Bab Ü.x4-pro.epub"}
         assert done["sizes"]["epub"] > 0 and "book_dir" not in done
         shown = c.get(f"/api/jobs/{job['id']}").json()
         assert shown["files"][0]["outputs"] == done["outputs"]  # the job and its event agree
@@ -1493,7 +1493,7 @@ def test_a_markdown_book_converts_through_the_real_worker_and_downloads(tmp_path
         assert_no_path([shown, events], tmp_path)
         got = c.get(f"/api/jobs/{job['id']}/files/0/download/epub")
         assert got.headers["content-disposition"] == (
-            "attachment; filename=\"Bab _.x4.epub\"; filename*=UTF-8''Bab%20%C3%9C.x4.epub"
+            "attachment; filename=\"Bab _.x4-pro.epub\"; filename*=UTF-8''Bab%20%C3%9C.x4-pro.epub"
         )
         assert len(got.content) == done["sizes"]["epub"]
         with zipfile.ZipFile(io.BytesIO(got.content)) as z:

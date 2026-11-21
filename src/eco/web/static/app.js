@@ -61,6 +61,11 @@ function bind() {
   $('page-strip').addEventListener('click', onStripClick);
   $('page-strip').addEventListener('keydown', onStripKey);
   $('review-progress-link').addEventListener('click', showProcessing);
+  $('select-focus-help').addEventListener('click', () => {
+    const about = $('select-focus-about');
+    about.hidden = !about.hidden;
+    $('select-focus-help').setAttribute('aria-expanded', String(!about.hidden));
+  });
   $('review-ready-link').addEventListener('click', (event) => {
     event.preventDefault();
     showFile(Number(event.currentTarget.dataset.index));

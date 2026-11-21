@@ -81,7 +81,7 @@ Open `http://<server>:8000/?token=<your-secret>`. The first visit stores the tok
 
 ## Usage
 
-The examples below use `eco`. In a native archive, run `./eco` on macOS/Linux or `.\eco.exe` in PowerShell instead. Convert one or more PDF, Markdown, or EPUB files, or name a folder to convert its supported files. The EPUB is named like `book.x4.epub` and is written next to the input, or into `-o DIR`:
+The examples below use `eco`. In a native archive, run `./eco` on macOS/Linux or `.\eco.exe` in PowerShell instead. Convert one or more PDF, Markdown, or EPUB files, or name a folder to convert its supported files. The EPUB is named like `book.x4-pro.epub` (the device is in the name) and is written next to the input, or into `-o DIR`:
 
 ```bash
 eco convert book.pdf
@@ -94,7 +94,7 @@ eco convert existing.epub --device general -o out/
 Options of `eco convert INPUT...`:
 
 - `-o DIR`: output folder.
-- `--device x4|x4-pro|x4-classic|x3|general`: target device.
+- `--device x4|x4-pro|x4-classic|x3|general`: target device (default: `x4-pro`).
 - `--size small|balanced|best`: file size preset.
 - `--mode auto|reflow|pages`: reflow the text or keep fixed pages.
 - `--ocr auto|force|off`: OCR for scanned pages.
@@ -123,7 +123,7 @@ eco web
 
 This starts a local server and opens `http://127.0.0.1:8000/` in your browser. The page has four steps: Select, Convert, Review and Export. Everything is processed on this computer. The page is in English only.
 
-- **Select:** add PDF, Markdown or EPUB files (up to 200 per upload). Each PDF shows its page count, whether it is digital or scanned, a time estimate, and a map with one square per page that marks the scanned pages. Choose the reading device, EPUB or XTC output, a saved reading style and the file size, then start. Firmware, OCR, layout, title, author, language and the Fonts library are under **More settings**. When the AI models are missing, a notice offers to download them; Markdown, EPUB and PDFs made into page images convert without them.
+- **Select:** add PDF, Markdown or EPUB files (up to 200 per upload). Each PDF shows its page count, whether it is digital or scanned, a time estimate, and a map with one square per page that marks the scanned pages. Choose the reading device (Xteink X4 Pro by default), EPUB or XTC output, a saved reading style, whether Focus Mode is on (the **?** beside it explains it), and the file size, then start. Firmware, OCR, layout, title, author, language and the Fonts library are under **More settings**. When the AI models are missing, a notice offers to download them; Markdown, EPUB and PDFs made into page images convert without them.
 - **Convert:** the percent, the time left and the time so far, one segment per stage, and for a PDF a page map that fills as pages are read. Warnings appear as they are found. You can cancel a running conversion. Review opens by itself when the first file is done.
 - **Review:** the findings next to the original page and a preview of the e-reader page; a click on a finding moves both. The strip above them has one bar per page and marks the pages with a warning; click it or use the arrow keys to move through the book. Text size, line spacing, side margins, first-line indent, Focus Mode and its bold weight (semibold or bold) change the preview at once and say "changed" until you select **Apply to book**, which rebuilds the files (a PDF is not read again) and returns to the same page. Focus Mode is written into the EPUB; the other values change the XTC and the preview only, because on the Xteink the EPUB follows the reader's own text size, spacing and margins. For a job that makes only an EPUB, Apply therefore counts only Focus Mode changes. **Advanced typography** holds every style value, including alignment and paragraph spacing, and lets you save a named style, make it the default, or delete it. A missing font uses Literata and reports a finding; missing characters in the chosen font also appear as a finding and in the live preview. Each converted file needs review before Export.
 - **Export:** a download button for each file, the EPUBCheck result, and the style that was applied.

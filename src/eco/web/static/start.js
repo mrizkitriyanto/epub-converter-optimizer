@@ -194,7 +194,10 @@ export async function chooseStyle() {
   const load = name ? getJson(`/api/styles/${encodeURIComponent(name)}`) : Promise.resolve(null);
   styleLoad = load;
   const style = await load;
-  if (styleLoad === load) selectedStyle = style;
+  if (styleLoad !== load) return;
+  selectedStyle = style;
+  // Focus Mode on Select starts as the chosen style has it
+  $('select-focus').checked = Boolean((style || builtinStyle()).focus_mode);
 }
 
 // Markdown and EPUB files need no model, and neither does a PDF read as page images. While the
@@ -431,7 +434,7 @@ export function readOptions() {
     title: text($('book-title')),
     author: text($('book-author')),
     lang: text($('book-lang')),
-    style: { ...(selectedStyle || builtinStyle()) },
+    style: { ...(selectedStyle || builtinStyle()), focus_mode: $('select-focus').checked },
   };
 }
 

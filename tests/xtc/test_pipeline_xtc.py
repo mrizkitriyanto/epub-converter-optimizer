@@ -22,7 +22,7 @@ def convert(path, out, options):
 
 def test_pipeline_writes_epub_and_exact_xtch_pages(tmp_path, small_book):
     style = PageStyle(bar_position="off")
-    options = Options(formats=("epub", "xtch", "xtc"), style=style)
+    options = Options(device="x4", formats=("epub", "xtch", "xtc"), style=style)
 
     result = convert(small_book, tmp_path / "out", options)
 
@@ -80,8 +80,8 @@ def test_cli_accepts_format_list_and_style_file(tmp_path):
     common = [str(source), "--format", "xtch", "--data", str(tmp_path / "data")]
     assert main(["convert", *common, "-o", str(default_out)]) == 0
     assert main(["convert", *common, "-o", str(large_out), "--style", str(style)]) == 0
-    _, default_pages, _ = read_container((default_out / "book.x4.xtch").read_bytes())
-    _, large_pages, _ = read_container((large_out / "book.x4.xtch").read_bytes())
+    _, default_pages, _ = read_container((default_out / "book.x4-pro.xtch").read_bytes())
+    _, large_pages, _ = read_container((large_out / "book.x4-pro.xtch").read_bytes())
     assert len(large_pages) > len(default_pages)
 
 

@@ -490,7 +490,7 @@ def test_markdown_converts_in_a_worker_process(started):
     job = Path(done.files[0].path).parents[2]
     epub = Path(done.files[0].outputs["epub"])
     assert (done.status, done.files[0].error, done.files[0].book_dir) == ("done", None, None)
-    assert epub == job / "output" / "Bab Ü.x4.epub" and zipfile.is_zipfile(epub)
+    assert epub == job / "output" / "Bab Ü.x4-pro.epub" and zipfile.is_zipfile(epub)
     assert Path(done.files[0].path).read_bytes() == b"# Bab 1\n\nIsi.\n"
     steps = [
         (e["type"], e.get("stage"), e["status"])
@@ -550,7 +550,10 @@ def test_two_uploads_with_one_name_both_convert_and_keep_their_own_text(started)
     run.submit(info.id)
     done = finished_job(store, info)
     outputs = [Path(f.outputs["epub"]) for f in done.files]
-    assert done.status == "done" and [p.name for p in outputs] == ["a.x4.epub", "a.x4-1.epub"]
+    assert done.status == "done" and [p.name for p in outputs] == [
+        "a.x4-pro.epub",
+        "a.x4-pro-1.epub",
+    ]
     first, second = epub_text(outputs[0]), epub_text(outputs[1])
     assert "First" in first and "Second" not in first
     assert "Second" in second and "First" not in second

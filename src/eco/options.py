@@ -28,7 +28,7 @@ _XTEINK_QUALITY = {"small": 65, "balanced": 80, "best": 92}
 
 @dataclass(frozen=True)
 class Options:
-    device: str = "x4"
+    device: str = "x4-pro"
     firmware: str = "any"
     formats: tuple[str, ...] = ("epub",)
     size: str = "balanced"

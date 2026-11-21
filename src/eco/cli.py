@@ -408,7 +408,7 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument(
         "-o", "--output", metavar="DIR", help="output folder (default: the input's folder)"
     )
-    convert.add_argument("--device", choices=list(DEVICES), default="x4")
+    convert.add_argument("--device", choices=list(DEVICES), default="x4-pro")
     convert.add_argument("--firmware", choices=FIRMWARES, default="any")
     convert.add_argument(
         "--format",

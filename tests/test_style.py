@@ -39,7 +39,7 @@ def test_every_default_of_the_table():
         "paragraph_spacing": 120,
         "first_line_indent": 0,
         "focus_mode": False,
-        "focus_strength": "medium",
+        "focus_weight": 700,
         "align": "justify",
         "hyphenate": True,
         "lang": "auto",

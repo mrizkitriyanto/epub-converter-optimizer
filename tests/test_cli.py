@@ -94,7 +94,7 @@ def test_batch_continues_after_bad_file(tmp_path, capsys):
     bad.write_bytes(b"not a pdf")
     assert convert(tmp_path, good, bad, "-o", tmp_path / "o") == 1
     out = capsys.readouterr()
-    assert (tmp_path / "o" / "a b.x4.epub").exists()
+    assert (tmp_path / "o" / "a b.x4-pro.epub").exists()
     assert "error: Not a readable PDF: broken.pdf" in out.err
     assert "Traceback" not in out.err
     assert out.out.splitlines()[-1] == "1 converted, 1 failed: broken.pdf"
@@ -215,10 +215,14 @@ def test_folder_input_expands_without_recursion(tmp_path, capsys, small_book):
     (folder / "deep" / "c.md").write_text("# C\n")
     (small_book).rename(folder / "s.book")
     assert convert(tmp_path, folder) == 0
-    assert sorted(p.name for p in folder.glob("*.epub")) == ["a.x4.epub", "b.x4.epub", "s.x4.epub"]
+    assert sorted(p.name for p in folder.glob("*.epub")) == [
+        "a.x4-pro.epub",
+        "b.x4-pro.epub",
+        "s.x4-pro.epub",
+    ]
     out = capsys.readouterr().out.splitlines()
     firsts = [line for line in out if line.endswith(".epub")]
-    assert [Path(p).name for p in firsts] == ["a.x4.epub", "b.x4.epub", "s.x4.epub"]
+    assert [Path(p).name for p in firsts] == ["a.x4-pro.epub", "b.x4-pro.epub", "s.x4-pro.epub"]
 
 
 def test_empty_folder_is_an_error(tmp_path, capsys):
@@ -232,7 +236,7 @@ def test_same_stem_outputs_stay_distinct(tmp_path, fake_blocks, fixtures_dir):
     pdf.write_bytes(fixtures_dir["blank"].read_bytes())
     (tmp_path / "a.md").write_text("# A\n")
     assert convert(tmp_path, pdf, tmp_path / "a.md") == 0
-    assert sorted(p.name for p in tmp_path.glob("*.epub")) == ["a.x4-1.epub", "a.x4.epub"]
+    assert sorted(p.name for p in tmp_path.glob("*.epub")) == ["a.x4-pro-1.epub", "a.x4-pro.epub"]
 
 
 def test_output_defaults_to_the_input_folder(tmp_path):
@@ -240,7 +244,7 @@ def test_output_defaults_to_the_input_folder(tmp_path):
     md.parent.mkdir()
     md.write_text("# A\n")
     assert convert(tmp_path, md) == 0
-    assert (tmp_path / "sub" / "a.x4.epub").exists()
+    assert (tmp_path / "sub" / "a.x4-pro.epub").exists()
 
 
 def test_summary_and_progress(tmp_path, capsys, fake_blocks, fixtures_dir):
@@ -250,7 +254,7 @@ def test_summary_and_progress(tmp_path, capsys, fake_blocks, fixtures_dir):
     assert convert(tmp_path, pdf, "-o", tmp_path / "o") == 0
     out = capsys.readouterr()
     lines = out.out.splitlines()
-    assert lines[0] == str(tmp_path / "o" / "b.x4.epub")
+    assert lines[0] == str(tmp_path / "o" / "b.x4-pro.epub")
     assert lines[1].startswith("  size: ") and " KB -> " in lines[1] and lines[1].endswith(" KB")
     assert "blank_page 1" in out.out and "page_failed 1" in out.out
     assert "warning: page 1: This page could not be converted" in out.out
@@ -345,10 +349,10 @@ def test_folder_expansion_skips_earlier_outputs(tmp_path, capsys):
     (folder / "a.md").write_text("# A\n")
     for _ in range(2):
         assert convert(tmp_path, folder) == 0
-    assert sorted(p.name for p in folder.glob("*.epub")) == ["a.x4.epub"]
+    assert sorted(p.name for p in folder.glob("*.epub")) == ["a.x4-pro.epub"]
     assert capsys.readouterr().out.count(".epub\n") == 2  # one conversion per run
-    assert convert(tmp_path, folder / "a.x4.epub") == 0  # named by the user: converted
-    assert sorted(p.name for p in folder.glob("*.epub")) == ["a.x4-1.epub", "a.x4.epub"]
+    assert convert(tmp_path, folder / "a.x4-pro.epub") == 0  # named by the user: converted
+    assert sorted(p.name for p in folder.glob("*.epub")) == ["a.x4-pro-1.epub", "a.x4-pro.epub"]
 
 
 def test_folder_of_earlier_outputs_only_is_empty(tmp_path, capsys):
@@ -366,7 +370,7 @@ def test_home_folder_is_expanded_in_inputs_and_output(home, tmp_path, monkeypatc
     (tmp_path / "in").mkdir()
     (tmp_path / "in" / "a.md").write_text("# A\n")
     assert convert(tmp_path, "~/in", "-o", "~/out") == 0
-    assert (tmp_path / "out" / "a.x4.epub").exists()
+    assert (tmp_path / "out" / "a.x4-pro.epub").exists()
     assert not (work / "~").exists()
 
 
@@ -392,7 +396,7 @@ def test_failure_while_printing_a_summary_does_not_stop_the_batch(tmp_path, caps
     monkeypatch.setattr("eco.cli._print_findings", flaky)
     assert convert(tmp_path, tmp_path / "a.md", tmp_path / "b.md") == 1
     out = capsys.readouterr()
-    assert sorted(p.name for p in tmp_path.glob("*.epub")) == ["a.x4.epub", "b.x4.epub"]
+    assert sorted(p.name for p in tmp_path.glob("*.epub")) == ["a.x4-pro.epub", "b.x4-pro.epub"]
     assert out.out.splitlines()[-1] == "1 converted, 1 failed: a.md"
 
 
