@@ -121,9 +121,14 @@ eco extract book.pdf -o out/
 eco web
 ```
 
-This starts a local server and opens `http://127.0.0.1:8000/` in your browser. Add PDF, Markdown or EPUB files (up to 200 per upload), choose the device and the settings, and start. Progress shows the stage and the page, and you can cancel a running conversion. Review shows the findings next to the original page and a preview of the e-reader page. A click on a finding moves both. "Change settings" converts again with other settings; a PDF is not read again. Then download the EPUBs. Everything is processed on this computer. The page is in English only.
+This starts a local server and opens `http://127.0.0.1:8000/` in your browser. The page has four steps: Select, Convert, Review and Export. Everything is processed on this computer. The page is in English only.
 
-In Settings on Select files, select **Embed Focus Mode in EPUB** before conversion. It bolds the start of Latin, Greek, and Cyrillic words in the EPUB text itself, including when the input is an EPUB, so no e-reader setting or script is needed. Code and math are left alone. The e-reader may still override book formatting. In Review, select EPUB to switch Focus Mode on or off and choose its strength. The preview updates as you change these controls; select **Apply changes** to make a new EPUB. The Change settings panel also contains Focus Mode and controls alignment, margins, paragraph spacing, and indent for XTC. Save a named style, make it the default, or delete it there. Settings on the Select files page has a Fonts section for shared font uploads and removal. A missing font uses Literata and reports a finding; missing characters in the chosen font also appear as a finding and in live preview.
+- **Select:** add PDF, Markdown or EPUB files (up to 200 per upload). Each PDF shows its page count, whether it is digital or scanned, a time estimate, and a map with one square per page that marks the scanned pages. Choose the reading device, EPUB or XTC output, a saved reading style and the file size, then start. Firmware, OCR, layout, title, author, language and the Fonts library are under **More settings**. When the AI models are missing, a notice offers to download them; Markdown, EPUB and PDFs made into page images convert without them.
+- **Convert:** the percent, the time left and the time so far, one segment per stage, and for a PDF a page map that fills as pages are read. Warnings appear as they are found. You can cancel a running conversion. Review opens by itself when the first file is done.
+- **Review:** the findings next to the original page and a preview of the e-reader page; a click on a finding moves both. The strip above them has one bar per page and marks the pages with a warning; click it or use the arrow keys to move through the book. Text size, line spacing, side margins, first-line indent and Focus Mode change the preview at once and say "changed" until you select **Apply to book**, which rebuilds the files with the new style (a PDF is not read again) and returns to the same page. **Advanced typography** holds every style value, including alignment and paragraph spacing, and lets you save a named style, make it the default, or delete it. A missing font uses Literata and reports a finding; missing characters in the chosen font also appear as a finding and in the live preview. Each converted file needs review before Export.
+- **Export:** a download button for each file, the EPUBCheck result, and the style that was applied.
+
+Focus Mode bolds the start of Latin, Greek, and Cyrillic words in the EPUB text itself, including when the input is an EPUB, so no e-reader setting or script is needed. Code and math are left alone. The e-reader may still override book formatting.
 
 Options of `eco web`:
 
@@ -136,7 +141,7 @@ Options of `eco web`:
 
 If the AI models are missing, the first page asks for them (about 417 MB: layout 172 MB, tables 213 MB, OCR 32 MB). It downloads them only after you click "Download models". "Continue without models" skips this: Markdown, EPUB and PDF files with Layout set to "Page images" convert without models.
 
-Converted files stay in the data folder as jobs, so the page can list them as recent conversions. Jobs are deleted after 7 days (checked every hour while the server runs). To delete one sooner, with its uploads, EPUB files and previews, open it and click "Delete conversion" in Review (cancel a conversion that is still running first). One `eco web` can run per data folder; a second one stops with an error.
+Converted files stay in the data folder as jobs, so the page can list them as recent conversions. Jobs are deleted after 7 days (checked every hour while the server runs). To delete one sooner, with its uploads, EPUB files and previews, open it and click "Delete this conversion" on Export, or on Convert after a conversion failed (cancel a conversion that is still running first). One `eco web` can run per data folder; a second one stops with an error.
 
 ### Network access
 
