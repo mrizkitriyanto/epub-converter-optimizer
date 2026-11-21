@@ -5,16 +5,23 @@ from unicodedata import combining, name
 
 _XHTML = "http://www.w3.org/1999/xhtml"
 _SKIP = {"b", "code", "kbd", "math", "pre", "samp", "script", "style", "svg"}
-_PERCENT = {"low": 30, "medium": 50, "high": 70}
 
 
 def _letter(char: str) -> bool:
     return name(char, "").startswith(("LATIN ", "GREEK ", "CYRILLIC ")) and char.isalpha()
 
 
-def focus_body(body: ET.Element, strength: str) -> None:
-    """Wrap the initial letters of words in presentational bold elements."""
-    percent = _PERCENT[strength]
+def focus_letters(count: int) -> int:
+    """How many of a word's letters are bold: 1 up to 3 letters, 2 of 4, else the nearest 40%."""
+    if count <= 3:
+        return 1
+    if count == 4:
+        return 2
+    return (4 * count + 5) // 10
+
+
+def focus_body(body: ET.Element, weight: int) -> None:
+    """Wrap the initial letters of words in presentational bold elements of that weight."""
 
     def clear(parent: ET.Element) -> None:
         for child in list(parent):
@@ -67,10 +74,10 @@ def focus_body(body: ET.Element, strength: str) -> None:
                 while i < len(source) and combining(source[i]):
                     i += 1
                 clusters.append(source[start:i])
-            n = min(len(clusters) - 1, max(1, (len(clusters) * percent + 99) // 100))
-            if len(clusters) == 1:
-                n = 1
-            bold = ET.Element(f"{{{_XHTML}}}b", {"class": "eco-focus", "style": "font-weight:700"})
+            n = focus_letters(len(clusters))
+            bold = ET.Element(
+                f"{{{_XHTML}}}b", {"class": "eco-focus", "style": f"font-weight:{weight}"}
+            )
             bold.text = "".join(clusters[:n])
             bold.tail = "".join(clusters[n:])
             parent.insert(index, bold)

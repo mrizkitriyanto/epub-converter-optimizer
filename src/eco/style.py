@@ -44,7 +44,7 @@ RANGES: dict[str, tuple[int, int]] = {
 }
 CHOICES: dict[str, tuple] = {
     "align": ("justify", "left", "center"),
-    "focus_strength": ("low", "medium", "high"),
+    "focus_weight": (600, 700),
     "mode": ("xth", "xtg"),
     "bar_position": ("bottom", "top", "off"),
     "orientation": (0, 90, 180, 270),
@@ -68,7 +68,7 @@ class PageStyle:
     paragraph_spacing: int = 120
     first_line_indent: int = 0
     focus_mode: bool = False
-    focus_strength: str = "medium"
+    focus_weight: int = 700  # the bold of Focus Mode: semibold or bold
     align: str = "justify"
     hyphenate: bool = True
     lang: str = "auto"
@@ -135,6 +135,8 @@ class PageStyle:
                 "margin_y": d.get("margin_y", d["margin"]),
             }
             del d["margin"]
+        # Focus Mode once had a strength; its letters follow a fixed rule now
+        d = {key: value for key, value in d.items() if key != "focus_strength"}
         names = {f.name for f in fields(cls)}
         for key in d:
             if key not in names:
@@ -181,6 +183,19 @@ class PageStyle:
                     )
                 )
             style = replace(style, focus_mode=False)
+        if style.focus_mode and style.focus_weight <= style.font_weight:
+            if not lenient:
+                raise ValueError("focus_weight must be heavier than font_weight")
+            if findings is not None:
+                findings.append(
+                    Finding(
+                        0,
+                        "focus_weight_raised",
+                        "warning",
+                        f"Focus weight {style.focus_weight} is not heavier than the text; using 700.",
+                    )
+                )
+            style = replace(style, focus_weight=700)
         return style
 
     def to_json(self) -> dict:

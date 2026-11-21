@@ -103,7 +103,7 @@ Opsi `eco convert INPUT...`:
 - `--landscape`: putar halaman Xteink ke arah lanskap.
 - `--title`, `--author`, `--lang`: timpa metadata buku; `--lang` menerima kode seperti `en` atau `id`.
 - `--data DIR`: folder data; `ECO_DATA` juga dapat menentukannya. Bawaannya folder data pengguna.
-- `--focus-mode`: tanam penebalan awal kata dalam XHTML EPUB dan terapkan juga pada XTC. `--focus-strength low|medium|high` mengatur banyaknya huruf yang ditebalkan (bawaan: medium).
+- `--focus-mode`: tanam penebalan awal kata dalam XHTML EPUB dan terapkan juga pada XTC. Kata sampai 3 huruf mendapat 1 huruf tebal, kata 4 huruf 2, kata yang lebih panjang 40% (dibulatkan). `--focus-weight 600|700` memilih semibold atau bold (bawaan: 700).
 
 Untuk XTC atau XTCH, gunakan `--style NAMA` untuk gaya halaman tersimpan, atau `--style FILE.json` untuk berkas gaya. `--font NAMA` dan `--font-size N` menimpa pengaturan gaya itu. `eco styles list` menampilkan gaya tersimpan dan penanda default. Tanpa `--style`, konversi memakai gaya default bila tersedia.
 

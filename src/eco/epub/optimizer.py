@@ -365,7 +365,7 @@ class _Package:
         if self.options.style.focus_mode:
             for _, doc in self._pages():
                 if (body := doc.root.find("{*}body")) is not None:
-                    focus_body(body, self.options.style.focus_strength)
+                    focus_body(body, self.options.style.focus_weight)
         if self.xteink:
             self._split_chapters()
         self._tidy()

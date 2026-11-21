@@ -29,6 +29,22 @@ from eco.style import PageStyle, available_weights
 
 VIEWS = ("crosspoint", "crossink", "stock", "xtc")
 
+# The letters of a word that Focus Mode makes bold, the same rule as eco.epub.focus.focus_letters:
+# 1 up to 3 letters, 2 of 4, else the nearest 40%.
+FOCUS_COUNT_TYPST = (
+    "#let focus-count(n) = if n <= 3 { 1 } else if n == 4 { 2 } else { calc.quo(4 * n + 5, 10) }\n"
+)
+
+
+def focus_target_weight(weights: Sequence[int], font_weight: int, focus_weight: int) -> int | None:
+    """The weight Focus Mode draws in: the chosen one, or the nearest heavier one the font has.
+    None when the font has nothing heavier than the text."""
+    heavier = sorted(weight for weight in weights if weight > font_weight)
+    if not heavier:
+        return None
+    return next((weight for weight in heavier if weight >= focus_weight), heavier[-1])
+
+
 _MD = MarkdownIt("commonmark", {"html": True, "xhtmlOut": True}).enable("table")
 _MD.use(footnote_plugin)
 
@@ -505,16 +521,12 @@ class _Converter:
         focus = ""
         if s.focus_mode:
             weights = available_weights(s.font, self.font_extra_dirs)
-            heavier = [weight for weight in weights if weight > s.font_weight]
-            if heavier:
-                target = next(
-                    (weight for weight in heavier if weight >= s.font_weight + 300), heavier[-1]
-                )
-                ratio = {"low": 0.3, "medium": 0.5, "high": 0.7}[s.focus_strength]
+            target = focus_target_weight(weights, s.font_weight, s.focus_weight)
+            if target is not None:
                 focus = (
-                    "#let focus(body) = {\n"
+                    FOCUS_COUNT_TYPST + "#let focus(body) = {\n"
                     '  show regex("[\\\\p{Latin}\\\\p{Greek}\\\\p{Cyrillic}][\\\\p{Latin}\\\\p{Greek}\\\\p{Cyrillic}\\\\p{M}]*"): it => {\n'
-                    f"    let c = it.text.clusters(); let n = if c.len() == 1 {{ 1 }} else {{ calc.min(c.len() - 1, calc.max(1, calc.ceil(c.len() * {ratio}))) }}\n"
+                    "    let c = it.text.clusters(); let n = focus-count(c.len())\n"
                     f"    text(weight: {target}, c.slice(0, n).join()) + c.slice(n).join()\n"
                     "  }; body\n}\n"
                 )

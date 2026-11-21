@@ -169,11 +169,11 @@ def _page_style(args: argparse.Namespace, data_dir: Path) -> tuple[PageStyle, tu
                 names = ", ".join(families)
                 raise ValueError(f"Unknown font: {args.font}. Available families: {names}")
             values = {**values, "font": args.font}
-    if args.focus_mode or args.focus_strength is not None:
+    if args.focus_mode or args.focus_weight is not None:
         values = {
             **values,
             **({"focus_mode": True} if args.focus_mode else {}),
-            **({"focus_strength": args.focus_strength} if args.focus_strength else {}),
+            **({"focus_weight": args.focus_weight} if args.focus_weight else {}),
         }
     style = PageStyle.from_json(values, extra_dirs)
     if args.font_size is not None:
@@ -431,9 +431,10 @@ def _parser() -> argparse.ArgumentParser:
         "--focus-mode", action="store_true", help="embed Focus Mode in EPUB and apply it to XTC"
     )
     convert.add_argument(
-        "--focus-strength",
-        choices=("low", "medium", "high"),
-        help="Focus Mode strength (default: medium, or the selected style's value)",
+        "--focus-weight",
+        type=int,
+        choices=(600, 700),
+        help="Focus Mode bold weight (default: 700, or the selected style's value)",
     )
     convert.add_argument("--font", metavar="NAME|PATH", help="font family or .ttf/.otf file")
     convert.add_argument("--font-size", type=int, metavar="N", help="override the style font size")

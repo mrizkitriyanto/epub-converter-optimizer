@@ -109,10 +109,8 @@ def tag(name):
     return f"{{{NS['h']}}}{name}"
 
 
-@pytest.mark.parametrize(
-    "strength,expected", [("low", "Hel"), ("medium", "Hello"), ("high", "HelloWo")]
-)
-def test_focus_mode_is_embedded_in_epub_text(tmp_path, strength, expected):
+@pytest.mark.parametrize("weight", [600, 700])
+def test_focus_mode_is_embedded_in_epub_text(tmp_path, weight):
     md = tmp_path / "focus.md"
     md.write_text(
         "---\ntitle: Focus\n---\n\n# Reading\n\nHelloWorld **bold** `code` [linked](https://example.com) & caf\u00e9.\n\n<p>Raw text</p>\n",
@@ -124,7 +122,7 @@ def test_focus_mode_is_embedded_in_epub_text(tmp_path, strength, expected):
     optimize_epub(
         built,
         dst,
-        Options(device="general", style=PageStyle(focus_mode=True, focus_strength=strength)),
+        Options(device="general", style=PageStyle(focus_mode=True, focus_weight=weight)),
     )
     with zipfile.ZipFile(dst) as z:
         chapter = read_xml(z, "OEBPS/text/ch001.xhtml")
@@ -141,7 +139,11 @@ def test_focus_mode_is_embedded_in_epub_text(tmp_path, strength, expected):
             "Raw",
             "text",
         ]
-        assert any(node.text == expected for node in body.iter(tag("b")))
+        # HelloWorld has 10 letters: 4 are bold
+        assert any(
+            node.text == "Hell" and node.get("style") == f"font-weight:{weight}"
+            for node in body.iter(tag("b"))
+        )
         assert not body.findall(".//h:code/h:b", NS)
         assert chapter.find(".//h:a/h:b", NS) is not None
         assert chapter.find(".//h:p/h:b", NS) is not None
@@ -176,13 +178,13 @@ def test_reoptimizing_focused_epub_does_not_nest_focus_spans(tmp_path):
     optimize_epub(
         first,
         second,
-        Options(device="general", style=PageStyle(focus_mode=True, focus_strength="high")),
+        Options(device="general", style=PageStyle(focus_mode=True, focus_weight=600)),
     )
     with zipfile.ZipFile(second) as z:
         body = read_xml(z, "OEBPS/text/ch001.xhtml")
         assert body.find(".//h:b/h:b", NS) is None
         assert sum(node.get("class") == "eco-focus" for node in body.iter(tag("b"))) == 2
-        assert any(node.text == "HelloWo" for node in body.iter(tag("b")))
+        assert any(node.text == "Hell" for node in body.iter(tag("b")))
 
 
 def test_zip_layout_and_chapters(tmp_path, small_book):

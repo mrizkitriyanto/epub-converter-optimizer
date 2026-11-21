@@ -35,8 +35,8 @@ def test_focus_mode_embeds_bold_in_converted_epub(tmp_path):
             "--device",
             "general",
             "--focus-mode",
-            "--focus-strength",
-            "high",
+            "--focus-weight",
+            "600",
             "-o",
             out,
         )
@@ -46,7 +46,10 @@ def test_focus_mode_embeds_bold_in_converted_epub(tmp_path):
     with zipfile.ZipFile(epub) as archive:
         chapter = next(name for name in archive.namelist() if name.endswith("ch001.xhtml"))
         root = ET.fromstring(archive.read(chapter))
-    assert any(node.text == "HelloWo" for node in root.iter("{http://www.w3.org/1999/xhtml}b"))
+    assert any(
+        node.text == "Hell" and node.get("style") == "font-weight:600"
+        for node in root.iter("{http://www.w3.org/1999/xhtml}b")
+    )
 
 
 def test_focus_mode_embeds_bold_when_input_is_epub(tmp_path):
@@ -60,7 +63,7 @@ def test_focus_mode_embeds_bold_when_input_is_epub(tmp_path):
     with zipfile.ZipFile(epub) as archive:
         chapter = next(name for name in archive.namelist() if name.endswith("ch001.xhtml"))
         root = ET.fromstring(archive.read(chapter))
-    assert any(node.text == "Hello" for node in root.iter("{http://www.w3.org/1999/xhtml}b"))
+    assert any(node.text == "Hell" for node in root.iter("{http://www.w3.org/1999/xhtml}b"))
 
 
 def test_version_does_not_load_the_pipeline():

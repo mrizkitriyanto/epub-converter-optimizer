@@ -1186,13 +1186,13 @@ def test_rebuild_can_toggle_epub_focus_without_changing_original_job(tmp_path):
     old = post(c, ("a.md", b"# One\n\nHelloWorld"), options={"formats": ["epub"]}).json()
     options = {
         **old["options"],
-        "style": {**old["options"]["style"], "focus_mode": True, "focus_strength": "high"},
+        "style": {**old["options"]["style"], "focus_mode": True, "focus_weight": 600},
     }
     response = c.post(f"/api/jobs/{old['id']}/rebuild", json=options)
     assert response.status_code == 201
     new = response.json()
     assert new["options"]["style"]["focus_mode"] is True
-    assert new["options"]["style"]["focus_strength"] == "high"
+    assert new["options"]["style"]["focus_weight"] == 600
     assert c.get(f"/api/jobs/{old['id']}").json()["options"]["style"]["focus_mode"] is False
 
 

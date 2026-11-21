@@ -103,7 +103,7 @@ Options of `eco convert INPUT...`:
 - `--landscape`: turn Xteink pages sideways.
 - `--title`, `--author`, `--lang`: override book metadata; `--lang` accepts a code such as `en` or `id`.
 - `--data DIR`: data folder; `ECO_DATA` also selects it. By default, eco uses your user data folder.
-- `--focus-mode`: bold the start of words in the EPUB's XHTML so it opens with Focus Mode on other e-readers. Also applies to XTC output. Use `--focus-strength low|medium|high` to set the amount (default: medium).
+- `--focus-mode`: bold the start of words in the EPUB's XHTML so it opens with Focus Mode on the reader. Also applies to XTC output. Words of up to 3 letters get 1 bold letter, 4-letter words 2, longer words 40% (rounded). Use `--focus-weight 600|700` for semibold or bold (default: 700).
 
 For XTC or XTCH, use `--style NAME` to apply a saved page style, or `--style FILE.json` for a style file. `--font NAME` and `--font-size N` override that style. `eco styles list` shows saved styles and marks the default. Without `--style`, conversions use the default style when one is set.
 
