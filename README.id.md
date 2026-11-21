@@ -86,8 +86,8 @@ Contoh di bawah memakai perintah `eco`. Dalam arsip native, gunakan `./eco` di m
 ```bash
 eco convert buku.pdf
 eco convert buku.pdf catatan.md -o out/
-eco convert buku.pdf --device x4 --size small --mode reflow --ocr off
-eco convert buku.pdf --device x4 --format epub,xtc --firmware crosspoint
+eco convert buku.pdf --device x4 --size small --ocr off
+eco convert buku.pdf --device x4 --format epub,xtc --firmware stock
 eco convert buku-lama.epub --device general -o out/
 ```
 
@@ -95,12 +95,12 @@ Opsi `eco convert INPUT...`:
 
 - `-o DIR`: folder output.
 - `--device x4|x4-pro|x4-classic|x3|general`: device tujuan (bawaan: `x4-pro`).
-- `--size small|balanced|best`: preset ukuran file.
-- `--mode auto|reflow|pages`: alirkan ulang teks atau pertahankan halaman tetap.
+- `--size small|balanced|best`: seberapa kuat gambar EPUB dikompresi. File XTC tidak berubah.
+- `--mode auto|pages`: `auto` mengalirkan ulang teks, `pages` membuat satu gambar per layar dari setiap halaman PDF. `reflow` masih diterima dan sama dengan `auto`.
 - `--ocr auto|force|off`: OCR untuk halaman hasil pindai.
 - `--format epub|xtch|xtc`: format keluaran; pisahkan dengan koma, misalnya `epub,xtc`, untuk lebih dari satu format. XTC dan XTCH memerlukan device Xteink yang didukung.
-- `--firmware any|stock|crosspoint|crossink`: profil firmware untuk keluaran Xteink.
-- `--landscape`: putar halaman Xteink ke arah lanskap.
+- `--firmware any|stock`: `stock` mencatat bahwa firmware stock tidak menampilkan gambar EPUB, dan dengan `--size small` membuangnya. `crosspoint` dan `crossink` masih diterima dan menghasilkan file yang sama dengan `any`.
+- `--landscape`: putar gambar halaman ke arah lanskap (perlu `--mode pages` dan perangkat Xteink).
 - `--title`, `--author`, `--lang`: timpa metadata buku; `--lang` menerima kode seperti `en` atau `id`.
 - `--data DIR`: folder data; `ECO_DATA` juga dapat menentukannya. Bawaannya folder data pengguna.
 - `--focus-mode`: tanam penebalan awal kata dalam XHTML EPUB dan terapkan juga pada XTC. Kata sampai 3 huruf mendapat 1 huruf tebal, kata 4 huruf 2, kata yang lebih panjang 40% (dibulatkan). `--focus-weight 600|700` memilih semibold atau bold (bawaan: 700).
@@ -125,7 +125,7 @@ eco web
 
 Perintah ini menjalankan server lokal dan membuka `http://127.0.0.1:8000/` di browser Anda. Halamannya punya empat langkah: Select, Convert, Review, dan Export. Semuanya diproses di komputer ini. Halamannya hanya berbahasa Inggris, jadi nama tombol dan label di sini ditulis dalam bahasa Inggris.
 
-- **Select:** tambahkan file PDF, Markdown, atau EPUB (sampai 200 file per unggahan). Setiap PDF menampilkan jumlah halaman, apakah PDF itu digital atau hasil pindai, perkiraan waktu, dan peta berisi satu kotak per halaman yang menandai halaman hasil pindai. Pilih perangkat baca (bawaan Xteink X4 Pro), keluaran EPUB atau XTC, gaya baca yang tersimpan, apakah Focus Mode menyala (tombol **?** di sebelahnya menjelaskannya), dan ukuran file, lalu mulai. Firmware, OCR, layout, judul, penulis, bahasa, dan pustaka Fonts ada di **More settings**. Jika model AI belum ada, sebuah pemberitahuan menawarkan untuk mengunduhnya; Markdown, EPUB, dan PDF yang dijadikan gambar halaman tetap bisa dikonversi tanpa model.
+- **Select:** tambahkan file PDF, Markdown, atau EPUB (sampai 200 file per unggahan). Setiap PDF menampilkan jumlah halaman, apakah PDF itu digital atau hasil pindai, perkiraan waktu, dan peta berisi satu kotak per halaman yang menandai halaman hasil pindai. Pilih perangkat baca (bawaan Xteink X4 Pro; X4, X4 Pro, dan X4 v2 Classic memakai layar yang sama dan mendapat file yang sama, hanya nama filenya yang berbeda), keluaran EPUB atau XTC, gaya baca yang tersimpan, apakah Focus Mode menyala (tombol **?** di sebelahnya menjelaskannya), dan ukuran file, lalu mulai. Firmware (Stock, atau CrossPoint, CrossInk, atau tidak yakin), OCR, layout (Reflowable text atau Page images), judul, penulis, bahasa, dan pustaka Fonts ada di **More settings**; setiap pilihan menjelaskan apa yang diubahnya. XTC hanya ditawarkan untuk perangkat Xteink. Jika model AI belum ada, sebuah pemberitahuan menawarkan untuk mengunduhnya; Markdown, EPUB, dan PDF yang dijadikan gambar halaman tetap bisa dikonversi tanpa model.
 - **Convert:** persentase, sisa waktu dan waktu yang sudah berjalan, satu segmen per tahap, dan untuk PDF sebuah peta halaman yang terisi seiring halaman dibaca. Peringatan muncul begitu ditemukan. Konversi yang sedang berjalan bisa dibatalkan. Review terbuka sendiri saat file pertama selesai.
 - **Review:** temuan di samping halaman asli dan pratinjau halaman e-reader; satu klik pada temuan menggerakkan keduanya. Strip di atasnya berisi satu batang per halaman dan menandai halaman yang punya peringatan; klik strip itu atau pakai tombol panah untuk berpindah halaman. Text size, line spacing, side margins, first-line indent, Focus Mode, dan ketebalan bold-nya (semibold atau bold) langsung mengubah pratinjau dan bertanda "changed" sampai Anda memilih **Apply to book**, yang membangun ulang file (PDF tidak dibaca ulang) lalu kembali ke halaman yang sama. Focus Mode ditanam ke dalam EPUB; nilai lain hanya mengubah XTC dan pratinjau, karena di Xteink EPUB mengikuti ukuran huruf, spasi, dan margin dari pengaturan reader. Untuk job yang hanya menghasilkan EPUB, Apply karena itu hanya menghitung perubahan Focus Mode dan File size. **Advanced typography** memuat semua nilai gaya, termasuk perataan dan jarak paragraf, dan di sana Anda bisa menyimpan gaya bernama, menjadikannya default, atau menghapusnya. Jika font hilang, eco memakai Literata dan mencatat temuan; karakter yang tidak ada pada font pilihan juga ditampilkan sebagai temuan dan dalam live preview. Setiap file hasil konversi perlu ditinjau sebelum Export.
 - **Export:** tombol unduh untuk setiap file, hasil EPUBCheck, dan gaya yang diterapkan.

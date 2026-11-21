@@ -115,7 +115,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from eco.font_library import MAX_FONT_BYTES, add_font, remove_font
 from eco.font_library import list_fonts as shared_fonts
-from eco.options import Options
+from eco.options import Options, option_conflict
 from eco.saved_styles import (
     delete_style,
     get_default,
@@ -353,9 +353,12 @@ def _options(
     try:
         if default_style is not None:
             given.setdefault("style", default_style)
-        return Options(**given)
+        options = Options(**given)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+    if conflict := option_conflict(options):
+        raise HTTPException(422, conflict)
+    return options
 
 
 def _font_details(path: Path) -> tuple[str, list[int]]:

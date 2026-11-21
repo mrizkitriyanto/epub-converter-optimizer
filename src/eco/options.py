@@ -55,6 +55,16 @@ class Options:
                     raise ValueError(f"unknown {name}: {v!r}")
 
 
+def option_conflict(o: Options) -> str | None:
+    """Why these options do not go together, or None. A new job is refused for it; the options
+    of an older job are still read."""
+    if o.device == "general" and {"xtc", "xtch"} & set(o.formats):
+        return "XTC needs an Xteink device, not general"
+    if o.landscape and o.mode != "pages":
+        return "landscape needs mode pages: it turns page images"
+    return None
+
+
 def upgrade_options(options: dict) -> dict:
     """The options of an older job.json in the form of today. M2 wrote `font_size` and no
     `style`: the size becomes the style's, kept within its range. Before the Focus Mode weight a

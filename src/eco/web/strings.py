@@ -63,7 +63,9 @@ STRINGS = {
     "style_builtin": "eco default",
     "style_default_suffix": "{name} (default)",
     "output_epub_hint": "Reflowable text",
-    "output_xtc_hint": "Pages for the X4",
+    "output_epub_pages_hint": "Page images",
+    "output_xtc_hint": "Pages for the {device}",
+    "output_xtc_off_hint": "Only for Xteink e-readers",
     "more_settings": "More settings",
     "more_settings_hint": "firmware, OCR, layout, title and author, fonts",
     "start_estimate": "About {time} in total on this computer",
@@ -140,6 +142,7 @@ STRINGS = {
     "findings_seen_one": "1 finding seen",
     "findings_seen_other": "{n} findings seen",
     "reflowable": "reflowable text",
+    "page_images": "page images",
     "down_from": "from {before}",
     "xtc_kind_gray": "four-level grayscale for {device}",
     "xtc_kind_bw": "black and white for {device}",
@@ -248,6 +251,15 @@ STRINGS = {
     "device_x4_classic": "Xteink X4 v2 Classic",
     "device_x3": "Xteink X3",
     "device_general": "Other e-reader",
+    "device_x4_hint": (
+        "The X4, X4 Pro and X4 v2 Classic share one 480x800 screen: they get the same files, "
+        "only the file name differs."
+    ),
+    "device_x3_hint": "Pages and images are sized for the 528x792 screen of the X3.",
+    "device_general_hint": (
+        "No fixed screen: images keep their color and more pixels. XTC is only for Xteink "
+        "e-readers."
+    ),
     "output_label": "Output",
     "output_epub": "EPUB",
     "output_xtc": "XTC",
@@ -256,24 +268,36 @@ STRINGS = {
     "size_small": "Smallest",
     "size_balanced": "Balanced",
     "size_best": "Best quality",
-    "size_hint": "Changes how strongly images are compressed.",
+    "size_hint": (
+        "Changes how strongly the images of the EPUB are compressed. XTC files stay the same."
+    ),
     "advanced_title": "Advanced settings",
     "firmware_label": "Firmware",
-    "firmware_any": "Not sure",
+    "firmware_any": "CrossPoint, CrossInk or not sure",
     "firmware_stock": "Stock",
-    "firmware_crosspoint": "CrossPoint",
-    "firmware_crossink": "CrossInk",
-    "firmware_any_advice": "Choose the firmware on your e-reader to get advice about images.",
-    "firmware_stock_advice": "Stock firmware does not show images in EPUB files.",
-    "firmware_crosspoint_advice": "CrossPoint shows images in EPUB files.",
-    "firmware_crossink_advice": "CrossInk shows images in EPUB files.",
+    "firmware_any_advice": "Images stay in the EPUB. CrossPoint and CrossInk show them.",
+    "firmware_stock_advice": (
+        "Stock firmware does not show images in EPUB files. They stay in the file, so it still "
+        "works after a firmware change."
+    ),
+    "firmware_stock_small_advice": (
+        "Stock firmware does not show images in EPUB files. With Smallest they are left out of "
+        "the EPUB."
+    ),
+    "firmware_general_advice": "The firmware only matters on an Xteink e-reader.",
     "ocr_label": "Text recognition (OCR)",
     "ocr_auto": "Automatic",
     "ocr_force": "Every page",
     "ocr_off": "Off",
+    "ocr_auto_hint": "Scanned pages are read with OCR; pages that have text keep their own text.",
+    "ocr_force_hint": (
+        "Every page is read with OCR, also pages that have text. Slower; use it when the text of "
+        "a PDF comes out garbled."
+    ),
+    "ocr_off_hint": "Scanned pages give no text. Use it only for PDFs that have text.",
+    "ocr_pages_hint": "Not used: page images keep the pages as pictures.",
     "mode_label": "Layout",
-    "mode_auto": "Automatic",
-    "mode_reflow": "Reflowable text",
+    "mode_auto": "Reflowable text",
     "mode_pages": "Page images",
     "mode_text_hint": "The text flows to the screen and can be resized.",
     "mode_pages_hint": "Each PDF page becomes an image. The layout stays, but the text cannot be resized.",

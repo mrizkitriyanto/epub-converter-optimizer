@@ -409,7 +409,13 @@ def _parser() -> argparse.ArgumentParser:
         "-o", "--output", metavar="DIR", help="output folder (default: the input's folder)"
     )
     convert.add_argument("--device", choices=list(DEVICES), default="x4-pro")
-    convert.add_argument("--firmware", choices=FIRMWARES, default="any")
+    convert.add_argument(
+        "--firmware",
+        choices=FIRMWARES,
+        default="any",
+        help="stock leaves EPUB images out with --size small; any, crosspoint and crossink "
+        "give the same files",
+    )
     convert.add_argument(
         "--format",
         type=_formats,
@@ -418,8 +424,15 @@ def _parser() -> argparse.ArgumentParser:
         help="comma-separated output formats: epub,xtch,xtc (default: epub)",
     )
     convert.add_argument("--size", choices=SIZES, default="balanced")
-    convert.add_argument("--mode", choices=MODES, default="auto")
-    convert.add_argument("--landscape", action="store_true", help="turn pages sideways (Xteink)")
+    convert.add_argument(
+        "--mode",
+        choices=MODES,
+        default="auto",
+        help="auto reflows the text (reflow is the same); pages makes page images",
+    )
+    convert.add_argument(
+        "--landscape", action="store_true", help="turn page images sideways (--mode pages, Xteink)"
+    )
     convert.add_argument("--ocr", choices=OCR_MODES, default="auto")
     convert.add_argument("--title", help="set the title")
     convert.add_argument("--author", help="set the author")
@@ -481,6 +494,14 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("a command is required: setup, convert, extract, fonts or web")
         if args.command == "convert" and args.landscape and args.device == "general":
             parser.error("--landscape needs an Xteink device, not --device general")
+        if args.command == "convert" and args.landscape and args.mode != "pages":
+            parser.error("--landscape needs --mode pages: it turns page images")
+        if (
+            args.command == "convert"
+            and args.device == "general"
+            and {"xtc", "xtch"} & set(args.format)
+        ):
+            parser.error("--format xtc and xtch need an Xteink device, not --device general")
     except SystemExit as e:  # argparse exits on a usage error; main returns the code instead
         return e.code
     try:

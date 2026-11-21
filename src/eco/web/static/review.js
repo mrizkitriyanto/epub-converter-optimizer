@@ -990,7 +990,8 @@ export function renderExport() {
     for (const [format, name] of Object.entries(info.outputs)) {
       const size = info.sizes[format];
       const parts = [t(format === 'epub' ? 'output_epub' : 'output_xtc')];
-      if (format === 'epub') parts.push(t('reflowable'));
+      // a PDF converted as page images holds pictures of its pages, not text that flows
+      if (format === 'epub') parts.push(t(job.options.mode === 'pages' && info.kind === 'pdf' ? 'page_images' : 'reflowable'));
       else parts.push(t(format === 'xtch' ? 'xtc_kind_gray' : 'xtc_kind_bw', { device }));
       const description = h('span', null);
       if (size !== null && size !== undefined) {

@@ -411,3 +411,18 @@ def test_single_clean_file_has_no_batch_line(tmp_path, capsys):
     (tmp_path / "a.md").write_text("# T\n")
     assert convert(tmp_path, tmp_path / "a.md") == 0
     assert "converted" not in capsys.readouterr().out
+
+
+def test_landscape_needs_page_images(tmp_path, capsys):
+    md = tmp_path / "a.md"
+    md.write_text("# A\n")
+    assert convert(tmp_path, md, "--landscape") == 2
+    assert "--mode pages" in capsys.readouterr().err
+
+
+def test_xtc_needs_an_xteink_device(tmp_path, capsys):
+    md = tmp_path / "a.md"
+    md.write_text("# A\n")
+    assert convert(tmp_path, md, "--device", "general", "--format", "epub,xtch") == 2
+    assert "Xteink" in capsys.readouterr().err
+    assert not list(tmp_path.glob("*.epub"))

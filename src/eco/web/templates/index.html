@@ -73,15 +73,16 @@
           <div class="stack-field">
             <label for="device">{{ strings.device_label }}</label>
             <select id="device">{{ choices(devices, "x4-pro") }}</select>
+            <p id="device-hint" class="hint"></p>
           </div>
 
           <fieldset class="stack-field">
             <legend id="output-label">{{ strings.output_label }}</legend>
             <div class="tiles">
               <label class="tile"><input type="checkbox" name="output" value="epub" checked>
-                <span><span class="tile-name">{{ strings.output_epub }}</span><span class="hint block">{{ strings.output_epub_hint }}</span></span></label>
+                <span><span class="tile-name">{{ strings.output_epub }}</span><span id="output-epub-hint" class="hint block">{{ strings.output_epub_hint }}</span></span></label>
               <label class="tile"><input type="checkbox" name="output" value="xtch">
-                <span><span class="tile-name">{{ strings.output_xtc }}</span><span class="hint block">{{ strings.output_xtc_hint }}</span></span></label>
+                <span><span class="tile-name">{{ strings.output_xtc }}</span><span id="output-xtc-hint" class="hint block"></span></span></label>
             </div>
           </fieldset>
 
@@ -116,8 +117,6 @@
               <select id="firmware">{{ choices([
                 ("any", strings.firmware_any),
                 ("stock", strings.firmware_stock),
-                ("crosspoint", strings.firmware_crosspoint),
-                ("crossink", strings.firmware_crossink),
               ]) }}</select>
               <p id="firmware-advice" class="hint"></p>
             </div>
@@ -128,12 +127,12 @@
                 ("force", strings.ocr_force),
                 ("off", strings.ocr_off),
               ]) }}</select>
+              <p id="ocr-hint" class="hint"></p>
             </div>
             <div class="stack-field">
               <label for="mode">{{ strings.mode_label }}</label>
               <select id="mode">{{ choices([
                 ("auto", strings.mode_auto),
-                ("reflow", strings.mode_reflow),
                 ("pages", strings.mode_pages),
               ]) }}</select>
               <p id="mode-hint" class="hint"></p>

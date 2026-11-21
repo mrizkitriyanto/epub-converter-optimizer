@@ -527,9 +527,11 @@ def test_the_choices_of_the_page_are_the_ones_the_server_takes(tmp_path):
         "device": DEVICES,
         "size": SIZES,
         "live-size": SIZES,
-        "firmware": FIRMWARES,
+        # the server still takes the choices that make the same files (older jobs, the CLI);
+        # the page offers one of each
+        "firmware": tuple(f for f in FIRMWARES if f not in ("crosspoint", "crossink")),
         "ocr": OCR_MODES,
-        "mode": MODES,
+        "mode": tuple(m for m in MODES if m != "reflow"),
         "view-as": preview.VIEWS,
     }
     assert {name: options_of(html, name) for name in expected} == {
@@ -2259,3 +2261,71 @@ def test_a_weight_with_focus_mode_off_is_no_change():
 def test_export_of_an_epub_only_job_names_only_what_reached_the_epub():
     body = function_body(source("app.js"), "renderExport")
     assert "makesXtc()" in body
+
+
+def select_options(select, name):
+    found = re.search(rf'<select id="{name}">(.*?)</select>', select, re.DOTALL)
+    assert found, f"Select has no {name}"
+    return re.findall(r'<option value="([^"]+)"', found.group(1))
+
+
+def test_layout_offers_only_the_two_that_differ(tmp_path):
+    # reflow was the same as auto: one choice, named for what it does
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    assert select_options(select, "mode") == ["auto", "pages"]
+    assert STRINGS["mode_auto"] == "Reflowable text" and "mode_reflow" not in STRINGS
+    assert "reflow" not in re.search(r"MODE_HINT = \{.*?\};", source("app.js"), re.DOTALL).group(0)
+
+
+def test_firmware_offers_stock_and_the_rest(tmp_path):
+    # any, CrossPoint and CrossInk make the same files and the same preview
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    assert select_options(select, "firmware") == ["any", "stock"]
+    assert "CrossPoint" in STRINGS["firmware_any"] and "CrossInk" in STRINGS["firmware_any"]
+
+
+def test_the_device_hint_says_what_differs(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    assert re.search(r'<p id="device-hint" class="hint"', select)
+    assert "file name" in STRINGS["device_x4_hint"]
+    assert "XTC" in STRINGS["device_general_hint"]
+    body = function_body(source("app.js"), "syncSettingHints")
+    assert "$('device-hint')" in body
+    assert "$('device').addEventListener('change', syncSettingHints)" in function_body(
+        source("app.js"), "bind"
+    )
+
+
+def test_the_output_hints_follow_the_layout_and_the_device(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    assert 'id="output-epub-hint"' in select and 'id="output-xtc-hint"' in select
+    body = function_body(source("app.js"), "syncSettingHints")
+    assert "output_epub_pages_hint" in body and "output_xtc_hint" in body
+    assert "{device}" in STRINGS["output_xtc_hint"]
+    # an e-reader other than an Xteink cannot open XTC: the tile is off, EPUB stays chosen
+    assert "xtc.disabled = general" in body
+    assert "epub.checked = true" in body
+
+
+def test_the_size_hint_says_xtc_is_not_changed():
+    assert "XTC" in STRINGS["size_hint"]
+    assert "Smallest" in STRINGS["firmware_stock_small_advice"]
+    body = function_body(source("app.js"), "syncSettingHints")
+    assert "firmware_stock_small_advice" in body
+    assert "size.addEventListener('change', syncSettingHints)" in function_body(
+        source("app.js"), "bind"
+    )
+
+
+def test_ocr_has_a_hint_and_is_off_for_page_images(tmp_path):
+    select = stage_markup(local(tmp_path).get("/").text, "select")
+    assert re.search(r'<p id="ocr-hint" class="hint"', select)
+    assert {"ocr_auto_hint", "ocr_force_hint", "ocr_off_hint", "ocr_pages_hint"} <= STRINGS.keys()
+    body = function_body(source("app.js"), "syncSettingHints")
+    assert "$('ocr').disabled = pages" in body
+
+
+def test_review_names_an_epub_of_page_images():
+    body = function_body(source("app.js"), "renderExport")
+    assert "job.options.mode === 'pages'" in body and "'page_images'" in body
+    assert STRINGS["page_images"] == "page images"

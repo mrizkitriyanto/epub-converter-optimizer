@@ -36,13 +36,18 @@ function bind() {
   $('mode').addEventListener('change', syncSettingHints);
   // the estimate of a PDF follows the settings, and so does the warning about the models
   $('device').addEventListener('change', renderDetails);
+  $('device').addEventListener('change', syncSettingHints);
+  $('ocr').addEventListener('change', syncSettingHints);
   $('mode').addEventListener('change', renderDetails);
   $('ocr').addEventListener('change', renderDetails);
   $('select-style').addEventListener('change', () => {
     $('select-style').dataset.edited = 'true';
     chooseStyle().catch((error) => showDropErrors([error.message]));
   });
-  for (const size of document.querySelectorAll('input[name="size"]')) size.addEventListener('change', renderDetails);
+  for (const size of document.querySelectorAll('input[name="size"]')) {
+    size.addEventListener('change', renderDetails);
+    size.addEventListener('change', syncSettingHints);
+  }
   $('library-font-upload').addEventListener('change', uploadLibraryFonts);
   for (const output of document.querySelectorAll('input[name="output"]')) {
     output.addEventListener('change', () => {

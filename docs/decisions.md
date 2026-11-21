@@ -1339,3 +1339,11 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - The nav document and the NCX are judged each on its own; a missing or broken one is written from the one that works (the publisher's contents), and from the headings only when neither works. It is not known which file each Xteink firmware reads. Spec: `docs/superpowers/specs/2026-11-21-epub-xteink-followups-design.md`.
 - The page box also covers `body` with a class or id, a class the book puts on its `<body>` (Calibre's `.calibre`), `@page`, and the style attribute of `<body>`. The `font` shorthand's size and line height become relative like `font-size` and `line-height`.
 - An enhanced photo is never bigger than the same photo without enhancement: its quality steps down by 2, at most 15; then it keeps only the stretched levels, and failing that its plain encoding. The owner chose to keep the size; on the sample the JPEGs went from 16% bigger to 1% smaller at the default size.
+
+## 2026-11-22: Honest options
+
+- The page offers only choices that make different files. Layout: Reflowable text (`auto`) and Page images; `reflow` stays a CLI and API value equal to `auto` (the M1 gap is closed by not offering it). Firmware: Stock, and one choice for CrossPoint, CrossInk or not sure (`any`), which make the same files and the same preview; the server still takes `crosspoint` and `crossink`.
+- X4, X4 Pro and X4 v2 Classic stay three choices (the file name follows the device) with a hint that they get the same files.
+- The EPUB tile and the Review line say "Page images" for a PDF converted as page images. The XTC tile names the chosen device. An "Other e-reader" cannot open XTC: the page turns the tile off, and the API and the CLI refuse XTC with `general`.
+- File size says it changes only the EPUB's images; the firmware hint says that Stock with Smallest leaves the EPUB's images out. OCR has a hint per choice and is off for Page images.
+- `--landscape` (and `landscape` in the API) needs mode `pages`: it only turns page images.

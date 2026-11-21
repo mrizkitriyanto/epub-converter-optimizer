@@ -636,6 +636,8 @@ BAD_OPTIONS = [
     ({"device": ["x4"]}, "Invalid value for device"),
     ({"device": None}, "Invalid value for device"),
     ({"landscape": "yes"}, "Invalid value for landscape"),
+    ({"device": "general", "formats": ["xtch"]}, "XTC needs an Xteink device, not general"),
+    ({"landscape": True}, "landscape needs mode pages: it turns page images"),
     ({"title": 5}, "Invalid value for title"),
     ({"lang": ["id"]}, "Invalid value for lang"),
     ({"colour": "red"}, "Unknown option: colour"),

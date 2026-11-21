@@ -86,8 +86,8 @@ The examples below use `eco`. In a native archive, run `./eco` on macOS/Linux or
 ```bash
 eco convert book.pdf
 eco convert book.pdf notes.md -o out/
-eco convert book.pdf --device x4 --size small --mode reflow --ocr off
-eco convert book.pdf --device x4 --format epub,xtc --firmware crosspoint
+eco convert book.pdf --device x4 --size small --ocr off
+eco convert book.pdf --device x4 --format epub,xtc --firmware stock
 eco convert existing.epub --device general -o out/
 ```
 
@@ -95,12 +95,12 @@ Options of `eco convert INPUT...`:
 
 - `-o DIR`: output folder.
 - `--device x4|x4-pro|x4-classic|x3|general`: target device (default: `x4-pro`).
-- `--size small|balanced|best`: file size preset.
-- `--mode auto|reflow|pages`: reflow the text or keep fixed pages.
+- `--size small|balanced|best`: how strongly the EPUB's images are compressed. XTC files stay the same.
+- `--mode auto|pages`: `auto` reflows the text, `pages` makes one image per screen of each PDF page. `reflow` is still accepted and is the same as `auto`.
 - `--ocr auto|force|off`: OCR for scanned pages.
 - `--format epub|xtch|xtc`: output format; use a comma-separated list such as `epub,xtc` for more than one. XTC and XTCH need a supported Xteink device.
-- `--firmware any|stock|crosspoint|crossink`: firmware profile for Xteink output.
-- `--landscape`: turn Xteink pages sideways.
+- `--firmware any|stock`: `stock` notes that the stock firmware shows no EPUB images, and with `--size small` leaves them out. `crosspoint` and `crossink` are accepted and give the same files as `any`.
+- `--landscape`: turn the page images sideways (needs `--mode pages` and an Xteink device).
 - `--title`, `--author`, `--lang`: override book metadata; `--lang` accepts a code such as `en` or `id`.
 - `--data DIR`: data folder; `ECO_DATA` also selects it. By default, eco uses your user data folder.
 - `--focus-mode`: bold the start of words in the EPUB's XHTML so it opens with Focus Mode on the reader. Also applies to XTC output. Words of up to 3 letters get 1 bold letter, 4-letter words 2, longer words 40% (rounded). Use `--focus-weight 600|700` for semibold or bold (default: 700).
@@ -125,7 +125,7 @@ eco web
 
 This starts a local server and opens `http://127.0.0.1:8000/` in your browser. The page has four steps: Select, Convert, Review and Export. Everything is processed on this computer. The page is in English only.
 
-- **Select:** add PDF, Markdown or EPUB files (up to 200 per upload). Each PDF shows its page count, whether it is digital or scanned, a time estimate, and a map with one square per page that marks the scanned pages. Choose the reading device (Xteink X4 Pro by default), EPUB or XTC output, a saved reading style, whether Focus Mode is on (the **?** beside it explains it), and the file size, then start. Firmware, OCR, layout, title, author, language and the Fonts library are under **More settings**. When the AI models are missing, a notice offers to download them; Markdown, EPUB and PDFs made into page images convert without them.
+- **Select:** add PDF, Markdown or EPUB files (up to 200 per upload). Each PDF shows its page count, whether it is digital or scanned, a time estimate, and a map with one square per page that marks the scanned pages. Choose the reading device (Xteink X4 Pro by default; the X4, X4 Pro and X4 v2 Classic share one screen and get the same files, only the file names differ), EPUB or XTC output, a saved reading style, whether Focus Mode is on (the **?** beside it explains it), and the file size, then start. Firmware (Stock, or CrossPoint, CrossInk or not sure), OCR, layout (Reflowable text or Page images), title, author, language and the Fonts library are under **More settings**; each choice says what it changes. XTC is offered only for Xteink devices. When the AI models are missing, a notice offers to download them; Markdown, EPUB and PDFs made into page images convert without them.
 - **Convert:** the percent, the time left and the time so far, one segment per stage, and for a PDF a page map that fills as pages are read. Warnings appear as they are found. You can cancel a running conversion. Review opens by itself when the first file is done.
 - **Review:** the findings next to the original page and a preview of the e-reader page; a click on a finding moves both. The strip above them has one bar per page and marks the pages with a warning; click it or use the arrow keys to move through the book. Text size, line spacing, side margins, first-line indent, Focus Mode and its bold weight (semibold or bold) change the preview at once and say "changed" until you select **Apply to book**, which rebuilds the files (a PDF is not read again) and returns to the same page. Focus Mode is written into the EPUB; the other values change the XTC and the preview only, because on the Xteink the EPUB follows the reader's own text size, spacing and margins. For a job that makes only an EPUB, Apply therefore counts only Focus Mode and File size changes. **Advanced typography** holds every style value, including alignment and paragraph spacing, and lets you save a named style, make it the default, or delete it. A missing font uses Literata and reports a finding; missing characters in the chosen font also appear as a finding and in the live preview. Each converted file needs review before Export.
 - **Export:** a download button for each file, the EPUBCheck result, and the style that was applied.

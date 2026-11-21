@@ -1,4 +1,4 @@
-import { $, FIRMWARE_ADVICE, JSON_HEADERS, MODELS_NOTE, MODE_HINT, STATUS_NAME, SUPPORTED_FILE, URLS, errorText, focusStage, formatMinutes, formatSize, getJson, h, renderStepper, request, setStage, setText, state, t, tn } from './core.js';
+import { $, DEVICE_HINT, JSON_HEADERS, MODELS_NOTE, MODE_HINT, STATUS_NAME, SUPPORTED_FILE, URLS, errorText, focusStage, formatMinutes, formatSize, getJson, h, renderStepper, request, setStage, setText, state, t, tn } from './core.js';
 import { parseEvent } from './job.js';
 import { mapCells, renderPageMap, squareSize } from './pagemap.js';
 
@@ -416,9 +416,31 @@ export function needsModels(options) {
   return !state.setup.ready && options.mode !== 'pages';
 }
 
+// Each hint says what the choice changes in the files, and nothing it does not.
 export function syncSettingHints() {
-  setText($('firmware-advice'), FIRMWARE_ADVICE[$('firmware').value]());
+  const device = $('device').value;
+  const general = device === 'general';
+  const pages = $('mode').value === 'pages';
+  setText($('device-hint'), t(DEVICE_HINT[device]));
+  setText($('output-epub-hint'), t(pages ? 'output_epub_pages_hint' : 'output_epub_hint'));
+  // XTC is a format of the Xteink e-readers: another one cannot open it
+  const xtc = document.querySelector('input[name="output"][value="xtch"]');
+  const epub = document.querySelector('input[name="output"][value="epub"]');
+  xtc.disabled = general;
+  if (general && xtc.checked) {
+    xtc.checked = false;
+    epub.checked = true;
+  }
+  const name = t(`device_${device.replace('-', '_')}`).replace(/^Xteink /, '');
+  setText($('output-xtc-hint'), general ? t('output_xtc_off_hint') : t('output_xtc_hint', { device: name }));
+  const small = document.querySelector('input[name="size"]:checked')?.value === 'small';
+  let advice = 'firmware_any_advice';
+  if (general) advice = 'firmware_general_advice';
+  else if ($('firmware').value === 'stock') advice = small ? 'firmware_stock_small_advice' : 'firmware_stock_advice';
+  setText($('firmware-advice'), t(advice));
   setText($('mode-hint'), MODE_HINT[$('mode').value]());
+  $('ocr').disabled = pages;
+  setText($('ocr-hint'), t(pages ? 'ocr_pages_hint' : `ocr_${$('ocr').value}_hint`));
 }
 
 export function readOptions() {

@@ -97,11 +97,13 @@ export const STATUS_NAME = {
   failed: () => t('status_failed'),
   cancelled: () => t('status_cancelled'),
 };
-export const FIRMWARE_ADVICE = {
-  any: () => t('firmware_any_advice'),
-  stock: () => t('firmware_stock_advice'),
-  crosspoint: () => t('firmware_crosspoint_advice'),
-  crossink: () => t('firmware_crossink_advice'),
+// X4, X4 Pro and X4 v2 Classic share a screen: only the name of their files differs.
+export const DEVICE_HINT = {
+  x4: 'device_x4_hint',
+  'x4-pro': 'device_x4_hint',
+  'x4-classic': 'device_x4_hint',
+  x3: 'device_x3_hint',
+  general: 'device_general_hint',
 };
 // The note on Select while the models are missing: no download started, one runs, or one failed.
 export const MODELS_NOTE = {
@@ -111,7 +113,6 @@ export const MODELS_NOTE = {
 };
 export const MODE_HINT = {
   auto: () => t('mode_text_hint'),
-  reflow: () => t('mode_text_hint'),
   pages: () => t('mode_pages_hint'),
 };
 // The view that matches the firmware the book was made for; CrossInk draws like CrossPoint.
