@@ -596,7 +596,7 @@ def test_xteink_split_repeats_a_single_wrapper_and_relinks_nav_and_ncx(tmp_path)
     assert (top, whole) == ("ch.xhtml#h", "ch.xhtml")
     point = ET.fromstring(z.read("OEBPS/toc.ncx")).find(".//ncx:content", NS)
     assert point.get("src") == f"text/{late}"
-    assert [f.kind for f in rep.findings] == ["chapter_split"]
+    assert kinds(rep, "toc_rebuilt") == ["chapter_split"]
 
 
 def test_a_link_to_an_id_that_every_part_repeats_goes_to_the_first_part(tmp_path):
@@ -1329,3 +1329,63 @@ def test_a_page_list_is_not_a_table_of_contents_and_stays_after_the_nav_map(tmp_
     assert "toc_rebuilt" in kinds(report)
     root = ET.fromstring(z.read("OEBPS/toc.ncx"))
     assert [c.tag.rpartition("}")[2] for c in root][-2:] == ["navMap", "pageList"]
+
+
+def epub3_with_nav(tmp_path, links, ncx=None):
+    """An EPUB 3 with a nav document of `links` (label, href); `ncx` is the NCX text, or None for
+    a package without an NCX."""
+    pages = {"a": "<h1 id='a1'>One</h1><p>x</p>", "b": "<h1 id='b1'>Two</h1><p>y</p>"}
+    items = "".join(f'<li><a href="{href}">{label}</a></li>' for label, href in links)
+    nav = (
+        '<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html>'
+        f'<html xmlns="{NS["h"]}" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>N</title>'
+        f'</head><body><nav epub:type="toc"><ol>{items}</ol></nav></body></html>'
+    )
+    src = package(tmp_path, pages, {"nav.xhtml": nav}, raw={"OEBPS/toc.ncx": ncx} if ncx else None)
+
+    def change(name, data):
+        if name.endswith(".ncx") and ncx is None:
+            return None
+        if name.endswith("content.opf"):
+            data = re.sub(
+                rb'(<item id="f0" href="nav.xhtml"[^>]*?)/>', rb'\1 properties="nav"/>', data
+            )
+            if ncx is None:
+                data = re.sub(rb'<item id="ncx"[^>]*/>', b"", data).replace(
+                    b'<spine toc="ncx">', b"<spine>"
+                )
+        return data
+
+    return rewrite_zip(src, tmp_path / "nav3.epub", change)
+
+
+def nav_labels(z):
+    [nav] = [p for p, i in manifest(z).items() if "nav" in (i.get("properties") or "").split()]
+    return [a.text for a in ET.fromstring(z.read(nav)).iter(tag("h", "a"))]
+
+
+def test_a_working_nav_fills_a_missing_ncx(tmp_path):
+    src = epub3_with_nav(tmp_path, [("First", "text/a.xhtml#a1"), ("Second", "text/b.xhtml#b1")])
+    z, report = run(tmp_path, src)
+    check_package(z)
+    [ncx] = [n for n in z.namelist() if n.endswith(".ncx")]
+    assert ncx_labels(z, ncx) == ["First", "Second"]
+    assert nav_labels(z) == ["First", "Second"]
+    [finding] = [f for f in report.findings if f.kind == "toc_rebuilt"]
+    assert "NCX from the nav" in finding.message
+
+
+def test_a_working_ncx_fills_a_broken_nav(tmp_path):
+    ncx = (
+        '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head/><navMap>'
+        '<navPoint id="n1" playOrder="1"><navLabel><text>First</text></navLabel><content src="text/a.xhtml#a1"/></navPoint>'
+        '<navPoint id="n2" playOrder="2"><navLabel><text>Second</text></navLabel><content src="text/b.xhtml"/></navPoint>'
+        "</navMap></ncx>"
+    )
+    src = epub3_with_nav(tmp_path, [("Gone", "text/missing.xhtml")], ncx=ncx)
+    z, report = run(tmp_path, src)
+    check_package(z)
+    assert nav_labels(z) == ["First", "Second"]
+    assert ncx_labels(z, "OEBPS/toc.ncx") == ["First", "Second"]
+    [finding] = [f for f in report.findings if f.kind == "toc_rebuilt"]
+    assert "nav from the NCX" in finding.message

@@ -4,7 +4,7 @@ import posixpath
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from dataclasses import dataclass
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 
 XHTML = "http://www.w3.org/1999/xhtml"
 NCX = "http://www.daisy.org/z3986/2005/ncx/"
@@ -115,3 +115,45 @@ def nav_body(entries: list[TocEntry], owner: str) -> ET.Element:
 
     _nest(entries, item, top)
     return nav
+
+
+def _entry(level: int, label: str, owner: str, href: str) -> TocEntry:
+    parts = urlsplit(href)
+    path = posixpath.normpath(posixpath.join(posixpath.dirname(owner), unquote(parts.path)))
+    return TocEntry(level, label, path, unquote(parts.fragment))
+
+
+def entries_from_nav(nav: ET.Element, owner: str) -> list[TocEntry]:
+    """The entries of an EPUB 3 toc nav, levels from its nested lists."""
+    entries: list[TocEntry] = []
+
+    def walk(ol: ET.Element, level: int) -> None:
+        for li in ol.findall(f"{{{XHTML}}}li"):
+            link = li.find(f"{{{XHTML}}}a")
+            if link is not None and link.get("href"):
+                entries.append(_entry(level, _text(link), owner, link.get("href")))
+            sub = li.find(f"{{{XHTML}}}ol")
+            if sub is not None:
+                walk(sub, level + 1)
+
+    top = nav.find(f"{{{XHTML}}}ol")
+    if top is not None:
+        walk(top, 1)
+    return entries
+
+
+def entries_from_ncx(nav_map: ET.Element, owner: str) -> list[TocEntry]:
+    """The entries of an NCX navMap, levels from its nested navPoints."""
+    entries: list[TocEntry] = []
+
+    def walk(parent: ET.Element, level: int) -> None:
+        for point in parent.findall(f"{{{NCX}}}navPoint"):
+            text = point.find(f"{{{NCX}}}navLabel/{{{NCX}}}text")
+            content = point.find(f"{{{NCX}}}content")
+            if content is not None and content.get("src"):
+                label = _text(text) if text is not None else ""
+                entries.append(_entry(level, label, owner, content.get("src")))
+            walk(point, level + 1)
+
+    walk(nav_map, 1)
+    return entries

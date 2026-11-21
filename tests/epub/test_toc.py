@@ -1,6 +1,14 @@
 import xml.etree.ElementTree as ET
 
-from eco.epub.toc import TocEntry, broken_share, headings, nav_body, ncx_map
+from eco.epub.toc import (
+    TocEntry,
+    broken_share,
+    entries_from_nav,
+    entries_from_ncx,
+    headings,
+    nav_body,
+    ncx_map,
+)
 
 XHTML = "http://www.w3.org/1999/xhtml"
 
@@ -53,3 +61,13 @@ def test_nav_nests_by_level():
 def test_broken_share():
     assert broken_share(["a", "b", "c"], {"a"}.__contains__) == 2 / 3
     assert broken_share([], {"a"}.__contains__) == 0
+
+
+def test_the_readers_give_back_what_was_written():
+    entries = [
+        TocEntry(1, "One", "t/a.xhtml", "a"),
+        TocEntry(2, "Sub", "t/a.xhtml", "s"),
+        TocEntry(1, "Two", "t/b.xhtml", ""),
+    ]
+    assert entries_from_ncx(ncx_map(entries, "toc.ncx"), "toc.ncx") == entries
+    assert entries_from_nav(nav_body(entries, "nav.xhtml"), "nav.xhtml") == entries
