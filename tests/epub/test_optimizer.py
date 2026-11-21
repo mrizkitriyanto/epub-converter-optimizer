@@ -235,7 +235,8 @@ def test_x4_images_are_converted_renamed_and_every_reference_follows(tmp_path, m
     assert "spacer.png" not in ch1 and "after the spacer" in ch1  # the image goes, its text stays
     assert "data:" not in ch1 and "diagram" not in ch1
     css = text_of(z, "OPS/css/style.css")
-    assert 'url("../img/logo.jpg")' in css and "spacer.png" not in css and "height: 1em" in css
+    # backgrounds go on Xteink; logo.jpg stays for its <img>
+    assert "logo.jpg" not in css and "spacer.png" not in css and "height: 1em" in css
     for path in images:
         im = Image.open(BytesIO(z.read(path)))
         assert im.mode == "L" and im.width <= 480 and im.height <= 800, path
@@ -245,9 +246,9 @@ def test_x4_images_are_converted_renamed_and_every_reference_follows(tmp_path, m
 def test_x4_strips_layout_css_everywhere_and_adds_the_eink_sheet(tmp_path, messy_epub):
     z, _ = run(tmp_path, messy_epub)
     ch1 = text_of(z, "OPS/xhtml/ch1.xhtml")
-    assert "float" not in ch1 and 'style="color:#222"' in ch1  # style attribute and <style>
+    assert "float" not in ch1 and "color:#222" not in ch1  # style attribute and <style>
     css = text_of(z, "OPS/css/style.css")
-    assert "width: 40%" in css and "justify-content" in css and "color: #333" in css
+    assert "width: 40%" in css and "justify-content" in css and "color: #333" not in css
     assert not re.search(r"position|column|flex|float|font-face", css)
     eink = (
         "img{max-width:100%;height:auto} pre{white-space:pre-wrap} table{border-collapse:collapse}"
@@ -475,7 +476,7 @@ def corrupt_image_book(tmp_path):
     files = {
         "img/bad.jpg": bad,
         "img/ok.png": image_bytes((100, 100), "PNG"),
-        "css/s.css": ".b{background:url(../img/bad.jpg)} .k{color:red}",
+        "css/s.css": ".b{background:url(../img/bad.jpg)} .k{text-align:left}",
     }
     return package(tmp_path, {"c": body}, files), bad
 
@@ -488,7 +489,7 @@ def test_corrupt_image_is_removed_with_its_references_on_xteink(tmp_path):
     page = text_of(z, "OEBPS/text/c.xhtml")
     assert "bad.jpg" not in page and "kept text" in page and "ok." in page  # the other image stays
     css = text_of(z, "OEBPS/css/s.css")
-    assert "bad.jpg" not in css and ".k{color:red}" in css
+    assert "bad.jpg" not in css and ".k{text-align:left}" in css
     [finding] = [f for f in rep.findings if f.kind == "image_error"]
     assert finding.level == "warning" and "bad.jpg" in finding.message
 
@@ -644,7 +645,7 @@ def test_images_that_change_extension_get_a_free_name_in_their_own_folder(tmp_pa
         '<img src="../img/sub/x.png" alt=""/></p>'
     )
     src = package(
-        tmp_path, {"c": body}, {**files, "css/s.css": "a{background:url('../img/x.png')}"}
+        tmp_path, {"c": body}, {**files, "css/s.css": "a{list-style-image:url('../img/x.png')}"}
     )
     z, _ = run(tmp_path, src, X4)
     check_package(z)
@@ -664,9 +665,9 @@ def test_data_uris_in_pages_and_css_become_files_on_both_profiles(tmp_path):
     gif = base64.b64encode(image_bytes((150, 150), "GIF", seed=6)).decode()
     other = f"data:image/gif;base64,{gif}"
     font = "data:font/woff2;base64,AAAA"  # not an image: left alone
-    css = f'.a{{background:url("{uri}")}} .b{{background:url({other})}}'
+    css = f'.a{{list-style-image:url("{uri}")}} .b{{list-style-image:url({other})}}'
     body = (
-        f'{LINK}<p style="background:url({uri})"><img src="{uri}" alt=""/>'
+        f'{LINK}<p style="list-style-image:url({uri})"><img src="{uri}" alt=""/>'
         f'<a href="{font}">f</a></p>'
     )
     src = package(tmp_path, {"c": body}, {"css/s.css": css})
@@ -719,13 +720,13 @@ def test_svg_files_are_removed_on_xteink_with_every_reference(tmp_path):
     body = (
         '<link rel="stylesheet" href="../css/s.css"/><p><img src="../img/d.svg" alt="d"/>after</p>'
     )
-    css = ".d{background-image:url(../img/d.svg);color:red}"
+    css = ".d{list-style-image:url(../img/d.svg);text-align:left}"
     src = package(tmp_path, {"c": body}, {"img/d.svg": drawing, "css/s.css": css})
     z, rep = run(tmp_path, src, X4)
     check_package(z)
     assert "OEBPS/img/d.svg" not in z.namelist()
     assert "d.svg" not in text_of(z, "OEBPS/text/c.xhtml") + text_of(z, "OEBPS/css/s.css")
-    assert "after" in text_of(z, "OEBPS/text/c.xhtml") and "color:red" in text_of(
+    assert "after" in text_of(z, "OEBPS/text/c.xhtml") and "text-align:left" in text_of(
         z, "OEBPS/css/s.css"
     )
     [finding] = [f for f in rep.findings if f.kind == "svg_removed"]
@@ -1155,3 +1156,29 @@ def test_epubcheck_export_optimized(tmp_path, messy_epub):
     out.mkdir(parents=True, exist_ok=True)
     for device in ("x4", "general"):
         optimize_epub(messy_epub, out / f"messy-{device}.epub", Options(device=device))
+
+
+def test_x4_reports_relative_sizes_and_removed_colors(tmp_path):
+    src = package(
+        tmp_path,
+        {"a": f'{LINK}<p style="font-size:10px;color:gray">t</p>'},
+        files={"css/s.css": "p{font-size:12pt}"},
+    )
+    z, report = run(tmp_path, src)
+    page = text_of(z, "OEBPS/text/a.xhtml")
+    assert "color" not in page and "font-size:0.625em" in page
+    assert "font-size:1em" in z.read("OEBPS/css/s.css").decode()
+    assert {"css_sizes_relative", "css_colors_removed"} <= set(kinds(report))
+
+
+def test_an_image_only_in_a_removed_background_goes_on_x4(tmp_path):
+    files = {
+        "img/bg.jpg": image_bytes((100, 100), "JPEG", seed=4),
+        "css/s.css": ".a{background:url(../img/bg.jpg)}",
+    }
+    src = package(tmp_path, {"c": f"{LINK}<p class='a'>t</p>"}, files)
+    z, _ = run(tmp_path, src, X4)
+    check_package(z)
+    assert "OEBPS/img/bg.jpg" not in z.namelist()
+    z, _ = run(tmp_path, src, GENERAL)
+    assert "OEBPS/img/bg.jpg" in z.namelist()

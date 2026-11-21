@@ -5,6 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
@@ -362,6 +363,8 @@ class _Package:
         self._images()
         self._fonts()
         self._references()
+        if self.xteink:  # a file only a removed background used is unused now
+            self._drop_unreferenced()
         if self.options.style.focus_mode:
             for _, doc in self._pages():
                 if (body := doc.root.find("{*}body")) is not None:
@@ -434,13 +437,14 @@ class _Package:
     ) -> None:
         """Rewrite every stylesheet, <style> element and style attribute; `retarget_for(owner)`
         gives the url callback of the file the CSS sits in."""
+        counts: Counter = Counter()
         for path, doc in self._pages():
             retarget = retarget_for(path)
             for el in doc.root.iter():
                 if _local(el) == "style" and el.text:
-                    el.text = rewrite_css(el.text, retarget, xteink)
+                    el.text = rewrite_css(el.text, retarget, xteink, counts)
                 if el.get("style"):
-                    style = rewrite_css(el.get("style"), retarget, xteink)
+                    style = rewrite_css(el.get("style"), retarget, xteink, counts)
                     if style.strip():
                         el.set("style", style)
                     else:
@@ -448,9 +452,18 @@ class _Package:
         for path, item in list(self.items.items()):
             if item.get("media-type") == "text/css" and path in self.files:
                 text = self.files[path].decode("utf-8", "surrogateescape")
-                new = rewrite_css(text, retarget_for(path), xteink)
+                new = rewrite_css(text, retarget_for(path), xteink, counts)
                 if new != text:
                     self.files[path] = new.encode("utf-8", "surrogateescape")
+        if counts["sizes"]:
+            self._note(
+                "css_sizes_relative",
+                "info",
+                f"{_count(counts['sizes'], 'fixed size')} made relative",
+            )
+        if counts["colors"]:
+            message = f"{_count(counts['colors'], 'color declaration')} removed"
+            self._note("css_colors_removed", "info", message)
 
     def _extract_data_uris(self) -> None:
         for path, doc in self._pages():
