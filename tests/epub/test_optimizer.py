@@ -49,8 +49,9 @@ def run(tmp_path, src, options=X4, dst="o.epub"):
     return zipfile.ZipFile(tmp_path / dst), report
 
 
-def kinds(report):
-    return [f.kind for f in report.findings]
+def kinds(report, *besides):
+    """The kinds of the findings, without `besides` (a TOC rebuilt for a test package)."""
+    return [f.kind for f in report.findings if f.kind not in besides]
 
 
 def opf_of(z):
@@ -434,7 +435,7 @@ def test_xteink_drops_fonts_and_their_encryption_entries(tmp_path, algorithm):
     assert "OEBPS/fonts/f.otf" not in z.namelist()
     assert "META-INF/encryption.xml" not in z.namelist()  # no entry left
     assert "@font-face" not in text_of(z, "OEBPS/css/s.css")
-    assert kinds(rep) == ["font_removed"]
+    assert kinds(rep, "toc_rebuilt") == ["font_removed"]
     check_package(z)
 
 
@@ -512,7 +513,7 @@ def test_decompression_bomb_is_a_finding_not_a_crash(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)  # a 100x100 image is now a bomb
     z, rep = run(tmp_path, src, X4)
-    assert "OEBPS/img/a.png" not in z.namelist() and kinds(rep) == ["image_error"]
+    assert "OEBPS/img/a.png" not in z.namelist() and kinds(rep, "toc_rebuilt") == ["image_error"]
     check_package(z)
 
 
@@ -528,7 +529,9 @@ def test_stock_firmware_warns_that_images_are_kept(tmp_path):
     z, rep = run(tmp_path, src, Options(device="general", firmware="stock"))
     assert "stock_images" not in kinds(rep)
     plain = package(tmp_path, {"c": "<p>no pictures</p>"}, name="plain.epub")
-    assert kinds(run(tmp_path, plain, Options(device="x4", firmware="stock"))[1]) == []
+    assert (
+        kinds(run(tmp_path, plain, Options(device="x4", firmware="stock"))[1], "toc_rebuilt") == []
+    )
 
 
 def cover_book(tmp_path, cover_meta_only=False):
@@ -1206,3 +1209,36 @@ def test_links_to_an_empty_document_move_to_the_next(tmp_path):
 def test_general_keeps_empty_pages(tmp_path):
     z, report = run(tmp_path, empty_page_book(tmp_path), GENERAL)
     assert "OEBPS/text/blank.xhtml" in z.namelist() and "empty_removed" not in kinds(report)
+
+
+def ncx_labels(z, path):
+    return [
+        t.text
+        for t in ET.fromstring(z.read(path)).iterfind(".//ncx:navPoint/ncx:navLabel/ncx:text", NS)
+    ]
+
+
+def test_a_missing_toc_is_rebuilt_from_headings(tmp_path):
+    src = package(tmp_path, {"a": "<h1>One</h1><p>x</p>", "b": "<h1>Two</h1><p>y</p>"})
+    z, report = run(tmp_path, src)
+    check_package(z)
+    assert ncx_labels(z, "OEBPS/toc.ncx") == ["One", "Two"]
+    navs = [p for p, i in manifest(z).items() if "nav" in (i.get("properties") or "").split()]
+    assert len(navs) == 1
+    links = [a.get("href") for a in ET.fromstring(z.read(navs[0])).iter(tag("h", "a"))]
+    assert len(links) == 2 and all(links)
+    assert "toc_rebuilt" in kinds(report)
+
+
+def test_a_working_toc_is_kept(tmp_path, messy_epub):
+    with zipfile.ZipFile(messy_epub) as before:
+        labels = ncx_labels(before, next(n for n in before.namelist() if n.endswith(".ncx")))
+    z, report = run(tmp_path, messy_epub)
+    assert ncx_labels(z, next(n for n in z.namelist() if n.endswith(".ncx"))) == labels
+    assert "toc_rebuilt" not in kinds(report)
+
+
+def test_general_never_rebuilds_the_toc(tmp_path):
+    src = package(tmp_path, {"a": "<h1>One</h1><p>x</p>"})
+    z, report = run(tmp_path, src, GENERAL)
+    assert ncx_labels(z, "OEBPS/toc.ncx") == [] and "toc_rebuilt" not in kinds(report)

@@ -23,6 +23,7 @@ from eco.epub.css import rewrite_css
 from eco.epub.focus import focus_body
 from eco.epub.images import ImageResult, transform_image
 from eco.epub.split import anchors, split_document
+from eco.epub.toc import NCX, OPS, broken_share, headings, nav_body, ncx_map
 from eco.epub.zipio import check_expansion, write_epub_zip
 from eco.events import Finding
 from eco.options import CHAPTER_LIMIT_BYTES, DEVICES, Options, image_profile
@@ -374,6 +375,7 @@ class _Package:
                     focus_body(body, self.options.style.focus_weight)
         if self.xteink:
             self._split_chapters()
+            self._contents()
         self._tidy()
         self._firmware_notes()
 
@@ -739,6 +741,108 @@ class _Package:
             parts.append(_count(len(empty), "empty page"))
         if parts:
             self._note("empty_removed", "info", f"{' and '.join(parts)} removed")
+
+    def _toc_files(self) -> tuple[str | None, str | None]:
+        """The nav document and the NCX of the package, when it has them and they parse."""
+        nav = next(
+            (
+                p
+                for p, i in self.items.items()
+                if "nav" in i.get("properties", "").split() and p in self.docs
+            ),
+            None,
+        )
+        by_id = {i.get("id"): p for p, i in self.items.items()}
+        ncx = by_id.get(self.spine.get("toc"))
+        if ncx not in self.docs:
+            ncx = next(
+                (
+                    p
+                    for p, i in self.items.items()
+                    if i.get("media-type") == NCX_TYPE and p in self.docs
+                ),
+                None,
+            )
+        return nav, ncx
+
+    def _toc_targets(self, nav: str | None, ncx: str | None) -> list[str]:
+        """Every place the contents point at, as `path#fragment`."""
+        refs = []
+        if nav:
+            for el in self.docs[nav].root.iter(f"{{{XHTML}}}nav"):
+                if "toc" in el.get(f"{{{OPS}}}type", "").split():
+                    refs += [
+                        (nav, a.get("href")) for a in el.iter(f"{{{XHTML}}}a") if a.get("href")
+                    ]
+        if ncx:
+            refs += [(ncx, c.get("src")) for c in self.docs[ncx].root.iter(f"{{{NCX}}}content")]
+        targets = []
+        for owner, ref in refs:
+            parts = _split_url(ref)
+            path = _resolve(owner, ref)
+            targets.append(
+                f"{path}#{unquote(parts.fragment)}" if parts and parts.fragment else f"{path}"
+            )
+        return targets
+
+    def _points_somewhere(self, target: str) -> bool:
+        path, _, fragment = target.partition("#")
+        doc = self.docs.get(path)
+        if doc is None:
+            return path in self.files
+        if not fragment:
+            return True
+        return any(el.get("id") == fragment or el.get("name") == fragment for el in doc.root.iter())
+
+    def _contents(self) -> None:
+        """Xteink: a table of contents that is missing, empty or mostly broken is built again from
+        the headings: an NCX always, and a nav document too for EPUB 3."""
+        nav, ncx = self._toc_files()
+        targets = self._toc_targets(nav, ncx)
+        if targets and broken_share(targets, self._points_somewhere) <= 0.5:
+            return
+        by_id = {i.get("id"): p for p, i in self.items.items()}
+        order = [by_id.get(ref.get("idref")) for ref in self.spine.findall("{*}itemref")]
+        pages = [(p, self.docs[p].root) for p in order if p in self.docs and p != nav]
+        entries = headings(pages)
+        if not entries:
+            return
+        base = posixpath.dirname(self.opf_path)
+        if ncx is None:
+            ncx = self._free(posixpath.join(base, "toc.ncx"))
+            title = self.opf.root.find(".//{http://purl.org/dc/elements/1.1/}title")
+            name = "".join(title.itertext()) if title is not None else ""
+            root = ET.Element(f"{{{NCX}}}ncx", {"version": "2005-1"})
+            ET.SubElement(root, f"{{{NCX}}}head")
+            ET.SubElement(ET.SubElement(root, f"{{{NCX}}}docTitle"), f"{{{NCX}}}text").text = name
+            self.docs[ncx] = _Doc(root)
+            self.files[ncx] = b""
+            self.spine.set("toc", self._add_item(ncx, NCX_TYPE, stem="ncx").get("id"))
+        ncx_root = self.docs[ncx].root
+        old_map = ncx_root.find(f"{{{NCX}}}navMap")
+        if old_map is not None:
+            ncx_root.remove(old_map)
+        ncx_root.append(ncx_map(entries, ncx))
+        if self.opf.root.get("version", "").startswith("3"):
+            if nav is None:
+                nav = self._free(posixpath.join(base, "nav.xhtml"))
+                root = ET.Element(f"{{{XHTML}}}html")
+                head = ET.SubElement(root, f"{{{XHTML}}}head")
+                ET.SubElement(head, f"{{{XHTML}}}title").text = "Contents"
+                ET.SubElement(root, f"{{{XHTML}}}body")
+                self.docs[nav] = _Doc(root, b"<!DOCTYPE html>\n")
+                self.files[nav] = b""
+                self._add_item(nav, XHTML_TYPE, stem="nav").set("properties", "nav")
+            body = self.docs[nav].root.find(f"{{{XHTML}}}body")
+            for el in list(body):
+                if _local(el) == "nav" and "toc" in el.get(f"{{{OPS}}}type", "").split():
+                    body.remove(el)
+            body.insert(0, nav_body(entries, nav))
+        self._note(
+            "toc_rebuilt",
+            "info",
+            f"Table of contents rebuilt: {len(entries)} {'entry' if len(entries) == 1 else 'entries'}",
+        )
 
     def _split_chapters(self) -> None:
         by_id = {item.get("id"): path for path, item in self.items.items()}

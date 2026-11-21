@@ -1324,3 +1324,12 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - Review says what reaches the EPUB: in the EPUB preview, text size, spacing and margins change only the XTC and the preview. A job that makes only an EPUB counts only Focus Mode and File size changes for Apply and Continue (File size changes its images); other changes are labelled as preview only, and Export names only what reached the EPUB.
 - Select has a Focus Mode checkbox with a "?" button that opens a short explanation (a click, not a hover tooltip). It starts as the chosen reading style has it.
 - The default device is the Xteink X4 Pro in the GUI and the CLI. A CLI run without `--device` now names its outputs `book.x4-pro.epub`.
+
+## 2026-11-21: EPUB optimizations for Xteink
+
+- The owner chose five of ten brainstormed EPUB optimizations; they run only for Xteink devices, for built EPUBs and EPUB inputs alike. Spec: `docs/superpowers/specs/2026-11-21-epub-xteink-optimizations-design.md`.
+- Publisher sizes become relative: absolute `font-size` becomes `em` against 16 px (keywords too), absolute `line-height` becomes unitless (at least 1.2), `html` and `body` lose absolute margins and paddings, and other margins above 32 px are capped at 2em. Converting, not deleting, keeps headings bigger than body text.
+- `color`, `background`, `background-color` and `background-image` go together, so white text never survives on a removed dark box. An image only a removed background used is dropped by a second unreferenced-file pass.
+- Photos get `autocontrast(cutoff=1)` and a light unsharp mask; PNGs and line art are unchanged.
+- Empty `p` and `div` (no text, image or id) and runs of `<br/>` go; a spine page with nothing to read is removed and every link, nav and NCX entry to it moves to the next page.
+- A table of contents that is missing, empty or more than half broken is rebuilt from `h1` to `h3` (or one entry per page): an NCX always, a nav document too for EPUB 3 only, since EPUB 2 has no nav document. A working table of contents is never replaced.

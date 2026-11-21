@@ -105,6 +105,8 @@ Options of `eco convert INPUT...`:
 - `--data DIR`: data folder; `ECO_DATA` also selects it. By default, eco uses your user data folder.
 - `--focus-mode`: bold the start of words in the EPUB's XHTML so it opens with Focus Mode on the reader. Also applies to XTC output. Words of up to 3 letters get 1 bold letter, 4-letter words 2, longer words 40% (rounded). Use `--focus-weight 600|700` for semibold or bold (default: 700).
 
+For an Xteink device the EPUB is also cleaned up for e-ink, whether it was built from a PDF or Markdown file or given as an EPUB: fixed font sizes and line heights become relative, so the reader's text size setting works; text and background colors go, so text is black on white; margins on the page body go; photos get more contrast and a light sharpening; empty paragraphs and empty pages are removed; and a table of contents that is missing or mostly broken is built again from the headings. Each of these is listed as a finding. The `general` device leaves them all out.
+
 For XTC or XTCH, use `--style NAME` to apply a saved page style, or `--style FILE.json` for a style file. `--font NAME` and `--font-size N` override that style. `eco styles list` shows saved styles and marks the default. Without `--style`, conversions use the default style when one is set.
 
 Add reusable `.ttf` or `.otf` fonts with `eco fonts add FILE...`; inspect them with `eco fonts list` and remove a family with `eco fonts remove FAMILY`. The data folder holds both fonts and saved styles.
