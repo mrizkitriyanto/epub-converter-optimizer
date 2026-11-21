@@ -55,8 +55,9 @@ _MAX_SPACING_PX = 32  # 2em
 # the size, and an optional line height after "/", of a font shorthand: the first one, whole
 # tokens only, so small-caps is no size and a run of digits is scanned once
 _FONT_SIZE = re.compile(
-    r"(?<![\w.-])(?:(?P<abs>-?(?:\d+(?:\.\d*)?|\.\d+)(?:px|pt|pc|in|cm|mm))"
-    r"|(?P<kw>xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large))(?![\w.-])"
+    r"(?<![\w./-])(?:(?P<abs>-?(?:\d+(?:\.\d*)?|\.\d+)(?:px|pt|pc|in|cm|mm))"
+    r"|(?P<rel>-?(?:\d+(?:\.\d*)?|\.\d+)(?:%|r?em|ex|ch))"
+    r"|(?P<kw>xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large))(?![\w.%-])"
     r"(?:\s*/\s*(?P<lh>-?(?:\d+(?:\.\d*)?|\.\d+)(?:px|pt|pc|in|cm|mm))(?![\w.-]))?",
     re.IGNORECASE,
 )
@@ -89,7 +90,9 @@ def _relative(name: str, value: str) -> str | None:
     elif lowered == "font":
         found = _FONT_SIZE.search(text)
         if found:
-            if found["kw"]:
+            if found["rel"]:  # a relative size stays; the size comes before the family, so the
+                size = found["rel"]  # search stops here and a family name is never read
+            elif found["kw"]:
                 size = f"{_number(_KEYWORD_EM[found['kw'].lower()])}em"
             else:
                 size = f"{_number(_px(_ABSOLUTE.fullmatch(found['abs'])) / 16)}em"

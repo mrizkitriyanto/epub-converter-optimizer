@@ -71,3 +71,26 @@ def test_the_readers_give_back_what_was_written():
     ]
     assert entries_from_ncx(ncx_map(entries, "toc.ncx"), "toc.ncx") == entries
     assert entries_from_nav(nav_body(entries, "nav.xhtml"), "nav.xhtml") == entries
+
+
+def test_an_empty_label_is_named():
+    ncx = ET.fromstring(
+        '<navMap xmlns="http://www.daisy.org/z3986/2005/ncx/"><navPoint><navLabel><text></text>'
+        '</navLabel><content src="a.xhtml"/></navPoint></navMap>'
+    )
+    assert [e.label for e in entries_from_ncx(ncx, "toc.ncx")] == ["Section 1"]
+    nav = ET.fromstring(
+        f'<nav xmlns="{XHTML}"><ol><li><a href="a.xhtml"><img src="m.png" alt="Map"/></a></li></ol></nav>'
+    )
+    assert [e.label for e in entries_from_nav(nav, "nav.xhtml")] == ["Map"]
+
+
+def test_entries_under_an_unlinked_part_keep_its_level():
+    nav = ET.fromstring(
+        f'<nav xmlns="{XHTML}"><ol><li><a href="a.xhtml">One</a></li>'
+        "<li><span>Part</span><ol><li><a href='b.xhtml'>Two</a></li></ol></li></ol></nav>"
+    )
+    assert [(e.level, e.label) for e in entries_from_nav(nav, "nav.xhtml")] == [
+        (1, "One"),
+        (1, "Two"),
+    ]

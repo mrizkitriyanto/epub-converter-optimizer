@@ -16,7 +16,7 @@ def _jpeg(im: Image.Image, quality: int) -> bytes:
     return out.getvalue()
 
 
-def _enhanced_jpeg(im: Image.Image, quality: int) -> bytes:
+def _enhanced_jpeg(im: Image.Image, quality: int) -> tuple[bytes, bool]:
     """A flat, muddy photo on e-ink: its levels stretched and a little sharpening, never bigger
     than the photo without them. The quality steps down to make room; when even the lowest one is
     too big, the photo keeps only the stretched levels, and failing that it stays as it was."""
@@ -27,8 +27,8 @@ def _enhanced_jpeg(im: Image.Image, quality: int) -> bytes:
         for lower in range(quality, quality - _MAX_QUALITY_DROP - 1, -_QUALITY_STEP):
             encoded = _jpeg(candidate, lower)
             if len(encoded) <= len(plain):
-                return encoded
-    return plain
+                return encoded, True
+    return plain, False
 
 
 _WIDE_INT_MODES = ("I", "I;16", "I;16L", "I;16B", "I;16N")
@@ -40,6 +40,7 @@ class ImageResult:
     data: bytes
     media_type: str
     ext: str
+    enhanced: bool = False  # the photo kept its stretched levels (and sharpening)
 
 
 def _normalise(im: Image.Image, profile: ImageProfile, keep_alpha: bool) -> Image.Image:
@@ -99,12 +100,12 @@ def transform_image(data: bytes, profile: ImageProfile) -> ImageResult | None:
         im.save(out, "PNG", optimize=True)
         result = ImageResult(out.getvalue(), "image/png", "png")
     elif profile.enhance:
-        result = ImageResult(_enhanced_jpeg(im, profile.jpeg_quality), "image/jpeg", "jpg")
+        encoded, kept = _enhanced_jpeg(im, profile.jpeg_quality)
+        result = ImageResult(encoded, "image/jpeg", "jpg", enhanced=kept)
     else:
         result = ImageResult(_jpeg(im, profile.jpeg_quality), "image/jpeg", "jpg")
-    # an enhanced photo is never swapped back for its source
-    enhanced = profile.enhance and not png
-    if final_form and not enhanced and im.size == size and len(data) <= len(result.data):
+    # an enhanced photo is never swapped back for its source; one left plain may be
+    if final_form and not result.enhanced and im.size == size and len(data) <= len(result.data):
         media_type, ext = ("image/png", "png") if source_format == "PNG" else ("image/jpeg", "jpg")
         return ImageResult(data, media_type, ext)
     return result

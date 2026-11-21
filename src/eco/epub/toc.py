@@ -130,11 +130,15 @@ def entries_from_nav(nav: ET.Element, owner: str) -> list[TocEntry]:
     def walk(ol: ET.Element, level: int) -> None:
         for li in ol.findall(f"{{{XHTML}}}li"):
             link = li.find(f"{{{XHTML}}}a")
-            if link is not None and link.get("href"):
-                entries.append(_entry(level, _text(link), owner, link.get("href")))
+            linked = link is not None and bool(link.get("href"))
+            if linked:
+                image = link.find(f".//{{{XHTML}}}img")
+                label = _text(link) or (image.get("alt", "").strip() if image is not None else "")
+                label = label or f"Section {len(entries) + 1}"
+                entries.append(_entry(level, label, owner, link.get("href")))
             sub = li.find(f"{{{XHTML}}}ol")
-            if sub is not None:
-                walk(sub, level + 1)
+            if sub is not None:  # under an unlinked part, its entries keep the part's level
+                walk(sub, level + 1 if linked else level)
 
     top = nav.find(f"{{{XHTML}}}ol")
     if top is not None:
@@ -151,7 +155,7 @@ def entries_from_ncx(nav_map: ET.Element, owner: str) -> list[TocEntry]:
             text = point.find(f"{{{NCX}}}navLabel/{{{NCX}}}text")
             content = point.find(f"{{{NCX}}}content")
             if content is not None and content.get("src"):
-                label = _text(text) if text is not None else ""
+                label = (_text(text) if text is not None else "") or f"Section {len(entries) + 1}"
                 entries.append(_entry(level, label, owner, content.get("src")))
             walk(point, level + 1)
 

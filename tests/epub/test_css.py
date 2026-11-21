@@ -219,3 +219,10 @@ def test_font_shorthand_sizes_become_relative():
     assert (
         rewrite_css("p { font: 1em/1.4 serif }", keep, xteink=True) == "p { font: 1em/1.4 serif }"
     )
+
+
+def test_font_shorthand_keeps_a_relative_size_and_family_names():
+    assert "font: 1em/1.2 serif" in rewrite_css("p { font: 1em/14px serif }", keep, True)
+    assert "font: 100%/1.2 serif" in rewrite_css("p { font: 100%/14px serif }", keep, True)
+    for css in ('p { font: 1em "Avenir Medium", serif }', "p { font: 1em Large Print }"):
+        assert rewrite_css(css, keep, True) == css

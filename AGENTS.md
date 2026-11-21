@@ -64,7 +64,7 @@ src/eco/epub/images.py       transform_image()
 src/eco/epub/optimizer.py    optimize_epub(), OptimizeReport, DRMError
 src/eco/epub/css.py          rewrite_css() (on Xteink also relative sizes, no colors)
 src/eco/epub/cleanup.py      drop_empty_blocks(), is_empty_document() (Xteink: no blank screens)
-src/eco/epub/toc.py          TocEntry, headings(), ncx_map(), nav_body(), broken_share() (Xteink: contents rebuilt)
+src/eco/epub/toc.py          TocEntry, headings(), entries_from_nav(), entries_from_ncx(), ncx_map(), nav_body(), broken_share() (Xteink: contents rebuilt)
 src/eco/epub/focus.py        focus_letters(), focus_body() (Focus Mode in EPUB text)
 src/eco/epub/split.py        split_document(), anchors()
 src/eco/epub/zipio.py        write_epub_zip(), check_expansion(), MAX_EPUB_BYTES

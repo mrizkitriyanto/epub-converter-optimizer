@@ -625,7 +625,7 @@ class _Package:
                 self._remove(path)
             else:
                 self._store(path, item, result)
-                tuned += self.profile.enhance and result.media_type == "image/jpeg"
+                tuned += result.enhanced
         if tuned:
             self._note("photos_tuned", "info", f"{_count(tuned, 'photo')} tuned for e-ink")
         if self.small:
@@ -859,10 +859,17 @@ class _Package:
         write_ncx, write_nav = not ncx_ok, epub3 and not nav_ok
         if not write_ncx and not write_nav:
             return
-        if nav_ok:
-            entries, source = entries_from_nav(nav_el, nav), "the nav"
-        elif ncx_ok:
-            entries, source = entries_from_ncx(nav_map, ncx), "the NCX"
+        if nav_ok or ncx_ok:
+            if nav_ok:
+                entries, source = entries_from_nav(nav_el, nav), "the nav"
+            else:
+                entries, source = entries_from_ncx(nav_map, ncx), "the NCX"
+            # a dead link, an outside address or a bare fragment is not copied
+            entries = [
+                e
+                for e in entries
+                if self._points_somewhere(f"{e.path}#{e.anchor}" if e.anchor else e.path)
+            ]
         else:
             by_id = {i.get("id"): p for p, i in self.items.items()}
             order = [by_id.get(ref.get("idref")) for ref in self.spine.findall("{*}itemref")]
@@ -925,12 +932,16 @@ class _Package:
             self.docs[nav] = _Doc(root, b"<!DOCTYPE html>\n")
             self.files[nav] = b""
             self._add_item(nav, XHTML_TYPE, stem="nav").set("properties", "nav")
-        body = self.docs[nav].root.find(f"{{{XHTML}}}body")
+        root = self.docs[nav].root
+        old = self._toc_nav(nav)
+        if old is not None:  # at any depth: the new one takes its place, so there is one toc nav
+            parent = next(p for p in root.iter() if old in list(p))
+            parent.insert(list(parent).index(old), nav_body(entries, nav))
+            parent.remove(old)
+            return
+        body = root.find(f"{{{XHTML}}}body")
         if body is None:  # a nav document without a body: one is added
-            body = ET.SubElement(self.docs[nav].root, f"{{{XHTML}}}body")
-        for el in list(body):
-            if _local(el) == "nav" and "toc" in el.get(f"{{{OPS}}}type", "").split():
-                body.remove(el)
+            body = ET.SubElement(root, f"{{{XHTML}}}body")
         body.insert(0, nav_body(entries, nav))
 
     def _split_chapters(self) -> None:

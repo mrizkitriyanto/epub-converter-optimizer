@@ -1304,7 +1304,11 @@ def test_a_new_ncx_has_the_required_head(tmp_path):
 
 
 def test_x4_reports_the_photos_it_tuned(tmp_path):
-    files = {"img/p.jpg": image_bytes((200, 200), "JPEG", seed=7)}
+    grain = Image.effect_noise((200, 200), 12).convert("RGB")
+    photo = Image.blend(Image.linear_gradient("L").resize((200, 200)).convert("RGB"), grain, 0.15)
+    out = BytesIO()
+    photo.save(out, "JPEG", quality=95)
+    files = {"img/p.jpg": out.getvalue()}
     src = package(tmp_path, {"c": '<p><img src="../img/p.jpg" alt=""/></p>'}, files)
     assert "photos_tuned" in kinds(run(tmp_path, src)[1])
     assert "photos_tuned" not in kinds(run(tmp_path, src, GENERAL)[1])
@@ -1331,7 +1335,7 @@ def test_a_page_list_is_not_a_table_of_contents_and_stays_after_the_nav_map(tmp_
     assert [c.tag.rpartition("}")[2] for c in root][-2:] == ["navMap", "pageList"]
 
 
-def epub3_with_nav(tmp_path, links, ncx=None):
+def epub3_with_nav(tmp_path, links, ncx=None, wrap=False):
     """An EPUB 3 with a nav document of `links` (label, href); `ncx` is the NCX text, or None for
     a package without an NCX."""
     pages = {"a": "<h1 id='a1'>One</h1><p>x</p>", "b": "<h1 id='b1'>Two</h1><p>y</p>"}
@@ -1339,7 +1343,8 @@ def epub3_with_nav(tmp_path, links, ncx=None):
     nav = (
         '<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html>'
         f'<html xmlns="{NS["h"]}" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>N</title>'
-        f'</head><body><nav epub:type="toc"><ol>{items}</ol></nav></body></html>'
+        f'</head><body>{"<section>" if wrap else ""}<nav epub:type="toc"><ol>{items}</ol></nav>'
+        f"{'</section>' if wrap else ''}</body></html>"
     )
     src = package(tmp_path, pages, {"nav.xhtml": nav}, raw={"OEBPS/toc.ncx": ncx} if ncx else None)
 
@@ -1407,3 +1412,38 @@ def test_a_body_style_attribute_and_a_body_class_lose_margins(tmp_path):
     page = text_of(z, "OEBPS/text/a.xhtml")
     assert "margin" not in page and "padding:1em" in page
     assert "margin" not in text_of(z, "OEBPS/css/s.css")
+
+
+WORKING_NCX = (
+    '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head/><navMap>'
+    '<navPoint id="n1" playOrder="1"><navLabel><text>First</text></navLabel><content src="text/a.xhtml#a1"/></navPoint>'
+    '<navPoint id="n2" playOrder="2"><navLabel><text>Second</text></navLabel><content src="text/b.xhtml"/></navPoint>'
+    "</navMap></ncx>"
+)
+
+
+def test_a_wrapped_broken_nav_is_replaced_not_doubled(tmp_path):
+    src = epub3_with_nav(tmp_path, [("Gone", "text/missing.xhtml")], ncx=WORKING_NCX, wrap=True)
+    z, _ = run(tmp_path, src)
+    check_package(z)
+    [nav] = [p for p, i in manifest(z).items() if "nav" in (i.get("properties") or "").split()]
+    tocs = [
+        el
+        for el in ET.fromstring(z.read(nav)).iter(tag("h", "nav"))
+        if el.get("{http://www.idpf.org/2007/ops}type") == "toc"
+    ]
+    assert len(tocs) == 1 and nav_labels(z) == ["First", "Second"]
+
+
+def test_only_entries_that_point_somewhere_are_copied(tmp_path):
+    links = [
+        ("First", "text/a.xhtml#a1"),
+        ("Second", "text/b.xhtml"),
+        ("Third", "text/b.xhtml#b1"),
+        ("Gone", "text/missing.xhtml"),
+    ]
+    z, _ = run(tmp_path, epub3_with_nav(tmp_path, links))  # the nav keeps its own dead link
+    [ncx] = [n for n in z.namelist() if n.endswith(".ncx")]
+    assert ncx_labels(z, ncx) == ["First", "Second", "Third"]
+    sources = [c.get("src") for c in ET.fromstring(z.read(ncx)).iter(f"{{{NS['ncx']}}}content")]
+    assert all(resolve(ncx, s)[0] in z.namelist() for s in sources)

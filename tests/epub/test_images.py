@@ -248,3 +248,18 @@ def test_an_enhanced_photo_is_no_bigger_than_a_plain_one(size):
         data = _encode(_photo(seed), "JPEG", quality=95)
         plain = transform_image(data, replace(profile, enhance=False)).data
         assert len(transform_image(data, profile).data) <= len(plain), (size, seed)
+
+
+@pytest.mark.parametrize("size", ["small", "balanced", "best"])
+def test_a_photo_is_enhanced_at_every_size(size):
+    profile = image_profile(Options(device="x4-pro", size=size))
+    for seed in range(3):
+        assert transform_image(_encode(_photo(seed), "JPEG", quality=95), profile).enhanced
+
+
+def test_a_photo_left_plain_keeps_a_smaller_source():
+    # a flat gray photo whose stretch never fits stays plain, and its smaller source is kept
+    flat = _photo(3).convert("L").point(lambda v: 110 + v * 40 // 255)
+    data = _encode(flat, "JPEG", quality=60, optimize=True)  # smaller than eco would make it
+    out = transform_image(data, X4)
+    assert not out.enhanced and out.data == data
