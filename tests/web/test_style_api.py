@@ -129,3 +129,27 @@ def test_page_contains_all_page_style_controls(tmp_path):
         "copy-style",
     ):
         assert f'id="{element_id}"' in html
+
+
+def test_xtc_page_count_comes_from_the_container(tmp_path, monkeypatch):
+    app, c = client(tmp_path)
+    job, output = job_with_output(app)
+    page = Image.new("L", (8, 8), 170)
+    output.write_bytes(
+        write_container(
+            [encode_xth(page)] * 3,
+            hq=True,
+            width=8,
+            height=8,
+            title="Book",
+            author="",
+            language="en",
+            chapters=[],
+        )
+    )
+    monkeypatch.setattr("eco.web.preview.render_book", None)  # never rendered for a count
+
+    response = c.get(f"/api/jobs/{job.id}/files/0/xtc-pages?format=xtch")
+
+    assert response.status_code == 200 and response.json() == {"pages": 3}
+    assert c.get(f"/api/jobs/{job.id}/files/0/xtc-pages?format=epub").status_code == 404

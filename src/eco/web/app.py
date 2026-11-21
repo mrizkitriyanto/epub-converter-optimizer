@@ -30,7 +30,7 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
     DELETE /api/jobs/{id}                         204, the job and all its files are gone; 409
                                                   while it is queued or running
 
-The rows of Select files show each PDF's pages, how many are scanned and an estimate. The page asks
+The file rows on Select show each PDF's pages, how many are scanned and an estimate. The page asks
 for them one PDF at a time (`eco.web.preview.describe_pdf` does the work). The PDF goes in the field
 `file`, is stored the way a job's upload is, in a reserved job folder that is deleted before the
 answer whatever it is, and has the same size limit:
@@ -1069,6 +1069,11 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
     ):
         info, index = file_of(job_id, n)
         return previews.pages(info, index, fmt, view)
+
+    @app.get("/api/jobs/{job_id}/files/{n}/xtc-pages")
+    def xtc_pages(job_id: str, n: str, fmt: str = Query("xtc", alias="format")):
+        info, index = file_of(job_id, n)
+        return {"pages": previews.xtc_page_count(info, index, fmt)}
 
     @app.get("/api/jobs/{job_id}/files/{n}/source/{page}.png")
     def source_page(job_id: str, n: str, page: str):

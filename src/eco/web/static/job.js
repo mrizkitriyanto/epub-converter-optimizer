@@ -129,11 +129,12 @@ export function apply(event, replaying) {
     file.book = { pages: event.pages, scanned: event.scanned || [], blank: event.blank || [] };
   } else if (event.type === 'finding' && file) {
     file.findings.push({ page: event.page, kind: event.kind, level: event.level, message: event.message });
-  } else if (event.type === 'end' && event.status === 'cancelled') {
-    // the file that was running stops where it was, and says so
+  } else if (event.type === 'end' && (event.status === 'cancelled' || event.status === 'failed')) {
+    // the file that was running stops where it was, and says so; a worker that died sent no
+    // failed event for it, and its error comes with the job that finish() reads
     for (const target of run.files) {
       if (target.status !== 'running') continue;
-      target.status = 'cancelled';
+      target.status = event.status === 'cancelled' ? 'cancelled' : 'failed';
       target.endedAt = at;
     }
   }
@@ -349,7 +350,7 @@ export function renderProcessing() {
   const ended = !isActive(job);
   const converted = job.files.some(isConverted);
   let problem = state.lost ? t('error_stopped') : state.cancelError;
-  if (!problem && file.status === 'failed') problem = file.error || t('file_not_converted');
+  if (!problem && file.status === 'failed') problem = file.error || info.error || t('file_not_converted');
   if (!problem && ended && job.status === 'cancelled') problem = t('job_cancelled');
   $('process-error').hidden = problem === '';
   setText($('process-error'), problem);
@@ -361,13 +362,15 @@ export function renderProcessing() {
 }
 
 // While a file runs, the elapsed time moves each second, not only when an event comes. The timer
-// stops by itself when the file or the screen changes.
+// stops by itself when the file, the job or the screen changes, and when the server is gone: a
+// clock that runs on would say a conversion goes on that has stopped.
 export function syncClock(file) {
-  if (file.status !== 'running' || state.clock) return;
+  if (file.status !== 'running' || !isActive(state.job) || state.lost || state.clock) return;
   state.clock = setInterval(() => {
     const index = state.run && state.run.current !== null ? state.run.current : 0;
     const current = state.run && state.run.files[index];
-    if (state.stage !== 'processing' || !current || current.status !== 'running' || state.job.status === 'queued') {
+    const alive = current && current.status === 'running' && isActive(state.job) && !state.lost;
+    if (state.stage !== 'processing' || !alive || state.job.status === 'queued') {
       clearInterval(state.clock);
       state.clock = null;
       return;

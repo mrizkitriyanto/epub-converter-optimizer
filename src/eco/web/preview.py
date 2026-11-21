@@ -22,7 +22,7 @@ The routes run on a pool of threads. Renders and book builds are done one at a t
 the render cache rewrites its map and compiles inside its folder, and on Windows a file that
 another thread holds cannot be removed. PDFium is used by one thread at a time in the whole
 process: it is not thread-safe, not even for two documents (see pypdfium2's documentation). The
-reading of an uploaded PDF for the rows of Select files (`describe_pdf`) takes the same lock.
+reading of an uploaded PDF for the file rows on Select (`describe_pdf`) takes the same lock.
 
 Every number of a page is 1-based, as the page shows it: the page of a PDF, the device page, and
 what `page_map` and `chapters` hold. A chapter is counted from 0, in the order of `chapters`.
@@ -67,7 +67,7 @@ SOURCE_WIDTH = 600  # px
 SOURCE_MAX_HEIGHT = 10 * SOURCE_WIDTH  # a page that is taller is drawn smaller
 LIVE_ANSWERS = 32
 BOOK = "book.md"
-# Seconds of conversion per page. Select files multiplies them by a PDF's pages for the estimate in
+# Seconds of conversion per page. Select multiplies them by a PDF's pages for the estimate in
 # its row. Provisional. `digital` and `scanned` come from the PDF engine spike on the owner's M3 Mac
 # (docs/research/2026-11-16-spike-pdf-engines.md, row "Waktu per 13 halaman": Docling took 8-10 s for
 # 13 digital pages and 27 s for 13 scanned ones, so 0.7 and 2.1 s a page). `pages`, for a PDF made
@@ -177,7 +177,7 @@ def _draw(file: JobFile, page: int) -> bytes:
 
 
 def describe_pdf(path: Path) -> dict:
-    """What a row of Select files shows of a PDF before it is converted: its pages, how many of
+    """What a file row on Select shows of a PDF before it is converted: its pages, how many of
     them are scanned (M1's rule, the one the `read` stage counts by) and the rates that turn them
     into an estimate. 400, with M1's own message, for a PDF that cannot be opened, and 400 for
     one that opens but has a page that PDFium cannot read."""
@@ -259,6 +259,16 @@ class Previews:
             if not 1 <= page <= len(page_map):
                 raise PreviewError(404, STRINGS["error_page"])
             return page_file(folder, page - 1).read_bytes()
+
+    def xtc_page_count(self, info: JobInfo, n: int, fmt: str) -> int:
+        """The pages of the XTC/XTCH file, from its header: nothing is rendered."""
+        file = info.files[n]
+        if fmt not in ("xtch", "xtc"):
+            raise PreviewError(404, STRINGS["error_output"])
+        _check_converted(file, fmt)
+        with self._job_kept(info):
+            _, pages, _ = read_container(Path(file.outputs[fmt]).read_bytes())
+        return len(pages)
 
     def xtc_page(self, info: JobInfo, n: int, page: int, fmt: str | None = None) -> bytes:
         """A page decoded from the XTC/XTCH file produced by the conversion."""

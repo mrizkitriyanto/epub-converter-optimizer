@@ -1917,7 +1917,7 @@ def test_focus_ring_is_the_accent_two_pixels_offset_two():
 def test_a_cancel_stops_the_running_stage_in_words():
     js = source("app.js")
     apply = function_body(js, "apply")
-    assert "event.type === 'end' && event.status === 'cancelled'" in apply
+    assert "event.type === 'end' && (event.status === 'cancelled'" in apply
     status = function_body(js, "stageStatus")
     assert "file.status === 'cancelled'" in status
 
@@ -2074,7 +2074,7 @@ def test_the_model_download_shows_an_indeterminate_bar(tmp_path):
 def test_start_waits_for_the_chosen_style():
     js = source("app.js")
     assert "styleLoad" in function_body(js, "chooseStyle")
-    assert "await styleLoad" in function_body(js, "startConversion")
+    assert "await waited" in function_body(js, "startConversion")
 
 
 def test_the_convert_meta_line_names_the_pdf_kind():
@@ -2105,12 +2105,64 @@ def test_review_copy_and_values_follow_the_spec(tmp_path):
 
 
 def test_export_gives_the_page_count_of_an_xtc():
+    # from the container's header: the pages endpoint would render the whole book first
     body = function_body(source("app.js"), "renderExport")
-    assert "URLS.pages(" in body and "device_pages" in body
+    assert "URLS.xtcPages(" in body and "URLS.pages(" not in body
 
 
 def test_the_focus_strength_select_is_heard():
     # the strength is a select now: the dock listens to its selects as well as its inputs
     assert "$('review-dock').querySelectorAll('input, select')" in function_body(
         source("app.js"), "bind"
+    )
+
+
+# ------------------------------------------------- the review of the page map polish
+
+
+def test_the_clock_stops_when_the_job_ends_or_the_server_is_lost():
+    body = function_body(source("app.js"), "syncClock")
+    assert body.count("isActive(state.job)") == 2 and body.count("state.lost") == 2
+
+
+def test_a_job_that_ends_failed_stops_its_running_file():
+    # a worker that dies sends no failed event for its file: the end of the job says it
+    js = source("app.js")
+    apply = function_body(js, "apply")
+    assert "target.status = event.status === 'cancelled' ? 'cancelled' : 'failed';" in apply
+    assert "info.error" in function_body(js, "renderProcessing")
+
+
+def test_start_stops_when_the_chosen_style_cannot_load():
+    body = function_body(source("app.js"), "startConversion")
+    assert re.search(r"while \(waited !== styleLoad\)", body)
+    assert re.search(r"catch \(error\) \{\s*showDropErrors\(\[error.message\]\);\s*return;", body)
+
+
+def test_focus_strength_marks_the_change_like_focus_mode(tmp_path):
+    review = stage_markup(local(tmp_path).get("/").text, "review")
+    assert re.search(
+        r'<label for="focus-strength">[^<]*<span id="focus-strength-changed" class="changed" hidden>',
+        review,
+    )
+    assert "$('focus-strength-changed').hidden" in function_body(source("app.js"), "syncReviewDock")
+
+
+def test_no_comment_names_the_old_select_files_step():
+    for path in [
+        *sorted((SOURCES / "static").glob("*.js")),
+        SOURCES / "app.py",
+        SOURCES / "preview.py",
+    ]:
+        assert "Select files" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_the_dock_uses_the_spec_words_and_the_panel_column_fits_the_findings():
+    assert STRINGS["line_height_label"] == "Line spacing"
+    assert STRINGS["margin_x_label"] == "Side margins"
+    assert STRINGS["first_line_indent_label"] == "First-line indent"
+    assert "Apply changes" not in STRINGS["panel_note"]
+    css = source("app.css")
+    assert re.search(
+        r"\.review-grid\.with-panel \{[^}]*grid-template-columns: minmax\(240px, 280px\)", css
     )

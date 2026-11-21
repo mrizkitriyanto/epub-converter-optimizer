@@ -1312,3 +1312,6 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - The model download shows an indeterminate progress bar, hidden under reduced motion, because the server sends no fraction.
 - Start waits for the reading style that was just chosen. An XTC carried through Apply stays an XTC when its color mode changed. Export gives an XTC's page count, from its preview, once it has loaded.
 - README and README.id.md describe the four steps of the new GUI.
+- After the branch review: the elapsed clock runs only while the job is queued or running and the server is reachable. A job that ends failed marks the file that was still running as failed, so a worker that died is no longer shown as running; Convert shows the job's error for it.
+- Export reads an XTC's page count from the file's header (`GET /api/jobs/{id}/files/{n}/xtc-pages`), never from the preview, which would render the whole book first.
+- Start stops with the error when the chosen reading style cannot load, and waits for a style chosen while it waits. The dock uses the spec's words (Line spacing, Side margins, First-line indent), and the findings column stays 240 to 280 px with Advanced typography open.

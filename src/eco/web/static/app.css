@@ -1160,7 +1160,7 @@ summary {
 }
 
 .review-grid.with-panel {
-  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(0, 1fr) minmax(240px, 280px);
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(0, 1fr) minmax(240px, 280px);
 }
 
 #findings {
@@ -1412,7 +1412,7 @@ li.finding.plain {
 }
 
 .review-control output.changed,
-.review-control label.changed,
+.review-control .changed,
 .review-focus-toggle .changed {
   color: var(--accent);
   font-weight: 500;

@@ -5,8 +5,8 @@ import { abortReview, backToReview, rebuild, showReview, step } from './review.j
 'use strict';
 
 /*
- * The eco workspace. One page with four stages: Select (files and settings, and the model download
- * when the models are missing), Convert, Review, and Export. The open job is in the address (#job=<id>), so a reload
+ * The eco workspace. One page with four stages: Select (with the model download), Convert,
+ * Review, and Export. The open job is in the address (#job=<id>), so a reload
  * or a link goes back to it: a queued or running job opens Convert, any other job opens Review.
  *
  * The tests read this file, so it keeps four habits:
@@ -103,7 +103,7 @@ export const FIRMWARE_ADVICE = {
   crosspoint: () => t('firmware_crosspoint_advice'),
   crossink: () => t('firmware_crossink_advice'),
 };
-// The note of Select files while the models are missing: no download started, one runs, or one failed.
+// The note on Select while the models are missing: no download started, one runs, or one failed.
 export const MODELS_NOTE = {
   idle: () => t('models_needed', { mb: state.setup.total_mb }),
   running: () => t('models_downloading_note'),
@@ -151,6 +151,7 @@ export const URLS = {
   fontUpload: () => '/api/fonts',
   fileDownload: (id, n, format) => `/api/jobs/${id}/files/${n}/download/${format}`,
   pages: (id, n, format, view) => `/api/jobs/${id}/files/${n}/pages?format=${format}&view=${view}`,
+  xtcPages: (id, n, format) => `/api/jobs/${id}/files/${n}/xtc-pages?format=${format}`,
   source: (id, n, page) => `/api/jobs/${id}/files/${n}/source/${page}.png`,
   device: (id, n, format, page, view) => format === 'epub'
     ? `/api/jobs/${id}/files/${n}/preview/epub/${page}.png?view=${view}`

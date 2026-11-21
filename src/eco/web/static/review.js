@@ -875,11 +875,7 @@ export function syncReviewDock() {
     if (changed) output.append(` · ${t('changed')}`);
   }
   $('focus-mode-changed').hidden = focus === Boolean(applied.focus_mode);
-  // the strength select has no number beside it: its label says that it changed
-  const strength = $('focus-strength-field').querySelector('label');
-  const strengthChanged = focus && style.focus_strength !== applied.focus_strength;
-  strength.classList.toggle('changed', strengthChanged);
-  setText(strength, strengthChanged ? `${t('focus_strength_label')} · ${t('changed')}` : t('focus_strength_label'));
+  $('focus-strength-changed').hidden = !focus || style.focus_strength === applied.focus_strength;
   $('focus-strength').disabled = !focus;
   $('focus-strength-field').hidden = !focus;
 }
@@ -968,11 +964,11 @@ export function renderExport() {
       primary = false;
       setText(description, parts.join(' · '));
       rows.push(h('li', { class: 'export-file' }, h('span', { class: 'export-file-copy' }, h('strong', null, name), description), link));
-      // an XTC's page count comes from its preview: it is added when it is here
+      // an XTC's page count comes from the header of the file: it is added when it is here
       if (format !== 'epub') {
-        getJson(URLS.pages(job.id, index, format, review.view)).then((pages) => {
-          if (state.stage === 'export' && state.job === job && pages.device_pages > 0) {
-            setText(description, [parts[0], parts[1], tn('pages', pages.device_pages), ...parts.slice(2)].join(' · '));
+        getJson(URLS.xtcPages(job.id, index, format)).then((count) => {
+          if (state.stage === 'export' && state.job === job && count.pages > 0) {
+            setText(description, [parts[0], parts[1], tn('pages', count.pages), ...parts.slice(2)].join(' · '));
           }
         }).catch(() => {});
       }
@@ -1124,7 +1120,7 @@ export async function tryAgain() {
 }
 
 // The job and all its files leave the server, after the user says yes. Then the page starts over
-// on Select files, which reads Recent conversions again. A job that is gone already (deleted in
+// on Select, which reads Recent conversions again. A job that is gone already (deleted in
 // another tab) counts as deleted.
 export async function deleteJob(event) {
   if (!window.confirm(t('delete_confirm'))) return;

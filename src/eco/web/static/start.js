@@ -4,7 +4,7 @@ import { mapCells, renderPageMap, squareSize } from './pagemap.js';
 
 // ------------------------------------------------------- model download
 
-// The notice on Select files carries the one model download: its buttons, its error and its log
+// The notice on Select carries the one model download: its buttons, its error and its log
 // are set when the page starts and by the download. A failure stays in sight until a new try.
 export function setSetupButtons(failed, offerIpv4 = failed) {
   const download = $('models-download');
@@ -437,10 +437,17 @@ export function readOptions() {
 
 export async function startConversion() {
   if (state.uploading || state.files.length === 0) return;
-  try {
-    await styleLoad; // a style chosen just before Start is the style of the job
-  } catch (error) {
-    // the style could not load: the job takes the one chosen before
+  // a style chosen just before Start, or while Start waits, is the style of the job; one that cannot
+  // load stops Start, and says why
+  let waited = null;
+  while (waited !== styleLoad) {
+    waited = styleLoad;
+    try {
+      await waited;
+    } catch (error) {
+      showDropErrors([error.message]);
+      return;
+    }
   }
   if (state.uploading) return;
   const form = new FormData();

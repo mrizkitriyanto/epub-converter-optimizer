@@ -397,12 +397,12 @@ STRINGS = {
     "font_label": "Font",
     "font_upload": "Upload font…",
     "font_weight_label": "Weight",
-    "line_height_label": "Line height (%)",
+    "line_height_label": "Line spacing",
     "margin_label": "Page margin",
-    "margin_x_label": "Left and right margin",
+    "margin_x_label": "Side margins",
     "margin_y_label": "Top and bottom margin",
     "paragraph_spacing_label": "Paragraph spacing (% of font size)",
-    "first_line_indent_label": "First-line indent (% of font size)",
+    "first_line_indent_label": "First-line indent",
     "align_label": "Alignment",
     "align_justify": "Justified",
     "align_left": "Left",
@@ -445,7 +445,7 @@ STRINGS = {
     "applying": "Applying…",
     "close": "Close",
     "panel_note": (
-        "The preview shows one page of the current chapter. Apply changes converts the file "
+        "The preview shows one page of the current chapter. Apply to book converts the file "
         "again; a PDF is not read again."
     ),
 }
