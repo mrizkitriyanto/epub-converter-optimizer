@@ -1364,3 +1364,9 @@ Record the large chapter's load time in its column. If light and dark gray are r
 
 - The owner asked for Semibold as the default Focus Mode weight (it was Bold 700). `PageStyle().focus_weight` is 600, so the CLI, the API and "eco default" on Select start there. A style or job that names a weight keeps it; an old style with `focus_strength` takes the new default.
 - The owner also reported that 3-letter words showed 2 bold letters. Every exported EPUB in the data folder was checked word by word: since the rule landed on 2026-11-21, all follow it (1-3 letters → 1, 4 → 2, else nearest 40%); the decoded XTCH pages and the EPUB preview source apply it once as well. No change to the rule.
+
+## 2026-11-22: Library names for downloads
+
+- Export has a toggle, **Name files as Language - Title - Author**, off until the owner turns it on once; the browser remembers it. A download then takes `LANG - Title - Author.epub`, or `LANG - Title - Author.<device>.<xtc|xtch>`: an EPUB reflows on any reader, an XTC fits one screen size.
+- The language comes from the book's text (the English and Indonesian stopwords), because metadata is often wrong: two of the owner's Indonesian translations say `en`. Without enough stopwords the metadata's primary subtag is used, else the part is left out. Title and author come from the metadata, or from the Title and Author options; `Last, First` is turned round, more than one author gives the first plus "dkk." or "et al.", and a title ending in ` - Name` gives the author when there is none. The name is safe on Windows and at most 150 characters.
+- The name is worked out once at conversion and kept in `job.json`; jobs from before keep their names. The CLI is unchanged. Spec: `docs/superpowers/specs/2026-11-22-library-names-design.md`.

@@ -653,7 +653,7 @@ def test_export_guard_requires_every_successful_file_to_be_reviewed():
 def test_export_builds_safe_download_links_for_each_output():
     body = function_body(source("app.js"), "renderExport")
     assert "Object.entries(info.outputs)" in body
-    assert "URLS.fileDownload(job.id, index, format)" in body
+    assert "URLS.fileDownload(job.id, index, format, Boolean(renamed))" in body
     assert "download: true" in body
 
 
@@ -866,6 +866,9 @@ def test_there_is_no_setup_gate_and_the_models_notice_carries_the_download(tmp_p
     bind = function_body(js, "bind")
     assert "$('models-download').addEventListener('click', () => startDownload(false));" in bind
     assert "$('models-ipv4').addEventListener('click', () => startDownload(true));" in bind
+    # the browser remembers only the library names choice of Export, in its two functions
+    for name in ("libraryNamesOn", "setLibraryNames"):
+        js = js.replace(function_body(js, name), "\n")
     for store in ("localStorage", "sessionStorage", "document.cookie", "indexedDB"):
         assert store not in js
 
@@ -2329,3 +2332,41 @@ def test_the_dock_offers_only_the_focus_weights_the_font_has():
     body = function_body(source("app.js"), "updateFocusAvailability")
     assert "option.disabled = !(weights.includes(weight) && weight > text)" in body
     assert "extra bold" in STRINGS["focus_weight_note"].lower()
+
+
+# Export: library names
+
+
+def test_export_offers_library_names_above_the_files(tmp_path):
+    export = stage_markup(local(tmp_path).get("/").text, "export")
+    assert 'id="export-library-names" type="checkbox"' in export
+    assert "Name files as Language - Title - Author" in export
+    assert export.index('id="export-library-names"') < export.index('id="export-files"')
+    assert STRINGS["export_library_names"] == "Name files as Language - Title - Author"
+
+
+def test_export_rows_use_the_library_name_while_the_toggle_is_on():
+    body = function_body(source("app.js"), "renderExport")
+    assert "info.library_name" in body
+    assert "libraryNamesOn()" in body
+    assert "`.${job.options.device}.${format}`" in body  # an XTC keeps its device, an EPUB not
+    assert "$('export-library-names-row').hidden" in body  # old jobs have no names to offer
+
+
+def test_download_urls_ask_for_the_library_name():
+    url = re.search(r"fileDownload: .*", source("core.js")).group(0)
+    assert "?name=library" in url
+
+
+def test_the_library_names_choice_is_remembered_safely():
+    js = source("app.js")
+    for name in ("libraryNamesOn", "setLibraryNames"):
+        body = function_body(js, name)
+        assert "localStorage" in body and "try {" in body and "catch" in body
+    assert "'eco.libraryNames'" in js
+    assert "$('export-library-names').addEventListener('change'" in js
+
+
+def test_a_converted_file_brings_its_library_name_to_the_page():
+    js = source("job.js")
+    assert "state.job.files[event.index].library_name = event.library_name;" in js

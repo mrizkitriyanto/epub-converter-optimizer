@@ -190,6 +190,7 @@ STRINGS = {
     "export_warnings_one": "The reviewed files are ready with 1 warning.",
     "export_warnings_other": "The reviewed files are ready with {n} warnings.",
     "download_file": "Download {format}",
+    "export_library_names": "Name files as Language - Title - Author",
     "back_to_review": "Back to Review",
     # Setup gate
     "setup_title": "AI models needed",

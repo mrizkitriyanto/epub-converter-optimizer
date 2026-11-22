@@ -150,7 +150,7 @@ export const URLS = {
   rebuild: (id) => `/api/jobs/${id}/rebuild`,
   fonts: (id) => `/api/fonts?job=${id}`,
   fontUpload: () => '/api/fonts',
-  fileDownload: (id, n, format) => `/api/jobs/${id}/files/${n}/download/${format}`,
+  fileDownload: (id, n, format, library = false) => `/api/jobs/${id}/files/${n}/download/${format}${library ? '?name=library' : ''}`,
   pages: (id, n, format, view) => `/api/jobs/${id}/files/${n}/pages?format=${format}&view=${view}`,
   xtcPages: (id, n, format) => `/api/jobs/${id}/files/${n}/xtc-pages?format=${format}`,
   source: (id, n, page) => `/api/jobs/${id}/files/${n}/source/${page}.png`,

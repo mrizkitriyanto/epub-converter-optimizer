@@ -683,7 +683,7 @@ def test_post_returns_the_new_job(tmp_path):
     assert set(job) == {"id", "status", "created", "position", "options", "files"}
     assert re.fullmatch(r"[0-9a-f]{16}", job["id"])
     assert (job["status"], job["position"]) == ("queued", 0)
-    nothing = {"error": None, "outputs": {}, "sizes": {}, "epubcheck": None}
+    nothing = {"error": None, "outputs": {}, "sizes": {}, "epubcheck": None, "library_name": None}
     assert job["files"] == [
         {"index": 0, "name": "a.md", "kind": "md", "size": 4, **nothing},
         {"index": 1, "name": "b.PDF", "kind": "pdf", "size": 8, **nothing},
@@ -1401,6 +1401,7 @@ def test_the_finished_job_as_the_api_shows_it(finished):
             "outputs": {"epub": "Bab Ü.x4.epub"},
             "sizes": {"epub": 15},
             "epubcheck": "passed",
+            "library_name": "ID - Bab Ü - Ani",
         },
         {
             "index": 1,
@@ -1411,6 +1412,7 @@ def test_the_finished_job_as_the_api_shows_it(finished):
             "outputs": {"epub": "notes.x4.epub"},
             "sizes": {"epub": 15},
             "epubcheck": "passed",
+            "library_name": "ID - notes - Ani",
         },
     ]
 

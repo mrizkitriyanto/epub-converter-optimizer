@@ -93,6 +93,7 @@ export function apply(event, replaying) {
       state.job.files[event.index].outputs = event.outputs || {};
       state.job.files[event.index].sizes = event.sizes || {};
       state.job.files[event.index].epubcheck = event.epubcheck;
+      state.job.files[event.index].library_name = event.library_name;
       // the first file that converts opens Review, or after Apply the file the user was on; later
       // files never take the user away from it
       const carry = state.carry && state.carry.toJob === state.job.id ? state.carry : null;

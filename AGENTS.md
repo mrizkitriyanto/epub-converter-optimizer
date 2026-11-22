@@ -58,6 +58,7 @@ src/eco/pipeline.py          extract_pdf(), page_book(), convert_file(), output_
 src/eco/style.py             PageStyle, bundled font families and weight lookup
 src/eco/font_library.py      shared font import, listing and removal
 src/eco/font_coverage.py     missing-character findings for XTC
+src/eco/naming.py            BookFacts, facts_from_epub(), library_name() (download names `LANG - Title - Author`)
 src/eco/saved_styles.py      named reading styles and the default style
 src/eco/epub/builder.py      build_epub()
 src/eco/epub/images.py       transform_image()

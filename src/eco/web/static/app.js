@@ -3,7 +3,7 @@
 import { $, URLS, dropTokenFromAddress, getJson, pageFailed, route, setText, showBanner, state } from './core.js';
 import { addFiles, chooseStyle, renderDetails, setSetupButtons, showDropErrors, startConversion, startDownload, syncSettingHints, uploadLibraryFonts } from './start.js';
 import { cancelJob, retryJob, showProcessing } from './job.js';
-import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, discardChanges, explainImage, makeSavedDefault, onFileSwitch, onStripClick, onStripKey, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, saveSavedStyle, showFile, sizeFrameToImage, step, tryAgain } from './review.js';
+import { applyChanges, approveCurrentFile, backToReview, chooseSavedStyle, closePanel, copyStyle, deleteJob, deleteSavedStyle, discardChanges, explainImage, makeSavedDefault, onFileSwitch, onStripClick, onStripKey, onFontChange, onFontUpload, onFormatChange, onKey, onLiveChange, onReviewDockChange, onViewChange, openPanel, renderExport, saveSavedStyle, setLibraryNames, showFile, sizeFrameToImage, step, tryAgain } from './review.js';
 
 // ------------------------------------------------------------------ init
 
@@ -76,6 +76,10 @@ function bind() {
     showFile(Number(event.currentTarget.dataset.index));
   });
   $('back-to-review').addEventListener('click', backToReview);
+  $('export-library-names').addEventListener('change', (event) => {
+    setLibraryNames(event.target.checked);
+    renderExport();
+  });
   $('convert-another').addEventListener('click', () => { location.hash = ''; });
   $('change-settings').addEventListener('click', () => {
     if (state.review.panelOpen) closePanel(true, true);

@@ -982,6 +982,24 @@ export function showExport() {
   focusStage();
 }
 
+// Whether downloads take the library name (`LANG - Title - Author`). The browser remembers it; a
+// browser that keeps nothing (private window, blocked storage) starts with it off.
+export function libraryNamesOn() {
+  try {
+    return localStorage.getItem('eco.libraryNames') === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setLibraryNames(on) {
+  try {
+    localStorage.setItem('eco.libraryNames', on ? '1' : '0');
+  } catch {
+    // nothing to remember it in: it stays as chosen until the page is left
+  }
+}
+
 // Export: what was made, what was checked, and what is left of the job. Only reviewed files are
 // here; the first download is the one blue button.
 export function renderExport() {
@@ -992,6 +1010,11 @@ export function renderExport() {
   let primary = true;
   let warnings = 0;
   const device = t(`device_${job.options.device.replace('-', '_')}`);
+  // a job from before library names has none to offer
+  const named = reviewed.some(({ info }) => info.library_name);
+  $('export-library-names-row').hidden = !named;
+  const library = named && ($('export-library-names').checked || libraryNamesOn());
+  $('export-library-names').checked = library;
   for (const { info, index } of reviewed) {
     const file = run.files[index];
     warnings += file.findings.filter((finding) => finding.level === 'warning').length;
@@ -1006,10 +1029,13 @@ export function renderExport() {
         parts.push(format === 'epub' && info.size ? `${formatSize(size)}, ${t('down_from', { before: formatSize(info.size) })}` : formatSize(size));
       }
       const label = t('download_file', { format: t(format === 'epub' ? 'output_epub' : 'output_xtc') });
-      const link = h('a', { class: `button ${primary ? 'primary' : 'secondary'}`, href: URLS.fileDownload(job.id, index, format), download: true }, label);
+      // an EPUB reflows on any reader; an XTC fits one screen, so its name keeps the device
+      const renamed = library && info.library_name ? `${info.library_name}${format === 'epub' ? '.epub' : `.${job.options.device}.${format}`}` : null;
+      const link = h('a', { class: `button ${primary ? 'primary' : 'secondary'}`, href: URLS.fileDownload(job.id, index, format, Boolean(renamed)), download: true }, label);
       primary = false;
       setText(description, parts.join(' · '));
-      rows.push(h('li', { class: 'export-file' }, h('span', { class: 'export-file-copy' }, h('strong', null, name), description), link));
+      const shownName = renamed ? h('span', { class: 'export-file-name' }, renamed) : null;
+      rows.push(h('li', { class: 'export-file' }, h('span', { class: 'export-file-copy' }, h('strong', null, name), shownName, description), link));
       // an XTC's page count comes from the header of the file: it is added when it is here
       if (format !== 'epub') {
         getJson(URLS.xtcPages(job.id, index, format)).then((count) => {

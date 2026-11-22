@@ -1649,6 +1649,15 @@ output {
   color: var(--muted);
 }
 
+.export-file-copy .export-file-name {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.export-names {
+  margin-bottom: 8px;
+}
+
 .export-section {
   margin-top: 28px;
 }
