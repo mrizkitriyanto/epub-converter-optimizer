@@ -637,3 +637,36 @@ def test_a_reused_extraction_sends_no_book_event(tmp_path, fixtures_dir, fake_bl
     seen = []
     convert(fixtures_dir["blank"], tmp_path, out="again", on_event=seen.append)
     assert not [e for e in seen if isinstance(e, BookEvent)]
+
+
+ID_SENTENCE = (
+    "Ini adalah buku yang dibaca dengan tenang di dalam rumah dan tidak untuk dijual. " * 5
+)
+
+
+def test_the_result_carries_a_library_name(tmp_path):
+    md = tmp_path / "x.md"
+    md.write_text(
+        f'---\ntitle: "Buku Saya"\nauthor: "Ani"\n---\n\n{ID_SENTENCE}\n', encoding="utf-8"
+    )
+    assert convert(md, tmp_path).library_name == "ID - Buku Saya - Ani"
+
+
+def test_options_title_and_author_win_in_the_library_name(tmp_path):
+    from fixtures.make import book_epub
+
+    epub = book_epub(tmp_path / "b.epub", "Asli", ["Penulis Asli"], "en", [f"<p>{ID_SENTENCE}</p>"])
+    result = convert(epub, tmp_path, Options(title="Lain", author="Budi"))
+    assert result.library_name == "ID - Lain - Budi"
+
+
+def test_an_epub_that_naming_cannot_read_still_converts(tmp_path, monkeypatch):
+    from fixtures.make import book_epub
+
+    def broken(path):
+        raise ValueError("unreadable")
+
+    monkeypatch.setattr(pipeline, "facts_from_epub", broken)
+    epub = book_epub(tmp_path / "b.epub", "Asli", ["Ani"], "id", [f"<p>{ID_SENTENCE}</p>"])
+    result = convert(epub, tmp_path)
+    assert result.outputs["epub"].is_file() and result.library_name is None

@@ -70,6 +70,7 @@ def fake_work(job_dir, options, data_dir, q) -> None:
                 "status": "done",
                 "outputs": {"epub": str(out)},
                 "epubcheck": "passed",
+                "library_name": f"ID - {path.stem} - Ani",
             }
         )
     q.put({"type": "end", "status": "done"})

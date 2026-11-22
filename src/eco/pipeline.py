@@ -30,6 +30,7 @@ from eco.events import (
 )
 from eco.font_coverage import missing_characters
 from eco.models import models_dir
+from eco.naming import BookFacts, facts_from_epub, library_name
 from eco.options import DEVICES, Options, image_profile
 from eco.pdf.code import fix_code_blocks
 from eco.pdf.contents import rebuild_contents
@@ -74,6 +75,7 @@ class Result:
     sizes: dict[str, int]  # format -> bytes of the output
     # passed, passed_with_warnings or not_run; None when no EPUB was made
     epubcheck: str | None = None
+    library_name: str | None = None  # `LANG - Title - Author` for downloads, when one was found
 
 
 @contextmanager
@@ -495,4 +497,28 @@ def convert_file(
         seconds,
         {fmt: out.stat().st_size for fmt, out in outputs.items()},
         epubcheck,
+        _library_name(path, kind, source, options),
     )
+
+
+def _library_name(path: Path, kind: str, source, options: Options) -> str | None:
+    """The download name of the book, or None. Naming never fails a conversion."""
+    try:
+        if kind == "epub":
+            facts = facts_from_epub(path)
+        else:
+            meta = source.meta
+            author = meta.get("author", "")
+            facts = BookFacts(
+                meta.get("title", ""),
+                [author] if author else [],
+                meta.get("language", ""),
+                source.markdown,
+            )
+        if options.title:
+            facts = replace(facts, title=options.title)
+        if options.author:
+            facts = replace(facts, authors=[options.author])
+        return library_name(facts)
+    except Exception:  # noqa: BLE001  a name is a convenience; the book is what matters
+        return None

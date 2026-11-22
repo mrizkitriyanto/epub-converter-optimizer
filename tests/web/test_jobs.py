@@ -829,3 +829,35 @@ def test_every_stored_event_has_a_server_time(started, fake_worker):
     events = store.events(info.id)
     assert events and all(isinstance(e["t"], float) for e in events)
     assert [e["t"] for e in events] == sorted(e["t"] for e in events)
+
+
+def test_a_job_json_without_a_library_name_still_loads(tmp_path):
+    store = JobStore(tmp_path)
+    info = store.create([md()], Options())
+    path = tmp_path / "jobs" / info.id / "job.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for f in data["files"]:
+        f.pop("library_name", None)  # a job.json from before the field existed
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert store.get(info.id).files[0].library_name is None
+
+
+def test_a_done_file_keeps_its_library_name(started, fake_worker):
+    store, run = started()
+    info = store.create([md()], Options())
+    run.submit(info.id)
+    wait_for(lambda: store.get(info.id).status == "done", 10)
+    assert store.get(info.id).files[0].library_name == "ID - a - Ani"
+
+
+def test_the_worker_sends_the_library_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    store = JobStore(tmp_path)
+    text = b'---\ntitle: "Buku"\nauthor: "Ani"\n---\n\n' + (
+        b"Ini buku yang dibaca dengan tenang di dalam rumah dan tidak untuk dijual. " * 5
+    )
+    info = store.create([md(text=text)], Options())
+    events = queue.Queue()
+    jobs._work(str(store.job_dir(info.id)), info.options, str(tmp_path), events)
+    done = [e for e in events.queue if e["type"] == "file" and e["status"] == "done"]
+    assert [e["library_name"] for e in done] == ["ID - Buku - Ani"]
