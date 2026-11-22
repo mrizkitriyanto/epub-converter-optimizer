@@ -126,3 +126,26 @@ def test_creators_who_are_not_authors_are_left_out(tmp_path):
     )
     epub = make_epub(tmp_path / "r.epub", {"META-INF/container.xml": container, "content.opf": opf})
     assert facts_from_epub(epub).authors == ["Ani", "Budi"]
+
+
+def test_language_code_says_where_it_came_from():
+    from eco.naming import language_code
+
+    assert language_code(facts("T")) == ("ID", "id")
+    assert language_code(facts("T", text=EN_TEXT)) == ("EN", "en")
+    assert language_code(facts("T", language="ja-JP", text="猫")) == ("JA", None)
+    assert language_code(facts("T", text="猫")) == ("", None)
+
+
+def test_titled_adds_the_code_once():
+    from eco.naming import titled
+
+    assert titled("Deep Work", "ID") == "ID - Deep Work"
+    assert titled("ID - Deep Work", "ID") == "ID - Deep Work"
+    assert titled("Deep Work", "") == "Deep Work"
+
+
+def test_a_prefixed_title_does_not_double_in_the_name():
+    assert library_name(facts("ID - Deep Work", ["Cal Newport"])) == (
+        "ID - Deep Work - Cal Newport"
+    )

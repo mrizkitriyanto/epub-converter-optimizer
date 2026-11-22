@@ -83,14 +83,31 @@ def facts_from_epub(path: Path) -> BookFacts:
     )
 
 
+def language_code(facts: BookFacts) -> tuple[str, str | None]:
+    """The code a title and a download name start with (`ID`, `EN`, else the metadata's primary
+    subtag, else ""), and the language the text decided (`id`, `en`, or None)."""
+    lang = sure_language(facts.text)
+    if lang:
+        return lang.upper(), lang
+    primary = facts.language.split("-")[0].split("_")[0]
+    return (primary.upper() if _LANG.fullmatch(primary) else ""), None
+
+
+def titled(title: str, code: str) -> str:
+    """`CODE - title`; the same title when there is no code or it already starts with it."""
+    if not code or title.startswith(f"{code} - "):
+        return title
+    return f"{code} - {title}"
+
+
 def library_name(facts: BookFacts) -> str | None:
     """`LANG - Title - Author` without an extension, safe as a Windows file name. The language
     comes from the text, then from the metadata, else it is left out; so is a missing author.
     None when no title is left."""
-    lang = sure_language(facts.text)
-    primary = facts.language.split("-")[0].split("_")[0]
-    code = lang.upper() if lang else (primary.upper() if _LANG.fullmatch(primary) else "")
+    code, _ = language_code(facts)
     raw_title = " ".join(facts.title.split())
+    if code:
+        raw_title = raw_title.removeprefix(f"{code} - ")
     authors = [" ".join(a.split()) for a in facts.authors if a.strip()]
     if not authors:
         head, sep, tail = raw_title.rpartition(" - ")
