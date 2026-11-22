@@ -128,5 +128,5 @@ def test_an_old_job_style_gains_the_focus_weight():
 
     old = {"formats": ["epub"], "style": {"focus_mode": True, "focus_strength": "high"}}
     style = upgrade_options(old)["style"]
-    assert style["focus_weight"] == 700 and "focus_strength" not in style
+    assert style["focus_weight"] == 600 and "focus_strength" not in style
     assert upgrade_options({"formats": ["epub"]}) == {"formats": ["epub"]}

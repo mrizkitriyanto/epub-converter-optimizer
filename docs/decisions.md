@@ -1359,3 +1359,8 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - An InDesign export holds a whole chapter in one container beside an empty one, so the split stopped at the outer wrapper and left a 228 KB part with the warning "one element is larger than the limit" (seen with Focus Mode on). A wrapper (div, section, article) larger than the limit is now opened: its children go into copies of it, the class on each and the id on the first. A wrapper with loose text between its children stays whole, so no text moves.
 - A full part moves its cut back to its last heading (h1-h6, or a wrapper that starts with one) when at least half the limit stays behind, so a part starts at a section rather than mid-section. The builder's own Markdown chapters use the same rule (`pack` in `eco/epub/split.py`).
 - Each part still starts on a new screen on the reader; that is the cost of the 100 KB limit.
+
+## 2026-11-22: Focus Mode defaults to Semibold 600
+
+- The owner asked for Semibold as the default Focus Mode weight (it was Bold 700). `PageStyle().focus_weight` is 600, so the CLI, the API and "eco default" on Select start there. A style or job that names a weight keeps it; an old style with `focus_strength` takes the new default.
+- The owner also reported that 3-letter words showed 2 bold letters. Every exported EPUB in the data folder was checked word by word: since the rule landed on 2026-11-21, all follow it (1-3 letters → 1, 4 → 2, else nearest 40%); the decoded XTCH pages and the EPUB preview source apply it once as well. No change to the rule.

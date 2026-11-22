@@ -68,7 +68,7 @@ class PageStyle:
     paragraph_spacing: int = 120
     first_line_indent: int = 0
     focus_mode: bool = False
-    focus_weight: int = 700  # the bold of Focus Mode: semibold, bold or extra bold
+    focus_weight: int = 600  # the bold of Focus Mode: semibold, bold or extra bold
     align: str = "justify"
     hyphenate: bool = True
     lang: str = "auto"

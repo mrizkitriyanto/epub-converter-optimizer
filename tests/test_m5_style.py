@@ -108,7 +108,7 @@ def test_focus_rejects_a_font_without_heavier_weight():
 
 
 def test_focus_weight_replaces_strength():
-    assert PageStyle().focus_weight == 700
+    assert PageStyle().focus_weight == 600
     assert CHOICES["focus_weight"] == (600, 700, 800)
     assert "focus_strength" not in PageStyle().to_json()
     with pytest.raises(ValueError, match="focus_weight"):
@@ -117,7 +117,7 @@ def test_focus_weight_replaces_strength():
 
 def test_a_style_with_the_old_focus_strength_still_loads():
     style = PageStyle.from_json({"focus_mode": True, "focus_strength": "high"})
-    assert style.focus_mode and style.focus_weight == 700
+    assert style.focus_mode and style.focus_weight == 600
 
 
 def test_focus_weight_must_be_heavier_than_the_text():

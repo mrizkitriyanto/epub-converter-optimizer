@@ -103,7 +103,7 @@ Opsi `eco convert INPUT...`:
 - `--landscape`: putar gambar halaman ke arah lanskap (perlu `--mode pages` dan perangkat Xteink).
 - `--title`, `--author`, `--lang`: timpa metadata buku; `--lang` menerima kode seperti `en` atau `id`.
 - `--data DIR`: folder data; `ECO_DATA` juga dapat menentukannya. Bawaannya folder data pengguna.
-- `--focus-mode`: tanam penebalan awal kata dalam XHTML EPUB dan terapkan juga pada XTC. Kata sampai 3 huruf mendapat 1 huruf tebal, kata 4 huruf 2, kata yang lebih panjang 40% (dibulatkan). `--focus-weight 600|700` memilih semibold atau bold (bawaan: 700).
+- `--focus-mode`: tanam penebalan awal kata dalam XHTML EPUB dan terapkan juga pada XTC. Kata sampai 3 huruf mendapat 1 huruf tebal, kata 4 huruf 2, kata yang lebih panjang 40% (dibulatkan). `--focus-weight 600|700|800` memilih semibold, bold atau extra bold (bawaan: 600).
 
 Untuk perangkat Xteink, EPUB juga dirapikan untuk layar e-ink, baik yang dibangun dari PDF atau Markdown maupun yang masuk sebagai EPUB: ukuran huruf dan jarak baris yang dikunci menjadi relatif, sehingga pengaturan ukuran huruf di reader bekerja; warna teks dan latar dibuang, sehingga teks hitam di atas putih; margin pada badan halaman dibuang (termasuk kelas body dari Calibre dan `@page`); foto mendapat kontras lebih dan penajaman ringan tanpa membuat file membesar; paragraf dan halaman kosong dibuang; dan dokumen nav atau NCX yang tidak ada atau sebagian besar rusak ditulis dari yang berfungsi, atau dari heading jika keduanya rusak. Setiap langkah ini dicatat sebagai temuan. Perangkat `general` tidak menjalankan semua itu.
 
