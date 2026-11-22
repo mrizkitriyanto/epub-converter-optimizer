@@ -90,7 +90,10 @@ def language_code(facts: BookFacts) -> tuple[str, str | None]:
     if lang:
         return lang.upper(), lang
     primary = facts.language.split("-")[0].split("_")[0]
-    return (primary.upper() if _LANG.fullmatch(primary) else ""), None
+    # undetermined, several, no linguistic content, uncoded: no language to show
+    if not _LANG.fullmatch(primary) or primary.lower() in ("und", "mul", "zxx", "mis"):
+        return "", None
+    return primary.upper(), None
 
 
 def titled(title: str, code: str) -> str:

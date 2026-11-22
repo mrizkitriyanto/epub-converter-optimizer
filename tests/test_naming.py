@@ -149,3 +149,10 @@ def test_a_prefixed_title_does_not_double_in_the_name():
     assert library_name(facts("ID - Deep Work", ["Cal Newport"])) == (
         "ID - Deep Work - Cal Newport"
     )
+
+
+@pytest.mark.parametrize("unknown", ["und", "mul", "zxx", "mis", "UND"])
+def test_codes_for_no_language_give_no_code(unknown):
+    from eco.naming import language_code
+
+    assert language_code(facts("T", language=unknown, text="猫")) == ("", None)

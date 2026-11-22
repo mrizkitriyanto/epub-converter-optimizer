@@ -742,3 +742,13 @@ def test_naming_trouble_leaves_the_title(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "facts_from_epub", broken)
     epub = book_epub(tmp_path / "b.epub", "Asli", ["Ani"], "en", [f"<p>{ID_SENTENCE}</p>"])
     assert _opf_of(convert(epub, tmp_path).outputs["epub"]) == (["Asli"], ["en"])
+
+
+def test_a_typed_language_wins_over_the_text(tmp_path):
+    md = tmp_path / "x.md"
+    md.write_text(
+        f'---\ntitle: "Buku Saya"\nauthor: "Ani"\n---\n\n{ID_SENTENCE}\n', encoding="utf-8"
+    )
+    result = convert(md, tmp_path, Options(lang="en"))
+    assert _opf_of(result.outputs["epub"]) == (["EN - Buku Saya"], ["en"])
+    assert result.library_name == "EN - Buku Saya - Ani"

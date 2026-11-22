@@ -527,6 +527,9 @@ def _book_label(
             facts = replace(facts, title=options.title)
         if options.author:
             facts = replace(facts, authors=[options.author])
+        if options.lang and kind != "epub":
+            # a language the user typed wins over the text, as it does for the built EPUB
+            facts = replace(facts, language=options.lang, text="")
         code, language = language_code(facts)
         return code, language, library_name(facts)
     except Exception:  # noqa: BLE001  a name is a convenience; the book is what matters
