@@ -177,7 +177,19 @@ def join_split_paragraphs(blocks: list[Block]) -> list[Block]:
     return out
 
 
-def detect_language(text: str) -> str:
+def _stopword_counts(text: str) -> dict[str, int]:
     words = re.findall(r"\w+", text.lower())
-    counts = {lang: sum(w in stop for w in words) for lang, stop in _STOPWORDS.items()}
+    return {lang: sum(w in stop for w in words) for lang, stop in _STOPWORDS.items()}
+
+
+def detect_language(text: str) -> str:
+    counts = _stopword_counts(text)
+    return "id" if counts["id"] > counts["en"] else "en"
+
+
+def sure_language(text: str, minimum: int = 20) -> str | None:
+    """`detect_language`, or None when neither language has `minimum` stopwords in the text."""
+    counts = _stopword_counts(text)
+    if max(counts.values()) < minimum:
+        return None
     return "id" if counts["id"] > counts["en"] else "en"

@@ -752,3 +752,35 @@ def make_messy_epub(directory: Path) -> Path:
         "Thumbs.db": b"junk",
     }
     return make_epub(directory / "messy.epub", files)
+
+
+def book_epub(
+    path: Path, title: str, creators: list[str], language: str, bodies: list[str]
+) -> Path:
+    """A small valid-enough EPUB 3 with this metadata and one spine page per body."""
+    container = (
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+        'media-type="application/oebps-package+xml"/></rootfiles></container>'
+    )
+    items = "".join(
+        f'<item id="c{n}" href="c{n}.xhtml" media-type="application/xhtml+xml"/>'
+        for n in range(len(bodies))
+    )
+    refs = "".join(f'<itemref idref="c{n}"/>' for n in range(len(bodies)))
+    meta = f"<dc:title>{title}</dc:title>" + "".join(
+        f"<dc:creator>{c}</dc:creator>" for c in creators
+    )
+    meta += f"<dc:language>{language}</dc:language>" if language else ""
+    files = {
+        "META-INF/container.xml": container,
+        "OEBPS/content.opf": (
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
+            '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            f'<dc:identifier id="id">urn:uuid:0</dc:identifier>{meta}</metadata>'
+            f"<manifest>{items}</manifest><spine>{refs}</spine></package>"
+        ),
+    }
+    for n, body in enumerate(bodies):
+        files[f"OEBPS/c{n}.xhtml"] = xhtml_page(f"c{n}", body)
+    return make_epub(path, files)
