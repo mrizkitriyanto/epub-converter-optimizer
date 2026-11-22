@@ -509,11 +509,10 @@ def _library_name(path: Path, kind: str, source, options: Options) -> str | None
         else:
             meta = source.meta
             author = meta.get("author", "")
+            # a PDF's language is one the pipeline guessed ("en" for page images), not the book's
+            language = (options.lang or "") if kind in ("pdf", "book") else meta.get("language", "")
             facts = BookFacts(
-                meta.get("title", ""),
-                [author] if author else [],
-                meta.get("language", ""),
-                source.markdown,
+                meta.get("title", ""), [author] if author else [], language, source.markdown
             )
         if options.title:
             facts = replace(facts, title=options.title)

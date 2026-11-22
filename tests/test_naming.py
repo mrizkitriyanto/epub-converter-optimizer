@@ -98,3 +98,31 @@ def test_facts_from_epub(tmp_path):
         "en",
     )
     assert "Aku telah menghabiskan" in got.text and "dua dekade" in got.text
+
+
+def test_a_backslash_is_dropped():
+    assert library_name(facts(r"a\b c", ["X"], text="猫")) == "ab c - X"
+
+
+def test_creators_who_are_not_authors_are_left_out(tmp_path):
+    from fixtures.make import make_epub
+
+    container = (
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        '<rootfiles><rootfile full-path="content.opf" '
+        'media-type="application/oebps-package+xml"/></rootfiles></container>'
+    )
+    opf = (
+        '<package xmlns="http://www.idpf.org/2007/opf" '
+        'xmlns:opf="http://www.idpf.org/2007/opf" version="3.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Buku</dc:title>'
+        '<dc:creator opf:role="aut">Ani</dc:creator>'
+        '<dc:creator opf:role="trl">Penerjemah</dc:creator>'
+        '<dc:creator id="e">Penyunting</dc:creator>'
+        '<meta refines="#e" property="role" scheme="marc:relators">edt</meta>'
+        '<dc:creator id="b">Budi</dc:creator>'
+        '<meta refines="#b" property="role" scheme="marc:relators">aut</meta>'
+        "</metadata><manifest/><spine/></package>"
+    )
+    epub = make_epub(tmp_path / "r.epub", {"META-INF/container.xml": container, "content.opf": opf})
+    assert facts_from_epub(epub).authors == ["Ani", "Budi"]

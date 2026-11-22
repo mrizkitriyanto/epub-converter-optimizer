@@ -431,3 +431,8 @@ def test_xtc_needs_an_xteink_device(tmp_path, capsys):
 def test_the_cli_takes_extra_bold(capsys):
     assert main(["convert", "--help"]) == 0
     assert "800" in capsys.readouterr().out
+
+
+def test_the_cli_help_names_the_semibold_default(capsys):
+    assert main(["convert", "--help"]) == 0
+    assert "default: 600" in " ".join(capsys.readouterr().out.split())

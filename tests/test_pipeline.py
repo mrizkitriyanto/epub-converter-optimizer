@@ -670,3 +670,19 @@ def test_an_epub_that_naming_cannot_read_still_converts(tmp_path, monkeypatch):
     epub = book_epub(tmp_path / "b.epub", "Asli", ["Ani"], "id", [f"<p>{ID_SENTENCE}</p>"])
     result = convert(epub, tmp_path)
     assert result.outputs["epub"].is_file() and result.library_name is None
+
+
+def test_a_book_of_page_images_gets_no_made_up_language(tmp_path):
+    from eco.bookfolder import BookSource
+
+    pages = BookSource(
+        {"title": "Buku Pindaian", "author": "Ani", "language": "en"},
+        "![Page 1](images/p1.png)\n\n![Page 2](images/p2.png)\n",
+        tmp_path,
+    )
+    assert pipeline._library_name(tmp_path / "b.pdf", "pdf", pages, Options()) == (
+        "Buku Pindaian - Ani"
+    )
+    assert pipeline._library_name(tmp_path / "b.pdf", "pdf", pages, Options(lang="id")) == (
+        "ID - Buku Pindaian - Ani"
+    )

@@ -14,7 +14,7 @@ from eco.pdf.text import sure_language
 
 MAX_NAME = 150  # characters before the extension
 _TEXT_LIMIT = 200_000  # enough text to tell the language
-_DROP = re.compile(r'["?/\*<>|\x00-\x1f\x7f]')
+_DROP = re.compile(r'["?/\\*<>|\x00-\x1f\x7f]')
 _DASHES = re.compile(r" - (?:- )+")
 _RESERVED = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])", re.IGNORECASE)
 _JOINER = re.compile(r";|&|\b(?:and|dan)\b")
@@ -44,6 +44,20 @@ def facts_from_epub(path: Path) -> BookFacts:
             found = meta.findall(f"{{*}}{name}") if meta is not None else []
             return [text for el in found if (text := " ".join("".join(el.itertext()).split()))]
 
+        # a translator or editor listed as a creator is not an author: EPUB 2 says so in
+        # opf:role, EPUB 3 in a <meta refines="#id" property="role">
+        roles = {
+            el.get("refines", "").lstrip("#"): (el.text or "").strip()
+            for el in (meta.iterfind("{*}meta[@property='role']") if meta is not None else ())
+        }
+        creators = meta.findall("{*}creator") if meta is not None else []
+        authors = [
+            text
+            for el in creators
+            if (el.get("opf:role") or roles.get(el.get("id", ""), "")) in ("", "aut")
+            and (text := " ".join("".join(el.itertext()).split()))
+        ]
+
         hrefs = {item.get("id"): item.get("href") for item in opf.iterfind("{*}manifest/{*}item")}
         base = posixpath.dirname(opf_path)
         chunks: list[str] = []
@@ -63,7 +77,7 @@ def facts_from_epub(path: Path) -> BookFacts:
                 size += len(chunk)
     return BookFacts(
         next(iter(texts("title")), ""),
-        texts("creator"),
+        authors,
         next(iter(texts("language")), ""),
         " ".join(chunks)[:_TEXT_LIMIT],
     )

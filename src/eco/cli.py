@@ -447,7 +447,7 @@ def _parser() -> argparse.ArgumentParser:
         "--focus-weight",
         type=int,
         choices=CHOICES["focus_weight"],
-        help="Focus Mode bold weight, one the font has: 600, 700 or 800 (default: 700, or the "
+        help="Focus Mode bold weight, one the font has: 600, 700 or 800 (default: 600, or the "
         "selected style's value)",
     )
     convert.add_argument("--font", metavar="NAME|PATH", help="font family or .ttf/.otf file")
