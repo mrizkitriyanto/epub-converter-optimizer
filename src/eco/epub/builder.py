@@ -18,6 +18,7 @@ from mdit_py_plugins.footnote import footnote_plugin
 from PIL import Image, ImageDraw, ImageFont
 
 from eco.bookfolder import BookSource
+from eco.epub.split import pack
 from eco.epub.zipio import write_epub_zip
 from eco.events import Finding
 from eco.options import CHAPTER_LIMIT_BYTES, DEVICES
@@ -62,6 +63,7 @@ _ALT = re.compile(r"\salt\s*=")
 _IMG = re.compile(r"<img\s[^<>]*>")
 _SRC = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""")
 _ID = re.compile(r'\sid="([^"]+)"')
+_HEADING = re.compile(r"<h[2-6][\s>]")  # a chapter part starts at one where it can
 _LOCAL_LINK = re.compile(r'href="#([^"]+)"')
 
 
@@ -270,15 +272,11 @@ class _Builder:
         pages, toc = [], []
         for ch in chapters:
             room = CHAPTER_LIMIT_BYTES - len(self._page(ch.title, "").encode())
-            parts, part_of, size = [[]], [], 0
-            for block in ch.blocks:
-                n = len(block.encode()) + 1
-                if parts[-1] and size + n > room:
-                    parts.append([])
-                    size = 0
-                parts[-1].append(block)
-                part_of.append(len(parts) - 1)
-                size += n
+            sizes = [len(block.encode()) + 1 for block in ch.blocks]
+            heads = {i for i, block in enumerate(ch.blocks) if _HEADING.match(block)}
+            runs = pack(sizes, room, heads)
+            parts = [[ch.blocks[i] for i in run] for run in runs]
+            part_of = [k for k, run in enumerate(runs) for _ in run]
             names = [f"text/{ch.stem}{f'-{k + 1}' if k else ''}.xhtml" for k in range(len(parts))]
             pages += [(name, ch.title, "\n".join(part)) for name, part in zip(names, parts)]
             subs = [(title, f"{names[part_of[i]]}#{ident}") for title, ident, i in ch.subs]

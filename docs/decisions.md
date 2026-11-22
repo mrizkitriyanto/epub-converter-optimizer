@@ -1353,3 +1353,9 @@ Record the large chapter's load time in its column. If light and dark gray are r
 - The owner asked for ExtraBold 800 beside Semibold 600 and Bold 700. The bundled Literata, Bitter and Lexend Deca gained their 800 face (same sources and commits, `src/eco/fonts/SOURCES.md`); Libertinus Serif has none.
 - A Focus Mode weight must be a weight of the font and heavier than the text. A new style with another one is refused; an older one moves to the next weight the font has, with a `focus_weight_missing` finding, instead of Typst drawing another weight under the chosen name. The dock offers only the weights the font has.
 - In the EPUB on an Xteink the reader's font decides; with only regular and bold faces 600, 700 and 800 all show bold. The dock note says so. Not checked on a device.
+
+## 2026-11-22: Chapter splits open big wrappers and cut at headings
+
+- An InDesign export holds a whole chapter in one container beside an empty one, so the split stopped at the outer wrapper and left a 228 KB part with the warning "one element is larger than the limit" (seen with Focus Mode on). A wrapper (div, section, article) larger than the limit is now opened: its children go into copies of it, the class on each and the id on the first. A wrapper with loose text between its children stays whole, so no text moves.
+- A full part moves its cut back to its last heading (h1-h6, or a wrapper that starts with one) when at least half the limit stays behind, so a part starts at a section rather than mid-section. The builder's own Markdown chapters use the same rule (`pack` in `eco/epub/split.py`).
+- Each part still starts on a new screen on the reader; that is the cost of the 100 KB limit.

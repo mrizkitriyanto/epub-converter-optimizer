@@ -827,3 +827,11 @@ def test_numbered_list_items_become_ordered_lists_that_keep_their_start(tmp_path
         ("ol", "0", ["h", "i"]),
         ("ol", "3", ["j", "k", "l"]),
     ]
+
+
+def test_a_long_chapter_is_cut_before_a_heading_where_it_can(tmp_path):
+    paragraphs = [f"Paragraph {n}. " + "word " * 200 for n in range(120)]
+    middle = "\n\n".join(paragraphs[:60]) + "\n\n## Middle\n\n" + "\n\n".join(paragraphs[60:])
+    z, _ = build(tmp_path, f"# Big\n\n{middle}\n")
+    second = z.read("OEBPS/text/ch001-2.xhtml").decode()
+    assert re.search(r"<body>\s*<h2", second)
