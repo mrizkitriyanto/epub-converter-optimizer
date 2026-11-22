@@ -761,8 +761,10 @@ def book_epub(
     language: str,
     bodies: list[str],
     version: str = "3.0",
+    metadata: str | None = None,
 ) -> Path:
-    """A small valid-enough EPUB with this metadata and one spine page per body."""
+    """A small valid-enough EPUB with this metadata and one spine page per body. `metadata`, when
+    given, is the raw XML after the identifier in place of title, creators and language."""
     container = (
         '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
         '<rootfiles><rootfile full-path="OEBPS/content.opf" '
@@ -777,6 +779,7 @@ def book_epub(
         f"<dc:creator>{c}</dc:creator>" for c in creators
     )
     meta += f"<dc:language>{language}</dc:language>" if language else ""
+    meta = metadata if metadata is not None else meta
     files = {
         "META-INF/container.xml": container,
         "OEBPS/content.opf": (

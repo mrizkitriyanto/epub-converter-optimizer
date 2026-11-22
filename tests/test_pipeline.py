@@ -752,3 +752,24 @@ def test_a_typed_language_wins_over_the_text(tmp_path):
     result = convert(md, tmp_path, Options(lang="en"))
     assert _opf_of(result.outputs["epub"]) == (["EN - Buku Saya"], ["en"])
     assert result.library_name == "EN - Buku Saya - Ani"
+
+
+def test_converting_an_eco_output_again_keeps_one_code(tmp_path):
+    from fixtures.make import book_epub
+
+    epub = book_epub(
+        tmp_path / "b.epub", "Deep Work", ["Cal Newport"], "en", [f"<p>{ID_SENTENCE}</p>"]
+    )
+    first = convert(epub, tmp_path, out="one")
+    again = convert(first.outputs["epub"], tmp_path, out="two")
+    assert _opf_of(again.outputs["epub"])[0] == ["ID - Deep Work"]
+    assert again.library_name == "ID - Deep Work - Cal Newport"
+
+
+def test_built_pages_take_the_language_of_the_text(tmp_path):
+    md = tmp_path / "x.md"
+    md.write_text(f'---\ntitle: "Buku"\n---\n\n# Bab\n\n{ID_SENTENCE}\n', encoding="utf-8")
+    with zipfile.ZipFile(convert(md, tmp_path).outputs["epub"]) as z:
+        pages = [z.read(n) for n in z.namelist() if n.endswith(".xhtml")]
+    assert pages and all(b'xml:lang="en"' not in p for p in pages)
+    assert any(b'xml:lang="id"' in p for p in pages)

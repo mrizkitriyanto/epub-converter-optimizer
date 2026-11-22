@@ -1465,11 +1465,13 @@ def _opf(epub):
         return ET.fromstring(z.read(name))
 
 
-def _label(tmp_path, title="Deep Work", meta_lang="en", version="3.0", **kwargs):
+def _label(tmp_path, title="Deep Work", meta_lang="en", version="3.0", metadata=None, **kwargs):
     from fixtures.make import book_epub
 
     tmp_path.mkdir(parents=True, exist_ok=True)
-    src = book_epub(tmp_path / "in.epub", title, ["Cal Newport"], meta_lang, [_ID_BODY], version)
+    src = book_epub(
+        tmp_path / "in.epub", title, ["Cal Newport"], meta_lang, [_ID_BODY], version, metadata
+    )
     out = tmp_path / "out.epub"
     optimize_epub(src, out, Options(), **kwargs)
     opf = _opf(out)
@@ -1509,3 +1511,42 @@ def test_modified_is_the_conversion_time_on_epub3(tmp_path):
 def test_the_prefix_is_not_doubled(tmp_path):
     titles, _, _ = _label(tmp_path, title="ID - Deep Work", code="ID", language="id")
     assert titles == ["ID - Deep Work"]
+
+
+def test_a_blank_title_gets_no_code(tmp_path):
+    titles, _, _ = _label(tmp_path, title="   ", code="ID", language="id")
+    assert not titles[0] or not titles[0].startswith("ID")
+
+
+def test_the_main_title_gets_the_code_not_a_subtitle(tmp_path):
+    meta = (
+        '<dc:title id="s">Rules for Focused Success</dc:title>'
+        '<meta refines="#s" property="title-type">subtitle</meta>'
+        '<dc:title id="m">Deep Work</dc:title>'
+        '<meta refines="#m" property="title-type">main</meta>'
+        "<dc:language>en</dc:language>"
+    )
+    titles, _, _ = _label(tmp_path, metadata=meta, code="ID", language="id")
+    assert titles == ["Rules for Focused Success", "ID - Deep Work"]
+
+
+def test_a_language_goes_where_the_dc_elements_are(tmp_path):
+    meta = "<dc-metadata><dc:title>Deep Work</dc:title></dc-metadata>"
+    _label(tmp_path, version="2.0", metadata=meta, code="ID", language="id")
+    opf = _opf(tmp_path / "out.epub")
+    holder = next(el for el in opf.iter() if el.tag.endswith("dc-metadata"))
+    assert [el.text for el in holder if el.tag == f"{_DC}language"] == ["id"]
+
+
+def test_an_existing_modified_is_updated_not_doubled(tmp_path):
+    meta = (
+        "<dc:title>Deep Work</dc:title><dc:language>en</dc:language>"
+        '<meta property="dcterms:modified">2001-01-01T00:00:00Z</meta>'
+    )
+    _, _, modified = _label(tmp_path, metadata=meta, code="ID", language="id")
+    assert len(modified) == 1 and modified[0] != "2001-01-01T00:00:00Z"
+
+
+def test_an_epub2_title_and_language_change(tmp_path):
+    titles, languages, modified = _label(tmp_path, version="2.0", code="ID", language="id")
+    assert (titles, languages, modified) == (["ID - Deep Work"], ["id"], [])

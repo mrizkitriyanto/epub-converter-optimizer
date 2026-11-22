@@ -47,7 +47,7 @@ for _prefix, _uri in (
     ("epub", "http://www.idpf.org/2007/ops"),
     ("svg", SVG),
     ("xlink", "http://www.w3.org/1999/xlink"),
-    ("dc", "http://purl.org/dc/elements/1.1/"),
+    ("dc", DC),
     ("enc", "http://www.w3.org/2001/04/xmlenc#"),
 ):
     ET.register_namespace(_prefix, _uri)
@@ -895,11 +895,11 @@ class _Package:
     def _write_ncx(self, ncx: str | None, entries: list, base: str) -> None:
         if ncx is None:
             ncx = self._free(posixpath.join(base, "toc.ncx"))
-            title = self.opf.root.find(".//{http://purl.org/dc/elements/1.1/}title")
+            title = self.opf.root.find(f".//{{{DC}}}title")
             name = "".join(title.itertext()) if title is not None else ""
             root = ET.Element(f"{{{NCX}}}ncx", {"version": "2005-1"})
             head = ET.SubElement(root, f"{{{NCX}}}head")
-            identifiers = list(self.opf.root.iter("{http://purl.org/dc/elements/1.1/}identifier"))
+            identifiers = list(self.opf.root.iter(f"{{{DC}}}identifier"))
             unique = self.opf.root.get("unique-identifier")
             chosen = [el for el in identifiers if el.get("id") == unique] or identifiers
             uid = "".join(chosen[0].itertext()).strip() if chosen else ""
@@ -1075,13 +1075,23 @@ class _Package:
         meta = self.opf.root.find("{*}metadata")
         if meta is None:
             return
-        title = meta.find(f"{{{DC}}}title")
-        if self.code and title is not None and title.text and not len(title):
+        titles = list(meta.iter(f"{{{DC}}}title"))
+        # EPUB 3 may mark one title as the main one; otherwise the first is
+        mains = {
+            el.get("refines", "").lstrip("#")
+            for el in meta.iter()
+            if el.get("property") == "title-type" and (el.text or "").strip() == "main"
+        }
+        title = next((t for t in titles if t.get("id") in mains), titles[0] if titles else None)
+        if self.code and title is not None and (title.text or "").strip() and not len(title):
             title.text = titled(title.text.strip(), self.code)
         if self.language:
-            language = meta.find(f"{{{DC}}}language")
+            language = next(meta.iter(f"{{{DC}}}language"), None)
             if language is None:
-                language = ET.SubElement(meta, f"{{{DC}}}language")
+                # beside the other DC elements: an old OPF 2 keeps them in <dc-metadata>
+                parents = {child: parent for parent in meta.iter() for child in parent}
+                holder = parents.get(title, meta) if title is not None else meta
+                language = ET.SubElement(holder, f"{{{DC}}}language")
             language[:] = []
             language.text = self.language
         if self.opf.root.get("version", "").startswith("3"):

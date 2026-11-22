@@ -428,6 +428,7 @@ def convert_file(
                 _add(findings, epub_to_book(path, source_path), on_event)
                 source = load_source(source_path)
                 _override(source.meta, options)
+            code, language, name = _book_label(path, kind, source, options)
         else:
             if kind == "pdf" and options.mode == "pages":
                 source_path = page_book(
@@ -446,12 +447,14 @@ def convert_file(
                 # must not become the title of a copy that has another name
                 source.meta["title"] = path.stem
             _override(source.meta, options)
+            code, language, name = _book_label(path, kind, source, options)
+            if language and not options.lang:
+                source.meta["language"] = language  # the built pages and the XTC follow the text
             built = scratch / "built.epub"
             if "epub" in options.formats:
                 with _stage(on_event, "epub"):
                     _add(findings, build_epub(source, built, device=options.device), on_event)
         out_dir.mkdir(parents=True, exist_ok=True)
-        code, language, name = _book_label(path, kind, source, options)
         outputs = {}
         epubcheck = None
         if "epub" in options.formats:
