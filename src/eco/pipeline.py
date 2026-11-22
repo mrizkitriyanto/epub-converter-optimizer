@@ -30,7 +30,7 @@ from eco.events import (
 )
 from eco.font_coverage import missing_characters
 from eco.models import models_dir
-from eco.naming import BookFacts, facts_from_epub, library_name
+from eco.naming import BookFacts, facts_from_epub, language_code, library_name, titled
 from eco.options import DEVICES, Options, image_profile
 from eco.pdf.code import fix_code_blocks
 from eco.pdf.contents import rebuild_contents
@@ -342,6 +342,8 @@ def _write_xtc(
     formats: Sequence[str],
     inputs: Sequence[Path],
     font_extra_dirs: Sequence[Path],
+    code: str = "",
+    language: str | None = None,
 ) -> dict[str, Path]:
     if not source.markdown.strip():
         raise ValueError("Nothing to render")
@@ -378,9 +380,9 @@ def _write_xtc(
                 hq=fmt == "xtch",
                 width=quantized[0].width,
                 height=quantized[0].height,
-                title=source.meta.get("title", path.stem),
+                title=titled(source.meta.get("title", path.stem), code),
                 author=source.meta.get("author", ""),
-                language=source.meta.get("language", ""),
+                language=language or source.meta.get("language", ""),
                 chapters=chapters,
             )
         )
@@ -449,6 +451,7 @@ def convert_file(
                 with _stage(on_event, "epub"):
                     _add(findings, build_epub(source, built, device=options.device), on_event)
         out_dir.mkdir(parents=True, exist_ok=True)
+        code, language, name = _book_label(path, kind, source, options)
         outputs = {}
         epubcheck = None
         if "epub" in options.formats:
@@ -456,7 +459,8 @@ def convert_file(
             with tempfile.TemporaryDirectory(dir=out_dir) as staged_dir:
                 staged = Path(staged_dir) / out.name
                 with _stage(on_event, "optimize"):
-                    _add(findings, optimize_epub(built, staged, options).findings, on_event)
+                    report = optimize_epub(built, staged, options, code, language)
+                    _add(findings, report.findings, on_event)
                     warnings = validate_epub(staged)
                     if warnings is None:
                         epubcheck = "not_run"
@@ -486,6 +490,8 @@ def convert_file(
                         xtc_formats,
                         inputs,
                         font_extra_dirs,
+                        code,
+                        language,
                     )
                 )
     seconds = time.monotonic() - start
@@ -497,12 +503,15 @@ def convert_file(
         seconds,
         {fmt: out.stat().st_size for fmt, out in outputs.items()},
         epubcheck,
-        _library_name(path, kind, source, options),
+        name,
     )
 
 
-def _library_name(path: Path, kind: str, source, options: Options) -> str | None:
-    """The download name of the book, or None. Naming never fails a conversion."""
+def _book_label(
+    path: Path, kind: str, source, options: Options
+) -> tuple[str, str | None, str | None]:
+    """The language code a title starts with, the language the text showed, and the download
+    name. Naming never fails a conversion: on any trouble there is none of the three."""
     try:
         if kind == "epub":
             facts = facts_from_epub(path)
@@ -518,6 +527,7 @@ def _library_name(path: Path, kind: str, source, options: Options) -> str | None
             facts = replace(facts, title=options.title)
         if options.author:
             facts = replace(facts, authors=[options.author])
-        return library_name(facts)
+        code, language = language_code(facts)
+        return code, language, library_name(facts)
     except Exception:  # noqa: BLE001  a name is a convenience; the book is what matters
-        return None
+        return "", None, None

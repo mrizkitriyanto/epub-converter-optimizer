@@ -288,7 +288,11 @@ def test_title_author_and_language_do_not_re_extract(tmp_path, fixtures_dir, fak
     second = convert(pdf, tmp_path, Options(title="New", author="Au", lang="id"), out="two")
     assert len(fake_blocks.calls) == 2
     assert metadata(first.outputs["epub"])["title"] == "blank_middle"
-    assert metadata(second.outputs["epub"]) == {"title": "New", "creator": "Au", "language": "id"}
+    assert metadata(second.outputs["epub"]) == {
+        "title": "ID - New",
+        "creator": "Au",
+        "language": "id",
+    }
     assert load_source(second.book_dir).meta["title"] == "blank_middle"
 
 
@@ -323,7 +327,11 @@ def test_options_override_the_metadata_of_markdown_and_book_folders(tmp_path, sm
         kept = convert(source, tmp_path, out="kept")
         assert metadata(kept.outputs["epub"])["title"] == title
         new = convert(source, tmp_path, Options(title="New", author="Au", lang="id"), out="new")
-        assert metadata(new.outputs["epub"]) == {"title": "New", "creator": "Au", "language": "id"}
+        assert metadata(new.outputs["epub"]) == {
+            "title": "ID - New",
+            "creator": "Au",
+            "language": "id",
+        }
 
 
 def test_book_folder_takes_its_metadata_from_the_pdf(tmp_path, titled_pdf, fake_blocks):
@@ -680,9 +688,57 @@ def test_a_book_of_page_images_gets_no_made_up_language(tmp_path):
         "![Page 1](images/p1.png)\n\n![Page 2](images/p2.png)\n",
         tmp_path,
     )
-    assert pipeline._library_name(tmp_path / "b.pdf", "pdf", pages, Options()) == (
+    assert pipeline._book_label(tmp_path / "b.pdf", "pdf", pages, Options())[2] == (
         "Buku Pindaian - Ani"
     )
-    assert pipeline._library_name(tmp_path / "b.pdf", "pdf", pages, Options(lang="id")) == (
+    assert pipeline._book_label(tmp_path / "b.pdf", "pdf", pages, Options(lang="id"))[2] == (
         "ID - Buku Pindaian - Ani"
     )
+
+
+def _opf_of(epub):
+    with zipfile.ZipFile(epub) as z:
+        opf = ET.fromstring(z.read(next(n for n in z.namelist() if n.endswith(".opf"))))
+    return [e.text for e in opf.iter(f"{DC}title")], [e.text for e in opf.iter(f"{DC}language")]
+
+
+def test_the_epub_title_carries_the_language(tmp_path):
+    md = tmp_path / "x.md"
+    md.write_text(
+        f'---\ntitle: "Buku Saya"\nauthor: "Ani"\n---\n\n{ID_SENTENCE}\n', encoding="utf-8"
+    )
+    result = convert(md, tmp_path)
+    assert _opf_of(result.outputs["epub"]) == (["ID - Buku Saya"], ["id"])
+    assert result.library_name == "ID - Buku Saya - Ani"
+
+
+def test_an_english_labelled_indonesian_epub_is_fixed(tmp_path):
+    from fixtures.make import book_epub
+
+    epub = book_epub(
+        tmp_path / "b.epub", "Deep Work", ["Cal Newport"], "en", [f"<p>{ID_SENTENCE}</p>"]
+    )
+    assert _opf_of(convert(epub, tmp_path).outputs["epub"]) == (["ID - Deep Work"], ["id"])
+
+
+def test_the_xtc_title_carries_the_language(tmp_path):
+    from eco.xtc.container import read_container
+
+    md = tmp_path / "x.md"
+    md.write_text(
+        f'---\ntitle: "Buku Saya"\nauthor: "Ani"\n---\n\n{ID_SENTENCE}\n', encoding="utf-8"
+    )
+    result = convert(md, tmp_path, Options(formats=("xtch",)))
+    header = read_container(result.outputs["xtch"].read_bytes())[0]
+    assert header["title"] == "ID - Buku Saya"
+
+
+def test_naming_trouble_leaves_the_title(tmp_path, monkeypatch):
+    from fixtures.make import book_epub
+
+    def broken(path):
+        raise ValueError("unreadable")
+
+    monkeypatch.setattr(pipeline, "facts_from_epub", broken)
+    epub = book_epub(tmp_path / "b.epub", "Asli", ["Ani"], "en", [f"<p>{ID_SENTENCE}</p>"])
+    assert _opf_of(convert(epub, tmp_path).outputs["epub"]) == (["Asli"], ["en"])
