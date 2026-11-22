@@ -1268,6 +1268,47 @@ def test_every_file_of_a_job_downloads(finished):
     )
 
 
+def test_a_download_can_take_the_library_name(finished):
+    r = finished.client.get(f"/api/jobs/{finished.id}/files/0/download/epub?name=library")
+    assert r.status_code == 200
+    assert r.headers["content-disposition"] == (
+        'attachment; filename="ID - Bab _ - Ani.epub"; '
+        "filename*=UTF-8''ID%20-%20Bab%20%C3%9C%20-%20Ani.epub"
+    )
+
+
+@pytest.mark.parametrize("query", ["", "?name=other", "?name="])
+def test_without_name_library_a_download_keeps_its_name(finished, query):
+    r = finished.client.get(f"/api/jobs/{finished.id}/files/1/download/epub{query}")
+    assert r.status_code == 200
+    assert "filename*=UTF-8''notes.x4.epub" in r.headers["content-disposition"]
+
+
+def test_an_xtc_library_name_keeps_the_device(tmp_path, fake_worker):
+    with running(tmp_path) as c:
+        job = post(c, ("notes.md", b"# B\n"), options={"formats": ["epub", "xtch"]}).json()
+        wait_for(lambda: c.get(f"/api/jobs/{job['id']}").json()["status"] == "done", 20)
+        r = c.get(f"/api/jobs/{job['id']}/files/0/download/xtch?name=library")
+    assert r.status_code == 200
+    assert (
+        "filename*=UTF-8''ID%20-%20notes%20-%20Ani.x4-pro.xtch" in r.headers["content-disposition"]
+    )
+
+
+def test_a_file_without_a_library_name_downloads_under_its_own(finished):
+    path = finished.data / "jobs" / finished.id / "job.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    original = path.read_text(encoding="utf-8")
+    data["files"][1]["library_name"] = None  # as a job from before the field existed
+    path.write_text(json.dumps(data), encoding="utf-8")
+    try:
+        r = finished.client.get(f"/api/jobs/{finished.id}/files/1/download/epub?name=library")
+    finally:
+        path.write_text(original, encoding="utf-8")
+    assert r.status_code == 200
+    assert "filename*=UTF-8''notes.x4.epub" in r.headers["content-disposition"]
+
+
 def test_the_ascii_name_of_a_download_has_no_quote_backslash_control_or_non_ascii_character():
     # `safe_name` lets none of the first three through, so an upload cannot show this by itself
     name = 'a"b\\c\x01d\x7fé€ f.epub'

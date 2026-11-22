@@ -24,7 +24,8 @@ indexes, statuses, sizes, options, positions and errors (with the data folder cu
     GET  /api/jobs/{id}/events                    server-sent events: replay, then live, to `end`
     POST /api/jobs/{id}/cancel                    202, or 409 when the job has finished
     POST /api/jobs/{id}/rebuild                   JSON options; 201, a new job from the same files
-    GET  /api/jobs/{id}/files/{n}/download/{fmt}  an output, as an attachment
+    GET  /api/jobs/{id}/files/{n}/download/{fmt}  an output, as an attachment; `?name=library`
+                                                  names it `LANG - Title - Author`
     GET  /api/fonts?job={id}                      bundled and uploaded font families
     POST /api/jobs/{id}/fonts                     one `.ttf` or `.otf` font upload
     DELETE /api/jobs/{id}                         204, the job and all its files are gone; 409
@@ -1021,17 +1022,24 @@ def create_app(data_dir: Path, *, token: str | None, max_upload_mb: int = 500) -
         return Response(status_code=204)
 
     @app.get("/api/jobs/{job_id}/files/{n}/download/{fmt}")
-    def download(job_id: str, n: str, fmt: str):
+    def download(job_id: str, n: str, fmt: str, name: str | None = None):
         info, index = file_of(job_id, n)
         made = info.files[index].outputs.get(fmt)  # `fmt` is only ever looked up, never a path
         path = Path(made) if made else None
         output_folder = (store.job_dir(job_id) / "output").resolve()
         if not path or not path.is_file() or not path.resolve().is_relative_to(output_folder):
             raise HTTPException(404, STRINGS["error_output"])
+        sent = path.name
+        library = info.files[index].library_name
+        if name == "library" and library:
+            # an EPUB reflows on any reader; an XTC fits one screen, so it keeps the device
+            sent = (
+                f"{library}.epub" if fmt == "epub" else f"{library}.{info.options['device']}.{fmt}"
+            )
         return FileResponse(
             path,
             media_type=_MEDIA.get(fmt, "application/octet-stream"),
-            headers={"Content-Disposition": _disposition(path.name)},
+            headers={"Content-Disposition": _disposition(sent)},
         )
 
     @app.get("/api/setup")
