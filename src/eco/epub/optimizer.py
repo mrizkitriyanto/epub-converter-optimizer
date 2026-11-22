@@ -8,6 +8,7 @@ import zlib
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from functools import partial
 from html.entities import html5
 from io import BytesIO
@@ -41,6 +42,7 @@ XHTML = "http://www.w3.org/1999/xhtml"
 SVG = "http://www.w3.org/2000/svg"
 XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
 OPF = "http://www.idpf.org/2007/opf"
+DC = "http://purl.org/dc/elements/1.1/"
 for _prefix, _uri in (
     ("epub", "http://www.idpf.org/2007/ops"),
     ("svg", SVG),
@@ -275,9 +277,10 @@ def _encryption(data: bytes | None) -> list[tuple[str, str]]:
 
 
 class _Package:
-    def __init__(self, src: Path, options: Options):
+    def __init__(self, src: Path, options: Options, code: str = "", language: str | None = None):
         self.name = src.name
         self.options = options
+        self.code, self.language = code, language  # the title's language code, the text's language
         self.profile = image_profile(options)
         self.xteink = DEVICES[options.device] is not None
         self.findings: list[Finding] = []
@@ -386,6 +389,7 @@ class _Package:
         if self.xteink:
             self._split_chapters()
             self._contents()
+        self._label()
         self._tidy()
         self._firmware_notes()
 
@@ -1063,6 +1067,32 @@ class _Package:
         elif gone:
             del self.files[name]
 
+    def _label(self) -> None:
+        """The title starts with the language code, the language is the one the text showed, and
+        an EPUB 3 package says when it was made, so a reader that caches a book sees the change."""
+        from eco.naming import titled  # eco.naming reads EPUBs with this module
+
+        meta = self.opf.root.find("{*}metadata")
+        if meta is None:
+            return
+        title = meta.find(f"{{{DC}}}title")
+        if self.code and title is not None and title.text and not len(title):
+            title.text = titled(title.text.strip(), self.code)
+        if self.language:
+            language = meta.find(f"{{{DC}}}language")
+            if language is None:
+                language = ET.SubElement(meta, f"{{{DC}}}language")
+            language[:] = []
+            language.text = self.language
+        if self.opf.root.get("version", "").startswith("3"):
+            modified = next(
+                (el for el in meta.iterfind("{*}meta") if el.get("property") == "dcterms:modified"),
+                None,
+            )
+            if modified is None:
+                modified = ET.SubElement(meta, f"{{{OPF}}}meta", {"property": "dcterms:modified"})
+            modified.text = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     def _firmware_notes(self) -> None:
         if not (self.xteink and self.options.firmware == "stock"):
             return
@@ -1080,13 +1110,16 @@ class _Package:
             self._note("stock_images", "warning", message)
 
 
-def optimize_epub(src: Path, dst: Path, options: Options) -> OptimizeReport:
-    """Write an optimized copy of an EPUB for the device in `options`; the input stays as it is."""
+def optimize_epub(
+    src: Path, dst: Path, options: Options, code: str = "", language: str | None = None
+) -> OptimizeReport:
+    """Write an optimized copy of an EPUB for the device in `options`; the input stays as it is.
+    `code` goes in front of the title (`ID - Title`), `language` replaces `dc:language`."""
     # resolve() sees through ".." and symlinks even when dst does not exist yet; samefile() sees
     # through hard links and, on a filesystem that ignores case, a name in another case
     if dst.resolve() == src.resolve() or (dst.exists() and dst.samefile(src)):
         raise ValueError(f"The output is the same file as the input: {src.name}")
-    package = _Package(src, options)
+    package = _Package(src, options, code, language)
     package.run()
     # ponytail: zopfli is not used; measure before adding
     write_epub_zip(dst, package.output())

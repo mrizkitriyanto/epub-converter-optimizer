@@ -755,9 +755,14 @@ def make_messy_epub(directory: Path) -> Path:
 
 
 def book_epub(
-    path: Path, title: str, creators: list[str], language: str, bodies: list[str]
+    path: Path,
+    title: str,
+    creators: list[str],
+    language: str,
+    bodies: list[str],
+    version: str = "3.0",
 ) -> Path:
-    """A small valid-enough EPUB 3 with this metadata and one spine page per body."""
+    """A small valid-enough EPUB with this metadata and one spine page per body."""
     container = (
         '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
         '<rootfiles><rootfile full-path="OEBPS/content.opf" '
@@ -775,7 +780,8 @@ def book_epub(
     files = {
         "META-INF/container.xml": container,
         "OEBPS/content.opf": (
-            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
+            f'<package xmlns="http://www.idpf.org/2007/opf" version="{version}" '
+            'unique-identifier="id">'
             '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
             f'<dc:identifier id="id">urn:uuid:0</dc:identifier>{meta}</metadata>'
             f"<manifest>{items}</manifest><spine>{refs}</spine></package>"

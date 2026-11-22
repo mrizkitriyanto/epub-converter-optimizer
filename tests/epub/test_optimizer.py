@@ -1447,3 +1447,65 @@ def test_only_entries_that_point_somewhere_are_copied(tmp_path):
     assert ncx_labels(z, ncx) == ["First", "Second", "Third"]
     sources = [c.get("src") for c in ET.fromstring(z.read(ncx)).iter(f"{{{NS['ncx']}}}content")]
     assert all(resolve(ncx, s)[0] in z.namelist() for s in sources)
+
+
+# The title carries the language code; the language is fixed; EPUB 3 gets a modified time
+
+_DC = "{http://purl.org/dc/elements/1.1/}"
+_ID_BODY = (
+    "<p>"
+    + "Ini buku yang dibaca dengan tenang di dalam rumah dan tidak untuk dijual. " * 5
+    + "</p>"
+)
+
+
+def _opf(epub):
+    with zipfile.ZipFile(epub) as z:
+        name = next(n for n in z.namelist() if n.endswith(".opf"))
+        return ET.fromstring(z.read(name))
+
+
+def _label(tmp_path, title="Deep Work", meta_lang="en", version="3.0", **kwargs):
+    from fixtures.make import book_epub
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    src = book_epub(tmp_path / "in.epub", title, ["Cal Newport"], meta_lang, [_ID_BODY], version)
+    out = tmp_path / "out.epub"
+    optimize_epub(src, out, Options(), **kwargs)
+    opf = _opf(out)
+    titles = [el.text for el in opf.iter(f"{_DC}title")]
+    languages = [el.text for el in opf.iter(f"{_DC}language")]
+    modified = [el.text for el in opf.iter() if el.get("property") == "dcterms:modified"]
+    return titles, languages, modified
+
+
+def test_the_title_gets_the_code_and_the_language_is_fixed(tmp_path):
+    titles, languages, _ = _label(tmp_path, code="ID", language="id")
+    assert (titles, languages) == (["ID - Deep Work"], ["id"])
+
+
+def test_no_code_leaves_the_title(tmp_path):
+    titles, languages, _ = _label(tmp_path)
+    assert (titles, languages) == (["Deep Work"], ["en"])
+
+
+def test_a_missing_language_is_added(tmp_path):
+    _, languages, _ = _label(tmp_path, meta_lang="", code="ID", language="id")
+    assert languages == ["id"]
+
+
+def test_metadata_only_code_keeps_the_language(tmp_path):
+    titles, languages, _ = _label(tmp_path, meta_lang="ja-JP", code="JA")
+    assert (titles, languages) == (["JA - Deep Work"], ["ja-JP"])
+
+
+def test_modified_is_the_conversion_time_on_epub3(tmp_path):
+    _, _, modified = _label(tmp_path, code="ID", language="id")
+    assert len(modified) == 1 and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", modified[0])
+    _, _, modified = _label(tmp_path / "two", version="2.0", code="ID", language="id")
+    assert modified == []
+
+
+def test_the_prefix_is_not_doubled(tmp_path):
+    titles, _, _ = _label(tmp_path, title="ID - Deep Work", code="ID", language="id")
+    assert titles == ["ID - Deep Work"]
