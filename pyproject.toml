@@ -5,7 +5,7 @@ description = "Convert PDF and Markdown to EPUB"
 requires-python = "==3.12.*"
 license = "MIT"
 dependencies = [
-    "docling==2.150.1",
+    "docling==2.151.1",
     "onnxruntime>=1.23",
     "torch>=2.13",
     "torchvision",
